@@ -67,14 +67,19 @@ export interface UseDirectorySettingsResult {
   resolvedDirs: ResolvedDirectories;
   isLoading: boolean;
   initialAppConfigDir?: string;
+  claudeMirrorDir?: string;
   updateDirectory: (app: AppId, value?: string) => void;
+  updateClaudeMirrorDir: (value?: string) => void;
   updateAppConfigDir: (value?: string) => void;
   browseDirectory: (app: AppId) => Promise<void>;
+  browseClaudeMirrorDir: () => Promise<void>;
   browseAppConfigDir: () => Promise<void>;
   resetDirectory: (app: AppId) => Promise<void>;
+  resetClaudeMirrorDir: () => Promise<void>;
   resetAppConfigDir: () => Promise<void>;
   resetAllDirectories: (
     claudeDir?: string,
+    claudeMirrorDir?: string,
     codexDir?: string,
     geminiDir?: string,
     opencodeDir?: string,
@@ -99,6 +104,12 @@ export function useDirectorySettings({
   const [appConfigDir, setAppConfigDir] = useState<string | undefined>(
     undefined,
   );
+  const [claudeMirrorDir, setClaudeMirrorDir] = useState<string | undefined>(
+    undefined,
+  );
+  const [defaultClaudeMirrorDir, setDefaultClaudeMirrorDir] = useState<
+    string | undefined
+  >(undefined);
   const [resolvedDirs, setResolvedDirs] = useState<ResolvedDirectories>({
     appConfig: "",
     claude: "",
@@ -116,6 +127,7 @@ export function useDirectorySettings({
     opencode: "",
   });
   const initialAppConfigDirRef = useRef<string | undefined>(undefined);
+  const mirrorSeededRef = useRef(false);
 
   // 加载目录信息
   useEffect(() => {
@@ -130,6 +142,7 @@ export function useDirectorySettings({
           codexDir,
           geminiDir,
           opencodeDir,
+          defaultClaudeMirrorDir,
           defaultAppConfig,
           defaultClaudeDir,
           defaultCodexDir,
@@ -141,6 +154,7 @@ export function useDirectorySettings({
           settingsApi.getConfigDir("codex"),
           settingsApi.getConfigDir("gemini"),
           settingsApi.getConfigDir("opencode"),
+          settingsApi.getDefaultClaudeMirrorDir(),
           computeDefaultAppConfigDir(),
           computeDefaultConfigDir("claude"),
           computeDefaultConfigDir("codex"),
@@ -151,6 +165,9 @@ export function useDirectorySettings({
         if (!active) return;
 
         const normalizedOverride = sanitizeDir(overrideRaw ?? undefined);
+        const normalizedClaudeMirror = sanitizeDir(
+          settings?.claudeMirrorConfigDir ?? defaultClaudeMirrorDir ?? undefined,
+        );
 
         defaultsRef.current = {
           appConfig: defaultAppConfig ?? "",
@@ -161,6 +178,8 @@ export function useDirectorySettings({
         };
 
         setAppConfigDir(normalizedOverride);
+        setDefaultClaudeMirrorDir(sanitizeDir(defaultClaudeMirrorDir ?? undefined));
+        setClaudeMirrorDir(normalizedClaudeMirror);
         initialAppConfigDirRef.current = normalizedOverride;
 
         setResolvedDirs({
@@ -187,6 +206,31 @@ export function useDirectorySettings({
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!settings) return;
+    const explicitMirror = sanitizeDir(settings.claudeMirrorConfigDir);
+    if (explicitMirror) {
+      setClaudeMirrorDir(explicitMirror);
+      mirrorSeededRef.current = true;
+      return;
+    }
+
+    if (
+      !mirrorSeededRef.current &&
+      defaultClaudeMirrorDir &&
+      claudeMirrorDir !== defaultClaudeMirrorDir
+    ) {
+      setClaudeMirrorDir(defaultClaudeMirrorDir);
+      onUpdateSettings({ claudeMirrorConfigDir: defaultClaudeMirrorDir });
+      mirrorSeededRef.current = true;
+    }
+  }, [
+    claudeMirrorDir,
+    defaultClaudeMirrorDir,
+    onUpdateSettings,
+    settings,
+  ]);
 
   const updateDirectoryState = useCallback(
     (key: DirectoryKey, value?: string) => {
@@ -218,6 +262,15 @@ export function useDirectorySettings({
       updateDirectoryState("appConfig", value);
     },
     [updateDirectoryState],
+  );
+
+  const updateClaudeMirrorDir = useCallback(
+    (value?: string) => {
+      const sanitized = sanitizeDir(value);
+      setClaudeMirrorDir(sanitized);
+      onUpdateSettings({ claudeMirrorConfigDir: sanitized });
+    },
+    [onUpdateSettings],
   );
 
   const updateDirectory = useCallback(
@@ -292,6 +345,26 @@ export function useDirectorySettings({
     }
   }, [appConfigDir, resolvedDirs.appConfig, t, updateDirectoryState]);
 
+  const browseClaudeMirrorDir = useCallback(async () => {
+    const currentValue = settings?.claudeMirrorConfigDir ?? claudeMirrorDir ?? "";
+    try {
+      const picked = await settingsApi.selectConfigDirectory(currentValue);
+      const sanitized = sanitizeDir(picked ?? undefined);
+      if (!sanitized) return;
+      updateClaudeMirrorDir(sanitized);
+    } catch (error) {
+      console.error(
+        "[useDirectorySettings] Failed to pick Claude mirror directory",
+        error,
+      );
+      toast.error(
+        t("settings.selectFileFailed", {
+          defaultValue: "选择目录失败",
+        }),
+      );
+    }
+  }, [claudeMirrorDir, settings?.claudeMirrorConfigDir, t, updateClaudeMirrorDir]);
+
   const resetDirectory = useCallback(
     async (app: AppId) => {
       const key: DirectoryKey =
@@ -329,14 +402,20 @@ export function useDirectorySettings({
     updateDirectoryState("appConfig", undefined);
   }, [updateDirectoryState]);
 
+  const resetClaudeMirrorDir = useCallback(async () => {
+    updateClaudeMirrorDir(undefined);
+  }, [updateClaudeMirrorDir]);
+
   const resetAllDirectories = useCallback(
     (
       claudeDir?: string,
+      claudeMirrorDirValue?: string,
       codexDir?: string,
       geminiDir?: string,
       opencodeDir?: string,
     ) => {
       setAppConfigDir(initialAppConfigDirRef.current);
+      setClaudeMirrorDir(claudeMirrorDirValue);
       setResolvedDirs({
         appConfig:
           initialAppConfigDirRef.current ?? defaultsRef.current.appConfig,
@@ -354,11 +433,15 @@ export function useDirectorySettings({
     resolvedDirs,
     isLoading,
     initialAppConfigDir: initialAppConfigDirRef.current,
+    claudeMirrorDir,
     updateDirectory,
+    updateClaudeMirrorDir,
     updateAppConfigDir,
     browseDirectory,
+    browseClaudeMirrorDir,
     browseAppConfigDir,
     resetDirectory,
+    resetClaudeMirrorDir,
     resetAppConfigDir,
     resetAllDirectories,
   };

@@ -33,6 +33,82 @@ pub(crate) fn sanitize_claude_settings_for_live(settings: &Value) -> Value {
     v
 }
 
+fn build_claude_mirror_env(source: &serde_json::Map<String, Value>) -> Option<Value> {
+    let source_env = source.get("env")?.as_object()?;
+    let mut merged_env = serde_json::Map::new();
+
+    for key in [
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_MODEL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        "AWS_REGION",
+        "AWS_PROFILE",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "ENABLE_TOOL_SEARCH",
+    ] {
+        if let Some(value) = source_env.get(key) {
+            merged_env.insert(key.to_string(), value.clone());
+        }
+    }
+
+    Some(Value::Object(merged_env))
+}
+
+fn merge_claude_provider_fields_into_target(target: &Value, source: &Value) -> Value {
+    let mut merged = target.clone();
+
+    let Some(target_obj) = merged.as_object_mut() else {
+        return json!({});
+    };
+    let Some(source_obj) = source.as_object() else {
+        return merged;
+    };
+
+    if let Some(value) = build_claude_mirror_env(source_obj) {
+        target_obj.insert("env".to_string(), value);
+    } else {
+        target_obj.remove("env");
+    }
+
+    for key in ["model", "permissions", "effortLevel"] {
+        if let Some(value) = source_obj.get(key) {
+            target_obj.insert(key.to_string(), value.clone());
+        } else {
+            target_obj.remove(key);
+        }
+    }
+
+    merged
+}
+
+fn build_claude_mirror_settings(source: &Value) -> Value {
+    let mut settings = json!({});
+    let Some(settings_obj) = settings.as_object_mut() else {
+        return settings;
+    };
+    let Some(source_obj) = source.as_object() else {
+        return settings;
+    };
+
+    if let Some(value) = build_claude_mirror_env(source_obj) {
+        settings_obj.insert("env".to_string(), value);
+    }
+
+    for key in ["model", "permissions", "effortLevel"] {
+        if let Some(value) = source_obj.get(key) {
+            settings_obj.insert(key.to_string(), value.clone());
+        }
+    }
+
+    settings
+}
+
 pub(crate) fn provider_exists_in_live_config(
     app_type: &AppType,
     provider_id: &str,
@@ -668,6 +744,37 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             let path = get_claude_settings_path();
             let settings = sanitize_claude_settings_for_live(&provider.settings_config);
             write_json_file(&path, &settings)?;
+
+            if let Some(mirror_dir) = crate::settings::get_claude_mirror_override_dir() {
+                let mirror_path = if mirror_dir.join("settings.json").exists() {
+                    mirror_dir.join("settings.json")
+                } else if mirror_dir.join("claude.json").exists() {
+                    mirror_dir.join("claude.json")
+                } else {
+                    mirror_dir.join("settings.json")
+                };
+
+                if mirror_path != path {
+                    let mirror_settings = if mirror_path.exists() {
+                        match read_json_file::<Value>(&mirror_path) {
+                            Ok(existing) => {
+                                merge_claude_provider_fields_into_target(&existing, &settings)
+                            }
+                            Err(err) => {
+                                log::warn!(
+                                    "Failed to read Claude mirror config '{}': {err}. Skipping mirror sync to avoid overwriting machine-specific settings.",
+                                    mirror_path.display()
+                                );
+                                return Ok(());
+                            }
+                        }
+                    } else {
+                        build_claude_mirror_settings(&settings)
+                    };
+
+                    write_json_file(&mirror_path, &mirror_settings)?;
+                }
+            }
         }
         AppType::Codex => {
             let obj = provider
@@ -1433,6 +1540,120 @@ mod tests {
             stripped,
             json!({
                 "allowedTools": ["tool2"]
+            })
+        );
+    }
+
+    #[test]
+    fn claude_mirror_merge_preserves_machine_specific_settings() {
+        let target = json!({
+            "env": {
+                "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "95"
+            },
+            "hooks": {
+                "Stop": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "python3 /home/agentcode/.claude/hooks/dashboard-hook.py"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "statusLine": {
+                "type": "command",
+                "command": "python3 /home/agentcode/.claude/status.py"
+            }
+        });
+        let source = json!({
+            "env": {
+                "ANTHROPIC_AUTH_TOKEN": "sk-test",
+                "ANTHROPIC_BASE_URL": "https://www.right.codes/claude",
+                "ENABLE_TOOL_SEARCH": "true",
+                "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"
+            },
+            "model": "opus",
+            "permissions": {
+                "defaultMode": "bypassPermissions"
+            },
+            "effortLevel": "medium",
+            "hooks": {
+                "Stop": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "node C:/broken/windows/hook.js"
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let merged = merge_claude_provider_fields_into_target(&target, &source);
+        assert_eq!(
+            merged["env"],
+            json!({
+                "ANTHROPIC_AUTH_TOKEN": "sk-test",
+                "ANTHROPIC_BASE_URL": "https://www.right.codes/claude",
+                "ENABLE_TOOL_SEARCH": "true"
+            })
+        );
+        assert_eq!(
+            merged["hooks"]["Stop"][0]["hooks"][0]["command"],
+            json!("python3 /home/agentcode/.claude/hooks/dashboard-hook.py")
+        );
+        assert_eq!(
+            merged["statusLine"]["command"],
+            json!("python3 /home/agentcode/.claude/status.py")
+        );
+    }
+
+    #[test]
+    fn claude_mirror_new_file_contains_only_provider_fields() {
+        let source = json!({
+            "env": {
+                "ANTHROPIC_AUTH_TOKEN": "sk-test",
+                "ANTHROPIC_BASE_URL": "https://www.right.codes/claude",
+                "ENABLE_TOOL_SEARCH": "true",
+                "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "95"
+            },
+            "model": "opus",
+            "permissions": {
+                "defaultMode": "bypassPermissions"
+            },
+            "effortLevel": "medium",
+            "hooks": {
+                "Stop": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "command",
+                                "command": "node C:/broken/windows/hook.js"
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let mirror = build_claude_mirror_settings(&source);
+        assert_eq!(
+            mirror,
+            json!({
+                "env": {
+                    "ANTHROPIC_AUTH_TOKEN": "sk-test",
+                    "ANTHROPIC_BASE_URL": "https://www.right.codes/claude",
+                    "ENABLE_TOOL_SEARCH": "true"
+                },
+                "model": "opus",
+                "permissions": {
+                    "defaultMode": "bypassPermissions"
+                },
+                "effortLevel": "medium"
             })
         );
     }

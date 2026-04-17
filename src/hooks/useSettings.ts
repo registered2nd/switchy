@@ -24,14 +24,18 @@ export interface UseSettingsResult {
   isSaving: boolean;
   isPortable: boolean;
   appConfigDir?: string;
+  claudeMirrorDir?: string;
   resolvedDirs: ResolvedDirectories;
   requiresRestart: boolean;
   updateSettings: (updates: Partial<SettingsFormState>) => void;
   updateDirectory: (app: AppId, value?: string) => void;
+  updateClaudeMirrorDir: (value?: string) => void;
   updateAppConfigDir: (value?: string) => void;
   browseDirectory: (app: AppId) => Promise<void>;
+  browseClaudeMirrorDir: () => Promise<void>;
   browseAppConfigDir: () => Promise<void>;
   resetDirectory: (app: AppId) => Promise<void>;
+  resetClaudeMirrorDir: () => Promise<void>;
   resetAppConfigDir: () => Promise<void>;
   saveSettings: (
     overrides?: Partial<SettingsFormState>,
@@ -77,14 +81,18 @@ export function useSettings(): UseSettingsResult {
   // 2️⃣ 目录管理
   const {
     appConfigDir,
+    claudeMirrorDir,
     resolvedDirs,
     isLoading: isDirectoryLoading,
     initialAppConfigDir,
     updateDirectory,
+    updateClaudeMirrorDir,
     updateAppConfigDir,
     browseDirectory,
+    browseClaudeMirrorDir,
     browseAppConfigDir,
     resetDirectory,
+    resetClaudeMirrorDir,
     resetAppConfigDir,
     resetAllDirectories,
   } = useDirectorySettings({
@@ -107,6 +115,7 @@ export function useSettings(): UseSettingsResult {
     syncLanguage(initialLanguage);
     resetAllDirectories(
       sanitizeDir(data?.claudeConfigDir),
+      sanitizeDir(data?.claudeMirrorConfigDir),
       sanitizeDir(data?.codexConfigDir),
       sanitizeDir(data?.geminiConfigDir),
       sanitizeDir(data?.opencodeConfigDir),
@@ -130,6 +139,9 @@ export function useSettings(): UseSettingsResult {
 
       try {
         const sanitizedClaudeDir = sanitizeDir(mergedSettings.claudeConfigDir);
+        const sanitizedClaudeMirrorDir = sanitizeDir(
+          mergedSettings.claudeMirrorConfigDir,
+        );
         const sanitizedCodexDir = sanitizeDir(mergedSettings.codexConfigDir);
         const sanitizedGeminiDir = sanitizeDir(mergedSettings.geminiConfigDir);
         const sanitizedOpencodeDir = sanitizeDir(
@@ -141,6 +153,7 @@ export function useSettings(): UseSettingsResult {
         const payload: Settings = {
           ...restSettings,
           claudeConfigDir: sanitizedClaudeDir,
+          claudeMirrorConfigDir: sanitizedClaudeMirrorDir,
           codexConfigDir: sanitizedCodexDir,
           geminiConfigDir: sanitizedGeminiDir,
           opencodeConfigDir: sanitizedOpencodeDir,
@@ -243,6 +256,9 @@ export function useSettings(): UseSettingsResult {
       try {
         const sanitizedAppDir = sanitizeDir(appConfigDir);
         const sanitizedClaudeDir = sanitizeDir(mergedSettings.claudeConfigDir);
+        const sanitizedClaudeMirrorDir = sanitizeDir(
+          mergedSettings.claudeMirrorConfigDir,
+        );
         const sanitizedCodexDir = sanitizeDir(mergedSettings.codexConfigDir);
         const sanitizedGeminiDir = sanitizeDir(mergedSettings.geminiConfigDir);
         const sanitizedOpencodeDir = sanitizeDir(
@@ -250,6 +266,7 @@ export function useSettings(): UseSettingsResult {
         );
         const previousAppDir = initialAppConfigDir;
         const previousClaudeDir = sanitizeDir(data?.claudeConfigDir);
+        const previousClaudeMirrorDir = sanitizeDir(data?.claudeMirrorConfigDir);
         const previousCodexDir = sanitizeDir(data?.codexConfigDir);
         const previousGeminiDir = sanitizeDir(data?.geminiConfigDir);
         const previousOpencodeDir = sanitizeDir(data?.opencodeConfigDir);
@@ -259,6 +276,7 @@ export function useSettings(): UseSettingsResult {
         const payload: Settings = {
           ...restSettings,
           claudeConfigDir: sanitizedClaudeDir,
+          claudeMirrorConfigDir: sanitizedClaudeMirrorDir,
           codexConfigDir: sanitizedCodexDir,
           geminiConfigDir: sanitizedGeminiDir,
           opencodeConfigDir: sanitizedOpencodeDir,
@@ -360,11 +378,14 @@ export function useSettings(): UseSettingsResult {
 
         // 如果 Claude/Codex/Gemini/OpenCode 的目录覆盖发生变化，则立即将"当前使用的供应商"写回对应应用的 live 配置
         const claudeDirChanged = sanitizedClaudeDir !== previousClaudeDir;
+        const claudeMirrorDirChanged =
+          sanitizedClaudeMirrorDir !== previousClaudeMirrorDir;
         const codexDirChanged = sanitizedCodexDir !== previousCodexDir;
         const geminiDirChanged = sanitizedGeminiDir !== previousGeminiDir;
         const opencodeDirChanged = sanitizedOpencodeDir !== previousOpencodeDir;
         if (
           claudeDirChanged ||
+          claudeMirrorDirChanged ||
           codexDirChanged ||
           geminiDirChanged ||
           opencodeDirChanged
@@ -424,14 +445,18 @@ export function useSettings(): UseSettingsResult {
     isSaving: saveMutation.isPending,
     isPortable,
     appConfigDir,
+    claudeMirrorDir,
     resolvedDirs,
     requiresRestart,
     updateSettings,
     updateDirectory,
+    updateClaudeMirrorDir,
     updateAppConfigDir,
     browseDirectory,
+    browseClaudeMirrorDir,
     browseAppConfigDir,
     resetDirectory,
+    resetClaudeMirrorDir,
     resetAppConfigDir,
     saveSettings,
     autoSaveSettings,

@@ -70,12 +70,16 @@ export function SettingsPage({
     isPortable,
     appConfigDir,
     resolvedDirs,
+    claudeMirrorDir,
     updateSettings,
     updateDirectory,
+    updateClaudeMirrorDir,
     updateAppConfigDir,
     browseDirectory,
+    browseClaudeMirrorDir,
     browseAppConfigDir,
     resetDirectory,
+    resetClaudeMirrorDir,
     resetAppConfigDir,
     saveSettings,
     autoSaveSettings,
@@ -320,12 +324,16 @@ export function SettingsPage({
                             onBrowseAppConfig={browseAppConfigDir}
                             onResetAppConfig={resetAppConfigDir}
                             claudeDir={settings.claudeConfigDir}
+                            claudeMirrorDir={claudeMirrorDir}
                             codexDir={settings.codexConfigDir}
                             geminiDir={settings.geminiConfigDir}
                             opencodeDir={settings.opencodeConfigDir}
                             onDirectoryChange={updateDirectory}
+                            onClaudeMirrorDirChange={updateClaudeMirrorDir}
                             onBrowseDirectory={browseDirectory}
+                            onBrowseClaudeMirrorDir={browseClaudeMirrorDir}
                             onResetDirectory={resetDirectory}
+                            onResetClaudeMirrorDir={resetClaudeMirrorDir}
                           />
                         </AccordionContent>
                       </AccordionItem>

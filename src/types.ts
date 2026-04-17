@@ -272,6 +272,8 @@ export interface Settings {
   // ===== 设备级目录覆盖 =====
   // 覆盖 Claude Code 配置目录（可选）
   claudeConfigDir?: string;
+  // 可选的 Claude Code 镜像配置目录（例如 WSL）
+  claudeMirrorConfigDir?: string;
   // 覆盖 Codex 配置目录（可选）
   codexConfigDir?: string;
   // 覆盖 Gemini 配置目录（可选）

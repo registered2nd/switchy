@@ -9,6 +9,73 @@ use crate::codex_config;
 use crate::config::{self, get_claude_settings_path, ConfigStatus};
 use crate::settings;
 
+#[cfg(target_os = "windows")]
+fn decode_wsl_output(raw: &[u8]) -> String {
+    String::from_utf8_lossy(raw).replace('\u{0}', "")
+}
+
+#[cfg(target_os = "windows")]
+fn get_default_wsl_distro() -> Option<String> {
+    use std::process::Command;
+
+    let output = Command::new("wsl.exe").args(["-l", "-v"]).output().ok()?;
+    let decoded = decode_wsl_output(&output.stdout);
+
+    for line in decoded.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix('*') {
+            let distro = rest.split_whitespace().next()?.trim();
+            if !distro.is_empty() {
+                return Some(distro.to_string());
+            }
+        }
+    }
+
+    let output = Command::new("wsl.exe").args(["-l", "-q"]).output().ok()?;
+    let decoded = decode_wsl_output(&output.stdout);
+    decoded
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+#[cfg(target_os = "windows")]
+fn get_wsl_home_dir(distro: &str) -> Option<String> {
+    use std::process::Command;
+
+    let output = Command::new("wsl.exe")
+        .args(["-d", distro, "--", "sh", "-lc", "cd ~ && pwd"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let decoded = decode_wsl_output(&output.stdout);
+    decoded
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with('/'))
+        .map(str::to_string)
+}
+
+#[cfg(target_os = "windows")]
+fn build_default_claude_mirror_dir() -> Option<String> {
+    let distro = get_default_wsl_distro()?;
+    let home = get_wsl_home_dir(&distro)?;
+    let suffix = home
+        .trim_end_matches('/')
+        .replace('/', "\\");
+    Some(format!(r"\\wsl$\{}\{}\.claude", distro, suffix.trim_start_matches('\\')))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn build_default_claude_mirror_dir() -> Option<String> {
+    None
+}
+
 #[tauri::command]
 pub async fn get_claude_config_status() -> Result<ConfigStatus, String> {
     Ok(config::get_claude_config_status())
@@ -107,6 +174,11 @@ pub async fn get_config_status(app: String) -> Result<ConfigStatus, String> {
 #[tauri::command]
 pub async fn get_claude_code_config_path() -> Result<String, String> {
     Ok(get_claude_settings_path().to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn get_default_claude_mirror_dir() -> Result<Option<String>, String> {
+    Ok(build_default_claude_mirror_dir())
 }
 
 #[tauri::command]

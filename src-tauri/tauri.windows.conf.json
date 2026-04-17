@@ -4,7 +4,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "CC Switch",
+        "title": "Switchy",
         "titleBarStyle": "Visible",
         "visible": false,
         "minWidth": 900,
