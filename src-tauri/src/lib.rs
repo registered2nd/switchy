@@ -10,6 +10,7 @@ mod database;
 mod deeplink;
 mod error;
 mod gemini_config;
+mod migrate_paths;
 mod gemini_mcp;
 mod init_status;
 mod lightweight;
@@ -17,6 +18,7 @@ mod mcp;
 mod openclaw_config;
 mod opencode_config;
 mod panic_hook;
+mod paths;
 mod prompt;
 mod prompt_files;
 mod provider;
@@ -93,7 +95,7 @@ fn redact_url_for_log(url_str: &str) -> String {
     }
 }
 
-/// 统一处理 switchy://（兼容 legacy ccswitch://）深链接 URL
+/// 统一处理 switchy:// 深链接 URL
 ///
 /// - 解析 URL
 /// - 向前端发射 `deeplink-import` / `deeplink-error` 事件
@@ -104,7 +106,7 @@ fn handle_deeplink_url(
     focus_main_window: bool,
     source: &str,
 ) -> bool {
-    if !url_str.starts_with("switchy://") && !url_str.starts_with("ccswitch://") {
+    if !url_str.starts_with("switchy://") {
         return false;
     }
 
@@ -191,7 +193,15 @@ fn macos_tray_icon() -> Option<Image<'static>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 设置 panic hook，在应用崩溃时记录日志到 <app_config_dir>/crash.log（默认 ~/.cc-switch/crash.log）
+    // One-shot legacy-directory migration. Runs before any config/DB access.
+    // If `~/.switchy/` is missing but the legacy pre-rename directory (name in
+    // `paths::LEGACY_APP_DIR`) exists, rename it in place.
+    let home = crate::config::get_home_dir();
+    if let Err(e) = crate::migrate_paths::migrate_legacy_dir(&home) {
+        eprintln!("[migrate_paths] Failed: {e}. Startup continues; data may not be found.");
+    }
+
+    // 设置 panic hook，在应用崩溃时记录日志到 <app_config_dir>/crash.log（默认 ~/.switchy/crash.log）
     panic_hook::setup_panic_hook();
 
     let mut builder = tauri::Builder::default();
@@ -277,7 +287,7 @@ pub fn run() {
                     log::warn!("初始化 Updater 插件失败，已跳过：{e}");
                 }
             }
-            // 初始化日志（单文件输出到 <app_config_dir>/logs/cc-switch.log）
+            // 初始化日志（单文件输出到 <app_config_dir>/logs/switchy.log）
             {
                 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
@@ -289,7 +299,7 @@ pub fn run() {
                 }
 
                 // 启动时删除旧日志文件，实现单文件覆盖效果
-                let log_file_path = log_dir.join("cc-switch.log");
+                let log_file_path = log_dir.join("switchy.log");
                 let _ = std::fs::remove_file(&log_file_path);
 
                 app.handle().plugin(
@@ -300,7 +310,7 @@ pub fn run() {
                             Target::new(TargetKind::Stdout),
                             Target::new(TargetKind::Folder {
                                 path: log_dir,
-                                file_name: Some("cc-switch".into()),
+                                file_name: Some("switchy".into()),
                             }),
                         ])
                         // 单文件模式：启动时删除旧文件，达到大小时轮转
@@ -316,7 +326,7 @@ pub fn run() {
 
             // 初始化数据库
             let app_config_dir = crate::config::get_app_config_dir();
-            let db_path = app_config_dir.join("cc-switch.db");
+            let db_path = app_config_dir.join(crate::paths::DB_FILE);
             let json_path = app_config_dir.join("config.json");
 
             // 检查是否需要从 config.json 迁移到 SQLite
@@ -585,12 +595,12 @@ pub fn run() {
                 #[cfg(target_os = "linux")]
                 {
                     // Use Tauri's path API to get correct path (includes app identifier)
-                    // tauri-plugin-deep-link writes to: ~/.local/share/com.ccswitch.desktop/applications/cc-switch-handler.desktop
+                    // tauri-plugin-deep-link writes to: ~/.local/share/com.switchy.desktop/applications/switchy-handler.desktop
                     // Only register if .desktop file doesn't exist to avoid overwriting user customizations
                     let should_register = app
                         .path()
                         .data_dir()
-                        .map(|d| !d.join("applications/cc-switch-handler.desktop").exists())
+                        .map(|d| !d.join("applications/switchy-handler.desktop").exists())
                         .unwrap_or(true);
 
                     if should_register {
@@ -633,7 +643,7 @@ pub fn run() {
                         log::debug!("  URL[{i}]: {}", redact_url_for_log(url_str));
 
                         if handle_deeplink_url(&app_handle, url_str, true, "on_open_url") {
-                            break; // Process only first ccswitch:// URL
+                            break; // Process only first switchy:// URL
                         }
                     }
                 }
@@ -1168,14 +1178,14 @@ pub fn run() {
                         }
                     }
                 }
-                // 处理通过自定义 URL 协议触发的打开事件（例如 ccswitch://...）
+                // 处理通过自定义 URL 协议触发的打开事件（例如 switchy://...）
                 RunEvent::Opened { urls } => {
                     if let Some(url) = urls.first() {
                         let url_str = url.to_string();
                         log::info!("RunEvent::Opened with URL: {url_str}");
 
                         if url_str.starts_with("switchy://")
-                            || url_str.starts_with("ccswitch://")
+                            || url_str.starts_with("switchy://")
                         {
                             if crate::lightweight::is_lightweight_mode() {
                                 if let Err(e) = crate::lightweight::exit_lightweight_mode(app_handle)
@@ -1500,7 +1510,7 @@ fn show_database_init_error_dialog(
             您的数据尚未丢失，应用不会自动删除数据库文件。\n\
             常见原因包括：数据库版本过新、文件损坏、权限不足、磁盘空间不足等。\n\n\
             建议：\n\
-            1) 先备份整个配置目录（包含 cc-switch.db）\n\
+            1) 先备份整个配置目录（包含 switchy.db）\n\
             2) 如果提示“数据库版本过新”，请升级到更新版本\n\
             3) 如果刚升级出现异常，可回退旧版本导出/备份后再升级\n\n\
             点击「重试」重新尝试初始化\n\
@@ -1514,7 +1524,7 @@ fn show_database_init_error_dialog(
             Your data is NOT lost - the app will not delete the database automatically.\n\
             Common causes include: newer database version, corrupted file, permission issues, or low disk space.\n\n\
             Suggestions:\n\
-            1) Back up the entire config directory (including cc-switch.db)\n\
+            1) Back up the entire config directory (including switchy.db)\n\
             2) If you see “database version is newer”, please upgrade Switchy\n\
             3) If this happened right after upgrading, consider rolling back to export/backup then upgrade again\n\n\
             Click 'Retry' to attempt initialization again\n\

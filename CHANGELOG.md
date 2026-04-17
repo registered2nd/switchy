@@ -1,9 +1,13 @@
 # Changelog
 
-All notable changes to CC Switch will be documented in this file.
+All notable user-visible changes to Switchy will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+Internal / repo-level changes (spec conventions, build identity, agent-facing
+structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
+
+Entries below predate the April 2026 Switchy rename and describe upstream
+CC Switch releases — preserved verbatim as history.
 
 ## [Unreleased]
 

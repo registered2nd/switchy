@@ -1,7 +1,7 @@
 //! Skills 服务层
 //!
 //! v3.10.0+ 统一管理架构：
-//! - SSOT（单一事实源）：`~/.cc-switch/skills/`
+//! - SSOT（单一事实源）：`~/.switchy/skills/`
 //! - 安装时下载到 SSOT，按需同步到各应用目录
 //! - 数据库存储安装记录和启用状态
 
@@ -389,14 +389,14 @@ impl SkillService {
 
     // ========== 路径管理 ==========
 
-    /// 获取 SSOT 目录（~/.cc-switch/skills/）
+    /// 获取 SSOT 目录（~/.switchy/skills/）
     pub fn get_ssot_dir() -> Result<PathBuf> {
         let dir = get_app_config_dir().join("skills");
         fs::create_dir_all(&dir)?;
         Ok(dir)
     }
 
-    /// 获取 Skill 卸载备份目录（~/.cc-switch/skill-backups/）
+    /// 获取 Skill 卸载备份目录（~/.switchy/skill-backups/）
     fn get_backup_dir() -> Result<PathBuf> {
         let dir = get_app_config_dir().join("skill-backups");
         fs::create_dir_all(&dir)?;
@@ -855,7 +855,7 @@ impl SkillService {
 
     /// 扫描未管理的 Skills
     ///
-    /// 扫描各应用目录，找出未被 CC Switch 管理的 Skills
+    /// 扫描各应用目录，找出未被 Switchy 管理的 Skills
     pub fn scan_unmanaged(db: &Arc<Database>) -> Result<Vec<UnmanagedSkill>> {
         let managed_skills = db.get_all_installed_skills()?;
         let managed_dirs: HashSet<String> = managed_skills
@@ -874,7 +874,7 @@ impl SkillService {
             scan_sources.push((agents_dir, "agents".to_string()));
         }
         if let Ok(ssot_dir) = Self::get_ssot_dir() {
-            scan_sources.push((ssot_dir, "cc-switch".to_string()));
+            scan_sources.push((ssot_dir, "switchy".to_string()));
         }
 
         let mut unmanaged: HashMap<String, UnmanagedSkill> = HashMap::new();
@@ -918,7 +918,7 @@ impl SkillService {
 
     /// 从应用目录导入 Skills
     ///
-    /// 将未管理的 Skills 导入到 CC Switch 统一管理
+    /// 将未管理的 Skills 导入到 Switchy 统一管理
     pub fn import_from_apps(
         db: &Arc<Database>,
         imports: Vec<ImportSkillSelection>,
@@ -944,7 +944,7 @@ impl SkillService {
         if let Some(agents_dir) = get_agents_skills_dir() {
             search_sources.push((agents_dir, "agents".to_string()));
         }
-        search_sources.push((ssot_dir.clone(), "cc-switch".to_string()));
+        search_sources.push((ssot_dir.clone(), "switchy".to_string()));
 
         for selection in imports {
             let dir_name = selection.directory;

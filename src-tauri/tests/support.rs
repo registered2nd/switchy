@@ -9,14 +9,14 @@ use cc_switch_lib::{
 pub fn ensure_test_home() -> &'static Path {
     static HOME: OnceLock<PathBuf> = OnceLock::new();
     HOME.get_or_init(|| {
-        let base = std::env::temp_dir().join("cc-switch-test-home");
+        let base = std::env::temp_dir().join("switchy-test-home");
         if base.exists() {
             let _ = std::fs::remove_dir_all(&base);
         }
         std::fs::create_dir_all(&base).expect("create test home");
         // Windows 上 `dirs::home_dir()` 不受 HOME/USERPROFILE 影响（走 Known Folder API），
-        // 用 CC_SWITCH_TEST_HOME 显式覆盖，以确保测试不会污染真实用户目录。
-        std::env::set_var("CC_SWITCH_TEST_HOME", &base);
+        // 用 SWITCHY_TEST_HOME 显式覆盖，以确保测试不会污染真实用户目录。
+        std::env::set_var("SWITCHY_TEST_HOME", &base);
         std::env::set_var("HOME", &base);
         #[cfg(windows)]
         std::env::set_var("USERPROFILE", &base);
@@ -31,7 +31,7 @@ pub fn reset_test_fs() {
     for sub in [
         ".claude",
         ".codex",
-        ".cc-switch",
+        ".switchy",
         ".gemini",
         ".config",
         ".openclaw",

@@ -414,7 +414,7 @@
         "synologyHint": "请先在群晖「套件中心」安装并启用 WebDAV Server 套件。",
         "custom": "自定义"
       },
-      "remoteRootDefault": "默认: cc-switch-sync",
+      "remoteRootDefault": "默认: switchy-sync",
       "profileDefault": "默认: default",
       "saveAndTestSuccess": "配置已保存，连接正常",
       "saveAndTestFailed": "配置已保存，但连接测试失败：{{error}}",
@@ -517,7 +517,7 @@
     "configDirectoryDescription": "在 WSL 等环境使用 Claude Code 或 Codex 的时候，可手动指定为 WSL 里的配置目录，供应商数据与主环境保持一致。",
     "appConfigDir": "Switchy 配置目录",
     "appConfigDirDescription": "自定义 Switchy 的配置存储位置（指定到云同步文件夹即可云同步配置）",
-    "browsePlaceholderApp": "例如：C:\\Users\\Administrator\\.cc-switch",
+    "browsePlaceholderApp": "例如：C:\\Users\\Administrator\\.switchy",
     "claudeConfigDir": "Claude Code 配置目录",
     "claudeConfigDirDescription": "覆盖 Claude 配置目录 (settings.json)，同时会在同级存放 Claude MCP 的 claude.json。",
     "claudeMirrorConfigDir": "Claude Code 镜像配置目录",
@@ -720,7 +720,7 @@
     "officialHint": "💡 官方供应商使用浏览器登录，无需配置 API Key",
     "getApiKey": "获取 API Key",
     "partnerPromotion": {
-      "packycode": "PackyCode 是 Switchy 的官方合作伙伴，使用此链接注册并在充值时填写 \"cc-switch\" 优惠码，可以享受9折优惠",
+      "packycode": "PackyCode 是 Switchy 的官方合作伙伴，使用此链接注册并在充值时填写 \"switchy\" 优惠码，可以享受9折优惠",
       "minimax_cn": "MiniMax Coding Plan 特惠，Starter 套餐 9.9 元起",
       "minimax_en": "MiniMax Coding Plan 黑五特惠，Starter 套餐现仅 $2/月（2折优惠！）",
       "dmxapi": "Claude Code 专属模型 3.4 折优惠进行中！",

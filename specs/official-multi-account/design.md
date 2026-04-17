@@ -39,8 +39,8 @@ Rust command  claude_account::capture(state, provider_id)
     │     return NeedsConfirmation { old_uuid, new_uuid, old_email, new_email }
     │     (renderer shows dialog; re-invokes with force=true on Confirm — AC-1.5)
     │
-    ├─► Write  ~/.cc-switch/accounts/{P.id}/credentials.json  (atomic, 0600)
-    ├─► Write  ~/.cc-switch/accounts/{P.id}/oauth_account.json
+    ├─► Write  ~/.switchy/accounts/{P.id}/credentials.json  (atomic, 0600)
+    ├─► Write  ~/.switchy/accounts/{P.id}/oauth_account.json
     └─► Update  Provider.meta.capturedClaudeAccount  in DB  (UUID + email + captured_at)
                                                                 │
                                                                 ▼
@@ -66,7 +66,7 @@ ProviderService::switch_normal  (mod.rs:1435)
     │   │         AND provider.meta.capturedClaudeAccount.is_some()
     │   │         (otherwise returns Ok(SwapOutcome::Skipped))
     │   │
-    │   ├─ Read both snapshot files under ~/.cc-switch/accounts/{id}/
+    │   ├─ Read both snapshot files under ~/.switchy/accounts/{id}/
     │   │   → parse-check only (AC-2.4). On parse failure: hard error.
     │   │
     │   ├─ Write  ~/.claude/.credentials.json  (atomic temp+rename, 0600)
@@ -192,7 +192,7 @@ File: `src-tauri/src/provider.rs:225-301` — add one field to the existing stru
 
 ```rust
 /// Captured Claude OAuth identity for this provider (Official/Claude only).
-/// Presence implies a snapshot exists under ~/.cc-switch/accounts/{id}/.
+/// Presence implies a snapshot exists under ~/.switchy/accounts/{id}/.
 #[serde(rename = "capturedClaudeAccount", skip_serializing_if = "Option::is_none")]
 pub captured_claude_account: Option<CapturedClaudeAccountMeta>,
 ```
@@ -217,7 +217,7 @@ pub struct CapturedClaudeAccountMeta {
 
 The TS interface in `src/types.ts` (C4 below) must match this shape field-for-field. Any implementer adding a field here must add it in both places in the same edit.
 
-**Why it lives in `ProviderMeta` and not a separate table:** `ProviderMeta` already uses the `~/.cc-switch/config.json` persistence path via the DB's provider row, and re-uses the `#[serde(skip_serializing_if)]` + camelCase convention the TS renderer already knows. Adding a sibling DB table would duplicate the "Provider + metadata" join for a single optional field.
+**Why it lives in `ProviderMeta` and not a separate table:** `ProviderMeta` already uses the `~/.switchy/config.json` persistence path via the DB's provider row, and re-uses the `#[serde(skip_serializing_if)]` + camelCase convention the TS renderer already knows. Adding a sibling DB table would duplicate the "Provider + metadata" join for a single optional field.
 
 **Why also store `email_address` in meta (duplicated with `oauth_account.json`):** the card needs to render the email without reading the snapshot on every refresh. The canonical source is still the snapshot file; meta is a denormalized cache updated on capture/clear only.
 
@@ -286,13 +286,13 @@ Every input, constant, and configuration value traced to its canonical source.
 | 2 | Live Claude config (for capture and restore) | Primary: `get_claude_config_dir().join(".claude.json")`. Fallback: `get_home_dir().join(".claude.json")`. **Selection rule:** if primary exists, use primary. Else if fallback exists, use fallback. Else on capture: hard error (AC-1.4). Else on restore: create primary. | See AC-2.1. |
 | 3 | WSL mirror target for credentials | `get_claude_mirror_override_dir().join(".credentials.json")`. | If override is None: skip mirror entirely (AC-4.1 gate). |
 | 4 | WSL mirror target for oauthAccount | Primary: `mirror_dir.join(".claude.json")`. Fallback: `mirror_dir.join("claude.json")` (no dot). **Selection rule:** same primary-else-fallback-else-create-primary pattern as Row 2. **Note:** this is a *different file pair* from the existing provider-field mirror at `live.rs:748-755`, which chooses between `settings.json` and `claude.json`. The provider-field mirror and the oauthAccount mirror operate on separate files in the same mirror directory; the legacy-filename *pattern* is reused, but the file names are different. | Unparseable primary: skip mirror oauthAccount update; still write `.credentials.json`. Log warn. (AC-4.3) |
-| 5 | Captured credentials blob | `~/.cc-switch/accounts/{provider_id}/credentials.json` | At swap: parse failure → abort swap, no writes (AC-2.4). |
-| 6 | Captured oauthAccount object | `~/.cc-switch/accounts/{provider_id}/oauth_account.json` | At swap: parse failure → abort swap, no writes (AC-2.4). |
+| 5 | Captured credentials blob | `~/.switchy/accounts/{provider_id}/credentials.json` | At swap: parse failure → abort swap, no writes (AC-2.4). |
+| 6 | Captured oauthAccount object | `~/.switchy/accounts/{provider_id}/oauth_account.json` | At swap: parse failure → abort swap, no writes (AC-2.4). |
 | 7 | Captured identity for UI | `Provider.meta.capturedClaudeAccount` (DB-backed via existing provider storage). Denormalized; authoritative source is the `oauth_account.json` file. | Absent → card shows no identity (AC-3.2). |
 | 8 | `account_uuid` for confirmation dialog | Compare `meta.capturedClaudeAccount.account_uuid` (stored) vs. newly read `.oauthAccount.accountUuid`. | See AC-1.5. |
 | 9 | `captured_at` timestamp | `chrono::Utc::now().timestamp()` at capture time. | N/A — always set on capture. |
 | 10 | Snapshot file permissions | Unix: `0o600` via `std::os::unix::fs::PermissionsExt`. Windows: rely on NTFS per-user ACL (default for files created under user profile). | Platform-dispatched; no user-visible config. |
-| 11 | Home dir | `crate::config::get_home_dir()` (`config.rs:21`). Respects `CC_SWITCH_TEST_HOME`. | Falls back to `.` (existing behavior, unchanged). |
+| 11 | Home dir | `crate::config::get_home_dir()` (`config.rs:21`). Respects `SWITCHY_TEST_HOME`. | Falls back to `.` (existing behavior, unchanged). |
 
 ### `oauthAccount` observed shape (O-1 resolution)
 
@@ -326,7 +326,7 @@ Snapshot taken from `~/.claude.json` on user's Windows machine, **2026-04-16**:
 | `account_uuid`/`email_address` field missing or empty | Same | Same error key as above — user has no way to distinguish these cases, and the fix is the same (run Claude Code once). | Toast; AC-1.4 |
 | New capture's UUID differs from stored | `capture` before overwriting | Return `CaptureOutcome::NeedsConfirmation` | AlertDialog; AC-1.5 |
 | Snapshot file parse failure at swap | `claude_account::swap_if_captured` | Abort before any target write; return `AppError::Message("Captured snapshot for '{id}' is corrupt: {file}")`; caller converts to `credential_swap_failed:{id}` warning | Toast on switch result; AC-2.4 |
-| Snapshot directory or files missing at swap (metadata present, files gone) | Same — probe existence before parse | Return `AppError::Message("No captured snapshot found for '{id}'")`. Should not happen in normal flow; indicates external interference with `~/.cc-switch/accounts/`. Caller converts to `credential_swap_failed:{id}` warning, same as parse failure. | Toast; AC-2.4 (same non-destructive outcome) |
+| Snapshot directory or files missing at swap (metadata present, files gone) | Same — probe existence before parse | Return `AppError::Message("No captured snapshot found for '{id}'")`. Should not happen in normal flow; indicates external interference with `~/.switchy/accounts/`. Caller converts to `credential_swap_failed:{id}` warning, same as parse failure. | Toast; AC-2.4 (same non-destructive outcome) |
 | Windows target `.credentials.json` write fails (locked / EACCES) | Inside atomic write helper | Return error; caller records warning | AC-2.3 |
 | Windows target `.claude.json` merge fails | Same | Same | AC-2.3 |
 | Mirror directory unreachable | Probe failure on first mirror write | Log `warn`; push to `SwapOutcome::PartialMirror`; do **not** fail switch | AC-4.2 |
@@ -374,11 +374,11 @@ Tag strings are stable — the renderer's switch-on-prefix logic keys off them. 
 
 ### D-3 — Per-provider snapshot dir keyed by `provider.id`
 
-**Decision:** Snapshot files live at `~/.cc-switch/accounts/{provider.id}/{credentials.json, oauth_account.json}`.
+**Decision:** Snapshot files live at `~/.switchy/accounts/{provider.id}/{credentials.json, oauth_account.json}`.
 
 **Alternatives considered:**
 - Key by `account_uuid`. Rejected: deleting a provider row would orphan the snapshot. Keying by `provider.id` makes "delete provider → delete snapshot dir" a simple operation on one path.
-- Flat file per provider (`~/.cc-switch/accounts/{id}.json` with both blobs embedded). Rejected: the credentials blob is opaque; bundling it with `oauthAccount` inside a wrapper JSON risks Switchy parsing what it should treat as bytes.
+- Flat file per provider (`~/.switchy/accounts/{id}.json` with both blobs embedded). Rejected: the credentials blob is opaque; bundling it with `oauthAccount` inside a wrapper JSON risks Switchy parsing what it should treat as bytes.
 
 ### D-4 — Restore-time merge: replace vs. deep-merge `oauthAccount`
 
@@ -401,7 +401,7 @@ Tag strings are stable — the renderer's switch-on-prefix logic keys off them. 
 
 ### D-7 — Plaintext snapshot, `0600` on Unix
 
-**Decision:** Snapshot files stored plaintext under `~/.cc-switch/accounts/{id}/` with `0o600` on Unix; default NTFS user-profile ACL on Windows. No encryption in v1.
+**Decision:** Snapshot files stored plaintext under `~/.switchy/accounts/{id}/` with `0o600` on Unix; default NTFS user-profile ACL on Windows. No encryption in v1.
 
 **Rationale:** Claude Code's own `.credentials.json` is plaintext with the same permissions. Switchy's snapshot has the same sensitivity; introducing a key-management story (where does the encryption key live?) is a v2 problem. Documented in requirements "Out of scope".
 
@@ -423,7 +423,7 @@ Tag strings are stable — the renderer's switch-on-prefix logic keys off them. 
 
 **Rust unit tests** (added to `services/claude_account/tests.rs`, follow the existing `services::provider::live` test pattern):
 
-- `capture_reads_credentials_and_oauthAccount_from_live_files` — uses `CC_SWITCH_TEST_HOME` to redirect `get_home_dir`.
+- `capture_reads_credentials_and_oauthAccount_from_live_files` — uses `SWITCHY_TEST_HOME` to redirect `get_home_dir`.
 - `capture_fails_when_credentials_missing` — asserts specific `AppError` key.
 - `capture_fails_when_oauthAccount_missing` — asserts specific `AppError` key.
 - `capture_returns_needs_confirmation_on_uuid_mismatch_unless_force_true`.

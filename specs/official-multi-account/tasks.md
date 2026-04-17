@@ -16,7 +16,7 @@ Add the `CapturedClaudeAccountMeta` struct and the `captured_claude_account: Opt
 - `cargo test --lib` passes (no existing test should break).
 - `cargo build` passes.
 - Round-trip serialize a `ProviderMeta` with the new field populated and confirm the JSON contains the key `"capturedClaudeAccount"` with nested camelCase keys `accountUuid`, `emailAddress`, `capturedAt`. Put this in a new unit test inside the existing `#[cfg(test)] mod tests` block in `provider.rs` (or `provider/tests.rs` if one exists).
-- Load an existing Switchy `~/.cc-switch/config.json` produced by the pre-feature build; ensure deserialization succeeds with `captured_claude_account: None`.
+- Load an existing Switchy `~/.switchy/config.json` produced by the pre-feature build; ensure deserialization succeeds with `captured_claude_account: None`.
 
 _Refs:_ `src-tauri/src/provider.rs:225-301`
 _Req:_ supports US-1, US-2, US-5 — data model prerequisite
@@ -36,7 +36,7 @@ Create the module tree under `src-tauri/src/services/claude_account/` with `mod.
 - `pub fn mirror_claude_config_path(mirror_dir: &Path) -> PathBuf` — selects per Design §Data Sources Row 4: primary `mirror_dir.join(".claude.json")`, fallback `mirror_dir.join("claude.json")`, else primary.
 
 **Verification:**
-- Add unit tests using `CC_SWITCH_TEST_HOME` (`config.rs:22`) to redirect home dir into a tempdir, then assert each path function returns the expected `PathBuf` in each of the three cases (primary exists, only legacy exists, neither exists).
+- Add unit tests using `SWITCHY_TEST_HOME` (`config.rs:22`) to redirect home dir into a tempdir, then assert each path function returns the expected `PathBuf` in each of the three cases (primary exists, only legacy exists, neither exists).
 - `cargo test --lib services::claude_account::paths` passes with at least 4 tests covering the three cases for `live_claude_config_path` + a basic case for `snapshot_dir`.
 
 _Refs:_ `src-tauri/src/services/claude_account/mod.rs` (new), `src-tauri/src/services/claude_account/paths.rs` (new), `src-tauri/src/services/claude_account/tests.rs` (new), `src-tauri/src/services/mod.rs`
@@ -112,7 +112,7 @@ Steps:
 - Unit test: existing capture with matching UUID, force=false → silently overwrites (returns `Captured`, AC-1.5 silent case).
 - Unit test: existing capture with *different* UUID, force=false → returns `NeedsConfirmation` with both identities populated, no file writes, no DB write.
 - Unit test: same as above but force=true → overwrites (returns `Captured`).
-- Use `CC_SWITCH_TEST_HOME` to isolate the filesystem. Use an in-memory or temp SQLite database via the existing `AppState` test helpers (see `src-tauri/src/services/provider/mod.rs:52+` for the existing pattern).
+- Use `SWITCHY_TEST_HOME` to isolate the filesystem. Use an in-memory or temp SQLite database via the existing `AppState` test helpers (see `src-tauri/src/services/provider/mod.rs:52+` for the existing pattern).
 
 _Refs:_ `src-tauri/src/services/claude_account/mod.rs`
 _Req:_ US-1 AC-1.1, AC-1.3, AC-1.4, AC-1.5
@@ -222,7 +222,7 @@ Search `fn delete_provider` in `src-tauri/src/services/provider/mod.rs`. Immedia
 
 **Verification:**
 - Existing provider-delete tests still pass.
-- New test: create an Official Claude provider, capture, delete the provider → assert `~/.cc-switch/accounts/{id}/` is gone AND the provider row is gone.
+- New test: create an Official Claude provider, capture, delete the provider → assert `~/.switchy/accounts/{id}/` is gone AND the provider row is gone.
 - New test: same as above but with `delete_snapshot_dir` stubbed to error → assert provider row is still deleted (warn logged, not returned).
 
 _Refs:_ `src-tauri/src/services/provider/mod.rs` (search `fn delete_provider`)
@@ -393,7 +393,7 @@ Run the existing build pipeline (`pnpm tauri build`) from a clean tree. Confirm 
 
 **Verification:**
 - Installer exists at expected path.
-- Installing it over the existing Switchy preserves `~/.cc-switch/` data (no data loss — regression guard for `DECISION_LOG.md` 2026-04-07 namespace continuity decision).
+- Installing it over the existing Switchy preserves `~/.switchy/` data (no data loss — regression guard for `DECISION_LOG.md` 2026-04-07 namespace continuity decision).
 - Fresh install on a clean profile opens without error.
 
 _Refs:_ `src-tauri/tauri.conf.json` (version bump)

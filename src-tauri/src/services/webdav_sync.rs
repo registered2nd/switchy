@@ -29,7 +29,7 @@ use archive::{
 
 // ─── Protocol constants ──────────────────────────────────────
 
-const PROTOCOL_FORMAT: &str = "cc-switch-webdav-sync";
+const PROTOCOL_FORMAT: &str = "switchy-webdav-sync";
 const PROTOCOL_VERSION: u32 = 2;
 const DB_COMPAT_VERSION: u32 = 6;
 const LEGACY_DB_COMPAT_VERSION: u32 = 5;
@@ -376,7 +376,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn detect_system_device_name() -> Option<String> {
-    let env_name = ["CC_SWITCH_DEVICE_NAME", "COMPUTERNAME", "HOSTNAME"]
+    let env_name = ["SWITCHY_DEVICE_NAME", "COMPUTERNAME", "HOSTNAME"]
         .iter()
         .filter_map(|key| std::env::var(key).ok())
         .find_map(|value| normalize_device_name(&value));
@@ -702,23 +702,23 @@ mod tests {
     #[test]
     fn remote_dir_segments_uses_current_layout() {
         let settings = WebDavSyncSettings {
-            remote_root: "cc-switch-sync".to_string(),
+            remote_root: "switchy-sync".to_string(),
             profile: "default".to_string(),
             ..WebDavSyncSettings::default()
         };
         let segs = remote_dir_segments(&settings, RemoteLayout::Current);
-        assert_eq!(segs, vec!["cc-switch-sync", "v2", "db-v6", "default"]);
+        assert_eq!(segs, vec!["switchy-sync", "v2", "db-v6", "default"]);
     }
 
     #[test]
     fn remote_dir_segments_uses_legacy_layout() {
         let settings = WebDavSyncSettings {
-            remote_root: "cc-switch-sync".to_string(),
+            remote_root: "switchy-sync".to_string(),
             profile: "default".to_string(),
             ..WebDavSyncSettings::default()
         };
         let segs = remote_dir_segments(&settings, RemoteLayout::Legacy);
-        assert_eq!(segs, vec!["cc-switch-sync", "v2", "default"]);
+        assert_eq!(segs, vec!["switchy-sync", "v2", "default"]);
     }
 
     #[test]

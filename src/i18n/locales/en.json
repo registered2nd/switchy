@@ -414,7 +414,7 @@
         "synologyHint": "Install and enable the WebDAV Server package in Synology Package Center first.",
         "custom": "Custom"
       },
-      "remoteRootDefault": "Default: cc-switch-sync",
+      "remoteRootDefault": "Default: switchy-sync",
       "profileDefault": "Default: default",
       "saveAndTestSuccess": "Config saved, connection OK",
       "saveAndTestFailed": "Config saved, but connection test failed: {{error}}",
@@ -517,7 +517,7 @@
     "configDirectoryDescription": "When using Claude Code or Codex in environments like WSL, you can manually specify the configuration directory to the one in WSL to keep provider data consistent with the main environment.",
     "appConfigDir": "Switchy Configuration Directory",
     "appConfigDirDescription": "Customize the storage location for Switchy configuration (point to cloud sync folder to enable config sync)",
-    "browsePlaceholderApp": "e.g., C:\\Users\\Administrator\\.cc-switch",
+    "browsePlaceholderApp": "e.g., C:\\Users\\Administrator\\.switchy",
     "claudeConfigDir": "Claude Code Configuration Directory",
     "claudeConfigDirDescription": "Override Claude configuration directory (settings.json) and keep claude.json (MCP) alongside it.",
     "claudeMirrorConfigDir": "Claude Code Mirror Directory",
@@ -720,7 +720,7 @@
     "officialHint": "💡 Official provider uses browser login, no API Key needed",
     "getApiKey": "Get API Key",
     "partnerPromotion": {
-      "packycode": "PackyCode is an official partner of Switchy. Register using this link and enter \"cc-switch\" promo code during recharge to get 10% off",
+      "packycode": "PackyCode is an official partner of Switchy. Register using this link and enter \"switchy\" promo code during recharge to get 10% off",
       "minimax_cn": "MiniMax Coding Plan Special Offer, Starter from ¥9.9",
       "minimax_en": "MiniMax Coding Plan Black Friday, Starter is now $2/mo (80% OFF!)",
       "dmxapi": "Claude Code exclusive model 66% OFF now!",

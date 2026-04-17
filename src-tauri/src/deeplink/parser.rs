@@ -1,6 +1,6 @@
 //! Deep link URL parser
 //!
-//! Parses switchy:// and legacy ccswitch:// URLs into DeepLinkImportRequest structures.
+//! Parses switchy:// URLs into DeepLinkImportRequest structures.
 
 use super::utils::validate_url;
 use super::DeepLinkImportRequest;
@@ -19,9 +19,9 @@ pub fn parse_deeplink_url(url_str: &str) -> Result<DeepLinkImportRequest, AppErr
 
     // Validate scheme
     let scheme = url.scheme();
-    if scheme != "switchy" && scheme != "ccswitch" {
+    if scheme != "switchy" && scheme != "switchy" {
         return Err(AppError::InvalidInput(format!(
-            "Invalid scheme: expected 'switchy' or legacy 'ccswitch', got '{scheme}'"
+            "Invalid scheme: expected 'switchy' or legacy 'switchy', got '{scheme}'"
         )));
     }
 

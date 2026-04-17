@@ -22,7 +22,7 @@ This spec does NOT own:
 - The existing WSL provider-field mirror semantics (`env` subset + `model` + `permissions` + `effortLevel`) — see `docs/fork-notes-windows-wsl-claude-sync.md` and `DECISION_LOG.md` 2026-04-07. This spec adds a parallel credential-swap pass; it does not revisit the provider-field decision.
 - macOS Keychain handling (deferred — see "Out of scope").
 - Codex / Gemini / OpenCode / OpenClaw apps (Claude only in v1).
-- The existing `~/.cc-switch/` namespace (see `DECISION_LOG.md` 2026-04-07).
+- The existing `~/.switchy/` namespace (see `DECISION_LOG.md` 2026-04-07).
 
 ## Upstream dependencies
 
@@ -52,7 +52,7 @@ External state the WSL mirror target exposes:
 |---|---|
 | OAuth token file format | Claude Code — Switchy treats as opaque. |
 | `oauthAccount` JSON shape | Claude Code — Switchy depends only on `emailAddress` + `accountUuid` for display and preserves the rest on restore. |
-| Per-provider captured snapshot storage | Switchy — lives under its existing `~/.cc-switch/` data dir (see `get_app_config_dir` in `src-tauri/src/config.rs:89-122`). Exact sub-layout is a design decision, not a requirements decision. |
+| Per-provider captured snapshot storage | Switchy — lives under its existing `~/.switchy/` data dir (see `get_app_config_dir` in `src-tauri/src/config.rs:89-122`). Exact sub-layout is a design decision, not a requirements decision. |
 
 ## User stories
 
@@ -105,7 +105,7 @@ External state the WSL mirror target exposes:
 
 **Acceptance criteria**
 
-- **AC-5.1** The provider card offers a "clear captured account" action. Invoking it removes that provider's snapshot from `~/.cc-switch/`. The provider row remains.
+- **AC-5.1** The provider card offers a "clear captured account" action. Invoking it removes that provider's snapshot from `~/.switchy/`. The provider row remains.
 - **AC-5.2** Clearing the captured snapshot does not modify `~/.claude/` state. If that provider is currently active and Claude Code is logged in with its account, the user remains logged in — Switchy simply forgets the snapshot.
 - **AC-5.3** Deleting the Official provider entirely (existing Delete action) also deletes the captured snapshot for that provider in the same transaction.
 
@@ -124,7 +124,7 @@ External state the WSL mirror target exposes:
 ## Out of scope (deferred to later versions)
 
 - **macOS Keychain.** ming86/cc-account-switcher handles macOS via `security find-generic-password -s "Claude Code-credentials"`. v1 is Windows + WSL only. macOS capture/restore is a v2 decision — deferred because (a) macOS is not this user's daily platform and (b) Keychain manipulation requires a different privilege/UX path than file I/O.
-- **Encryption of the snapshot store.** v1 stores captured `.credentials.json` in plaintext under `~/.cc-switch/` with the same filesystem permissions the user's `~/.claude/.credentials.json` already has. Cross-machine sharing of snapshots and at-rest encryption are deferred.
+- **Encryption of the snapshot store.** v1 stores captured `.credentials.json` in plaintext under `~/.switchy/` with the same filesystem permissions the user's `~/.claude/.credentials.json` already has. Cross-machine sharing of snapshots and at-rest encryption are deferred.
 - **More than N accounts.** Switchy already supports arbitrarily many provider rows. No cap is introduced by this spec; the feature works for 1 captured account, 2, or N. "Two" is the primary motivating case but the design should not hardcode it.
 - **Codex / Gemini / OpenCode / OpenClaw equivalents.** Each of those apps has a different auth model. v1 ships Claude only.
 - **Automating `claude /login`.** Switchy does not launch or automate the Claude Code login flow. The user must log in once per account before invoking capture.

@@ -4,10 +4,10 @@
 
 ### The All-in-One Manager for Claude Code, Codex, Gemini CLI, OpenCode & OpenClaw
 
-[![Version](https://img.shields.io/github/v/release/farion1231/cc-switch?color=blue&label=version)](https://github.com/farion1231/cc-switch/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/farion1231/cc-switch/releases)
+[![Version](https://img.shields.io/github/v/release/registered2nd/switchy?color=blue&label=version)](https://github.com/registered2nd/switchy/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/registered2nd/switchy/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
-[![Downloads](https://img.shields.io/github/downloads/farion1231/cc-switch/total)](https://github.com/farion1231/cc-switch/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/registered2nd/switchy/total)](https://github.com/registered2nd/switchy/releases/latest)
 
 <a href="https://trendshift.io/repositories/15372" target="_blank"><img src="https://trendshift.io/api/badge/repositories/15372" alt="farion1231%2Fcc-switch | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
@@ -32,8 +32,8 @@ MiniMax-M2.7 is a next-generation large language model designed for autonomous e
 
 <table>
 <tr>
-<td width="180"><a href="https://www.packyapi.com/register?aff=cc-switch"><img src="assets/partners/logos/packycode.png" alt="PackyCode" width="150"></a></td>
-<td>Thanks to PackyCode for sponsoring this project! PackyCode is a reliable and efficient API relay service provider, offering relay services for Claude Code, Codex, Gemini, and more. PackyCode provides special discounts for our software users: register using <a href="https://www.packyapi.com/register?aff=cc-switch">this link</a> and enter the "cc-switch" promo code during first recharge to get 10% off.</td>
+<td width="180"><a href="https://www.packyapi.com/register?aff=switchy"><img src="assets/partners/logos/packycode.png" alt="PackyCode" width="150"></a></td>
+<td>Thanks to PackyCode for sponsoring this project! PackyCode is a reliable and efficient API relay service provider, offering relay services for Claude Code, Codex, Gemini, and more. PackyCode provides special discounts for our software users: register using <a href="https://www.packyapi.com/register?aff=switchy">this link</a> and enter the "switchy" promo code during first recharge to get 10% off.</td>
 </tr>
 
 <tr>
@@ -78,8 +78,8 @@ Claude Code / Codex / Gemini official channels at 38% / 2% / 9% of original pric
 </tr>
 
 <tr>
-<td width="180"><a href="https://crazyrouter.com/register?aff=OZcm&ref=cc-switch"><img src="assets/partners/logos/crazyrouter.jpg" alt="Crazyrouter" width="150"></a></td>
-<td>Thanks to Crazyrouter for sponsoring this project! Crazyrouter is a high-performance AI API aggregation platform — one API key for 300+ models including Claude Code, Codex, Gemini CLI, and more. All models at 55% of official pricing with auto-failover, smart routing, and unlimited concurrency. Crazyrouter offers an exclusive deal for Switchy users: register via <a href="https://crazyrouter.com/register?aff=OZcm&ref=cc-switch">this link</a>  to get <strong>$2 free credit</strong> instantly, plus enter promo code `CCSWITCH` on your first top-up for an extra <strong>30% bonus credit</strong>! </td>
+<td width="180"><a href="https://crazyrouter.com/register?aff=OZcm&ref=switchy"><img src="assets/partners/logos/crazyrouter.jpg" alt="Crazyrouter" width="150"></a></td>
+<td>Thanks to Crazyrouter for sponsoring this project! Crazyrouter is a high-performance AI API aggregation platform — one API key for 300+ models including Claude Code, Codex, Gemini CLI, and more. All models at 55% of official pricing with auto-failover, smart routing, and unlimited concurrency. Crazyrouter offers an exclusive deal for Switchy users: register via <a href="https://crazyrouter.com/register?aff=OZcm&ref=switchy">this link</a>  to get <strong>$2 free credit</strong> instantly, plus enter promo code `CCSWITCH` on your first top-up for an extra <strong>30% bonus credit</strong>! </td>
 </tr>
 
 <tr>
@@ -89,7 +89,7 @@ Claude Code / Codex / Gemini official channels at 38% / 2% / 9% of original pric
 
 <tr>
 <td width="180"><a href="https://www.openclaudecode.cn/register?aff=aOYQ"><img src="assets/partners/logos/mikubanner.svg" alt="Micu" width="150"></a></td>
-<td>Thanks to Micu API for sponsoring this project! Micu API is a global LLM relay service provider dedicated to delivering the best cost-performance ratio with high stability. Backed by a registered enterprise for core assurance, eliminating any risk of service discontinuation, with fast official invoicing support! We champion "zero cost to try": top up from as low as ¥1 with no minimum, and get fee-free refunds anytime! Micu API offers an exclusive deal for Switchy users: register via <a href="https://www.openclaudecode.cn/register?aff=aOYQ">this link</a> and enter promo code "ccswitch" when topping up to enjoy a <strong>10% discount</strong>!</td>
+<td>Thanks to Micu API for sponsoring this project! Micu API is a global LLM relay service provider dedicated to delivering the best cost-performance ratio with high stability. Backed by a registered enterprise for core assurance, eliminating any risk of service discontinuation, with fast official invoicing support! We champion "zero cost to try": top up from as low as ¥1 with no minimum, and get fee-free refunds anytime! Micu API offers an exclusive deal for Switchy users: register via <a href="https://www.openclaudecode.cn/register?aff=aOYQ">this link</a> and enter promo code "switchy" when topping up to enjoy a <strong>10% discount</strong>!</td>
 </tr>
 
 <tr>
@@ -218,11 +218,11 @@ Add an official provider from the preset list. After switching to it, run the Lo
 <details>
 <summary><strong>Where is my data stored?</strong></summary>
 
-- **Database**: `~/.cc-switch/cc-switch.db` (SQLite — providers, MCP, prompts, skills)
-- **Local settings**: `~/.cc-switch/settings.json` (device-level UI preferences)
-- **Backups**: `~/.cc-switch/backups/` (auto-rotated, keeps 10 most recent)
-- **Skills**: `~/.cc-switch/skills/` (symlinked to corresponding apps by default)
-- **Skill Backups**: `~/.cc-switch/skill-backups/` (created automatically before uninstall, keeps 20 most recent)
+- **Database**: `~/.switchy/switchy.db` (SQLite — providers, MCP, prompts, skills)
+- **Local settings**: `~/.switchy/settings.json` (device-level UI preferences)
+- **Backups**: `~/.switchy/backups/` (auto-rotated, keeps 10 most recent)
+- **Skills**: `~/.switchy/skills/` (symlinked to corresponding apps by default)
+- **Skill Backups**: `~/.switchy/skill-backups/` (created automatically before uninstall, keeps 20 most recent)
 
 </details>
 
@@ -260,26 +260,26 @@ For detailed guides on every feature, check out the **[User Manual](docs/user-ma
 
 ### Windows Users
 
-Download the latest `CC-Switch-v{version}-Windows.msi` installer or `CC-Switch-v{version}-Windows-Portable.zip` portable version from the [Releases](../../releases) page.
+Download the latest `Switchy-v{version}-Windows.msi` installer or `Switchy-v{version}-Windows-Portable.zip` portable version from the [Releases](../../releases) page.
 
 ### macOS Users
 
 **Method 1: Install via Homebrew (Recommended)**
 
 ```bash
-brew tap farion1231/ccswitch
-brew install --cask cc-switch
+brew tap registered2nd/switchy
+brew install --cask switchy
 ```
 
 Update:
 
 ```bash
-brew upgrade --cask cc-switch
+brew upgrade --cask switchy
 ```
 
 **Method 2: Manual Download**
 
-Download `CC-Switch-v{version}-macOS.dmg` (recommended) or `.zip` from the [Releases](../../releases) page.
+Download `Switchy-v{version}-macOS.dmg` (recommended) or `.zip` from the [Releases](../../releases) page.
 
 > **Note**: Switchy for macOS is code-signed and notarized by Apple. You can install and open it directly.
 
@@ -288,16 +288,16 @@ Download `CC-Switch-v{version}-macOS.dmg` (recommended) or `.zip` from the [Rele
 **Install via paru (Recommended)**
 
 ```bash
-paru -S cc-switch-bin
+paru -S switchy-bin
 ```
 
 ### Linux Users
 
 Download the latest Linux build from the [Releases](../../releases) page:
 
-- `CC-Switch-v{version}-Linux.deb` (Debian/Ubuntu)
-- `CC-Switch-v{version}-Linux.rpm` (Fedora/RHEL/openSUSE)
-- `CC-Switch-v{version}-Linux.AppImage` (Universal)
+- `Switchy-v{version}-Linux.deb` (Debian/Ubuntu)
+- `Switchy-v{version}-Linux.rpm` (Fedora/RHEL/openSUSE)
+- `Switchy-v{version}-Linux.AppImage` (Universal)
 
 > **Flatpak**: Not included in official releases. You can build it yourself from the `.deb` — see [`flatpak/README.md`](flatpak/README.md) for instructions.
 
@@ -326,7 +326,7 @@ Download the latest Linux build from the [Releases](../../releases) page:
 
 **Core Design Patterns**
 
-- **SSOT** (Single Source of Truth): All data stored in `~/.cc-switch/cc-switch.db` (SQLite)
+- **SSOT** (Single Source of Truth): All data stored in `~/.switchy/switchy.db` (SQLite)
 - **Dual-layer Storage**: SQLite for syncable data, JSON for device-level settings
 - **Dual-way Sync**: Write to live files on switch, backfill from live when editing active provider
 - **Atomic Writes**: Temp file + rename pattern prevents config corruption
@@ -492,7 +492,7 @@ For new features, please open an issue for discussion before submitting a PR. PR
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=farion1231/cc-switch&type=Date)](https://www.star-history.com/#farion1231/cc-switch&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=registered2nd/switchy&type=Date)](https://www.star-history.com/#registered2nd/switchy&Date)
 
 ## License
 

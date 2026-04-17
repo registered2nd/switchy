@@ -1,6 +1,37 @@
 # Decision Log
 
+## 2026-04-17 - De-fork Switchy: supersede upstream namespace decision
+
+- Decision:
+  - Switchy is its own project, not a fork. The `de-fork` spec
+    (`specs/de-fork/`) renamed upstream `cc-switch` / `CC Switch` /
+    `com.ccswitch.desktop` identifiers, the repository remote, and the app
+    data directory (`~/.cc-switch/` → `~/.switchy/`, `cc-switch.db` →
+    `switchy.db`). A one-shot migration shim
+    (`src-tauri/src/migrate_paths.rs`) renames existing installs in place
+    on startup.
+- Why:
+  - Fork status was holding back the project's identity and made future
+    divergence harder. Native multi-account switching (active spec) would
+    have deepened the branching debt.
+  - The 2026-04-07 decision below (keep upstream namespace for continuity)
+    is now obsolete; the migration shim supplies the continuity by
+    renaming the directory rather than leaving it under an upstream name.
+- Consequence:
+  - The old `farion1231/cc-switch` remote is preserved as `upstream`
+    for cherry-picking; `origin` now points at `registered2nd/switchy`.
+  - Users upgrading from the pre-rename build have their data auto-migrated
+    on first launch. The shim is idempotent; ship for one release then
+    remove.
+  - Historical entries (SESSION_LOG, CHANGELOG entries describing shipped
+    versions, the 2026-04-07 entry below) are preserved verbatim and
+    intentionally still mention the upstream name — they describe past
+    state.
+
 ## 2026-04-07 - Keep existing app data namespace for continuity
+
+*(Superseded 2026-04-17 by the de-fork decision above. Kept verbatim as history.)*
+
 
 - Decision:
   - Keep the existing internal storage/config namespace (`~/.cc-switch`, related storage keys, and inherited profiles) for now.
