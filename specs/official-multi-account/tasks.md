@@ -8,7 +8,7 @@ Terminology: the `_Refs_` list names files to create or modify. `_Depends on:_` 
 
 ## Phase 1 — Rust data model & storage (no UI yet)
 
-### T-1.1 Extend `ProviderMeta` with `capturedClaudeAccount`
+### T-1.1 Extend `ProviderMeta` with `capturedClaudeAccount` ✅
 
 Add the `CapturedClaudeAccountMeta` struct and the `captured_claude_account: Option<CapturedClaudeAccountMeta>` field to `ProviderMeta`, with `#[serde(rename_all = "camelCase")]` on the new struct and `#[serde(rename = "capturedClaudeAccount", skip_serializing_if = "Option::is_none")]` on the field. Fields: `account_uuid: String`, `email_address: String`, `captured_at: i64`.
 
@@ -24,7 +24,7 @@ _Depends on:_ —
 
 ---
 
-### T-1.2 Create `services/claude_account/` skeleton and paths helpers
+### T-1.2 Create `services/claude_account/` skeleton and paths helpers ✅
 
 Create the module tree under `src-tauri/src/services/claude_account/` with `mod.rs`, `paths.rs`, and an empty `tests.rs`. Wire `mod claude_account;` into `src-tauri/src/services/mod.rs`. Implement in `paths.rs`:
 
@@ -45,7 +45,7 @@ _Depends on:_ —
 
 ---
 
-### T-1.3 Implement atomic snapshot store in `services/claude_account/store.rs`
+### T-1.3 Implement atomic snapshot store in `services/claude_account/store.rs` ✅
 
 Create `store.rs` with:
 
@@ -65,7 +65,7 @@ _Depends on:_ T-1.2
 
 ---
 
-### T-1.4 Implement `oauthAccount`-only merge in `services/claude_account/merge.rs`
+### T-1.4 Implement `oauthAccount`-only merge in `services/claude_account/merge.rs` ✅
 
 Create `merge.rs` with:
 
@@ -86,7 +86,7 @@ _Depends on:_ T-1.2
 
 ## Phase 2 — Capture / clear / swap operations
 
-### T-2.1 Implement `capture` in `services/claude_account/mod.rs`
+### T-2.1 Implement `capture` in `services/claude_account/mod.rs` ✅
 
 Public API per Design §C1:
 
@@ -120,7 +120,7 @@ _Depends on:_ T-1.1, T-1.3, T-1.4
 
 ---
 
-### T-2.2 Implement `clear` in `services/claude_account/mod.rs`
+### T-2.2 Implement `clear` in `services/claude_account/mod.rs` ✅
 
 ```rust
 pub fn clear(state: &AppState, provider_id: &str) -> Result<(), AppError>
@@ -143,7 +143,7 @@ _Depends on:_ T-1.1, T-1.3
 
 ---
 
-### T-2.3 Implement `swap_if_captured` in `services/claude_account/mod.rs`
+### T-2.3 Implement `swap_if_captured` in `services/claude_account/mod.rs` ✅
 
 ```rust
 pub fn swap_if_captured(state: &AppState, provider: &Provider) -> Result<SwapOutcome, AppError>
@@ -182,7 +182,7 @@ _Depends on:_ T-1.1, T-1.3, T-1.4
 
 ---
 
-### T-2.4 Implement `read_captured_identity` in `services/claude_account/mod.rs`
+### T-2.4 Implement `read_captured_identity` in `services/claude_account/mod.rs` ✅
 
 ```rust
 pub fn read_captured_identity(state: &AppState, provider_id: &str) -> Result<Option<CapturedIdentity>, AppError>
@@ -201,7 +201,7 @@ _Depends on:_ T-1.1
 
 ## Phase 3 — Wiring into existing flows
 
-### T-3.1 Insert `swap_if_captured` into `switch_normal`
+### T-3.1 Insert `swap_if_captured` into `switch_normal` ✅
 
 Modify `src-tauri/src/services/provider/mod.rs:1435-1548`. After the existing `write_live_with_common_config(...)?` call at line 1509 and **before** `McpService::sync_all_enabled(state)?;` at line 1546, insert exactly the block specified in Design §C1 "Exact injection point". The match handles `Ok(PartialMirror(w))`, other `Ok(_)`, and `Err(e)` — errors are logged and recorded in `result.warnings` as `credential_swap_failed:{id}`, not returned.
 
@@ -216,7 +216,7 @@ _Depends on:_ T-2.3
 
 ---
 
-### T-3.2 Wire `claude_account::clear` into `delete_provider`
+### T-3.2 Wire `claude_account::clear` into `delete_provider` ✅
 
 Search `fn delete_provider` in `src-tauri/src/services/provider/mod.rs`. Immediately before the DB removal, call `claude_account::clear(state, id)`. On `Err`, log `warn` and proceed with the DB delete (stale snapshot dir harmless).
 
@@ -231,7 +231,7 @@ _Depends on:_ T-2.2
 
 ---
 
-### T-3.3 Add Tauri command handlers in `commands/claude_account.rs`
+### T-3.3 Add Tauri command handlers in `commands/claude_account.rs` ✅
 
 Create `src-tauri/src/commands/claude_account.rs` with three `#[tauri::command]` functions matching Design §C2 signatures (`capture_claude_account`, `clear_claude_account`, `get_captured_claude_identity`). Register in `src-tauri/src/commands/mod.rs` and `src-tauri/src/lib.rs` following the existing `commands::provider::*` registration pattern.
 
@@ -248,7 +248,7 @@ _Depends on:_ T-2.1, T-2.2, T-2.4
 
 ## Phase 4 — Renderer
 
-### T-4.1 Extend TS `ProviderMeta` type
+### T-4.1 Extend TS `ProviderMeta` type ✅
 
 Add `capturedClaudeAccount?: { accountUuid: string; emailAddress: string; capturedAt: number; }` to the appropriate interface in `src/types.ts`. Location: the interface used by `Provider.meta` (search for existing camelCase fields like `commonConfigEnabled`).
 
@@ -261,7 +261,7 @@ _Depends on:_ T-1.1
 
 ---
 
-### T-4.2 Create `src/utils/truncateEmail.ts`
+### T-4.2 Create `src/utils/truncateEmail.ts` ✅
 
 Copy the implementation from Design §C4 verbatim. No deviations. Behavior summary: if input has an `@`, truncate local part to 12 chars (`…` suffix on overflow) and keep the full `@domain`; if input has no `@`, treat the whole string as local and truncate the same way; if input is empty, return empty string. All three branches must have tests.
 
@@ -280,7 +280,7 @@ _Depends on:_ —
 
 ---
 
-### T-4.3 Render captured identity subline in `ProviderCard`
+### T-4.3 Render captured identity subline in `ProviderCard` ✅
 
 Modify `src/components/providers/ProviderCard.tsx`. When `appId === "claude"` AND `isOfficialProvider(provider, appId)` AND `provider.meta?.capturedClaudeAccount` is set, render the subline from Design §C4 below the provider name. Use `truncateEmail` for the visible text and the full `accountUuid` as the `title` attribute for tooltip.
 
@@ -296,7 +296,7 @@ _Depends on:_ T-3.3, T-4.1, T-4.2
 
 ---
 
-### T-4.4 Add Capture/Clear buttons to `ProviderForm` (edit dialog)
+### T-4.4 Add Capture/Clear buttons to `ProviderForm` (edit dialog) ✅
 
 Modify `src/components/providers/forms/ProviderForm.tsx`. When editing an Official Claude provider, render two buttons in the dialog footer:
 
@@ -320,7 +320,7 @@ _Depends on:_ T-3.3, T-4.1
 
 ---
 
-### T-4.5 Add i18n keys
+### T-4.5 Add i18n keys ✅
 
 Add the keys from Design §C5 to `src/i18n/locales/en.json`, `zh.json`, and `ja.json`. English text from the design; zh/ja translations should be short and direct — keep English in a comment at the end of each line if translation fidelity is uncertain, for later review.
 
@@ -334,7 +334,7 @@ _Depends on:_ T-4.4
 
 ---
 
-### T-4.6 Surface `credential_swap_failed:*` / `credential_mirror_failed:*` warnings in switch toast
+### T-4.6 Surface `credential_swap_failed:*` / `credential_mirror_failed:*` warnings in switch toast ✅
 
 Search the renderer for the current consumer of `SwitchResult.warnings`. Extend it to parse the tag catalog from Design §Error Handling and map each prefix to the corresponding `claudeAccount.swap.warning.*` i18n key. Tag grammar:
 
@@ -353,16 +353,16 @@ _Depends on:_ T-4.5
 
 ## Phase 5 — End-to-end validation
 
-### T-5.1 Manual E2E walkthrough on Windows only (no mirror)
+### T-5.1 Manual E2E walkthrough on Windows only (no mirror) ✅
 
 Run through Requirements §Success Criteria items 1–3 on the user's actual machine. For each step, note observed vs. expected.
 
 **Verification checklist:**
-1. [ ] Logged in as account A in Claude Code → open Switchy, pick any existing Official Claude provider row (either the imported default entry or one manually created with empty `ANTHROPIC_BASE_URL`) → run Capture → card subline shows A's email.
-2. [ ] `claude /login` to account B → add new Official provider in Switchy UI → capture → subline shows B's email.
-3. [ ] Switch to A → open a new Claude Code session → `claude /status` (or equivalent) reports A.
-4. [ ] Switch back to B → new session reports B.
-5. [ ] During step 4, if Claude Code was open: reproduce the locked-file warning; toast appears; switch is non-destructive; retry after closing Claude Code succeeds.
+1. [x] Logged in as account A in Claude Code → open Switchy, pick any existing Official Claude provider row (either the imported default entry or one manually created with empty `ANTHROPIC_BASE_URL`) → run Capture → card subline shows A's email.
+2. [x] `claude /login` to account B → add new Official provider in Switchy UI → capture → subline shows B's email.
+3. [x] Switch to A → open a new Claude Code session → `claude /status` (or equivalent) reports A.
+4. [x] Switch back to B → new session reports B.
+5. [x] During step 4, if Claude Code was open: reproduce the locked-file warning; toast appears; switch is non-destructive; retry after closing Claude Code succeeds.
 
 _Refs:_ —
 _Req:_ Success criteria 1–3
@@ -370,11 +370,11 @@ _Depends on:_ T-4.6
 
 ---
 
-### T-5.2 Manual E2E with WSL mirror configured
+### T-5.2 Manual E2E with WSL mirror configured — **SKIPPED** (decision 2026-04-18)
 
-Same as T-5.1 but with `Claude Code Mirror Directory` set to `\\wsl$\Ubuntu-22.04\home\agentcode\.claude` (or the user's actual WSL Claude dir). Validate Requirements §Success Criteria item 4.
+Skipped by decision; see `DECISION_LOG.md` entry "Drop T-5.2 WSL validation from the multi-account ship." If a WSL mirror regression is reported after ship, it becomes its own session.
 
-**Verification checklist:**
+**Verification checklist (retained for reference):**
 1. [ ] Switch to A on Windows → inside WSL, `cat ~/.claude/.claude.json | jq .oauthAccount.emailAddress` returns A's email.
 2. [ ] Inside WSL, `cat ~/.claude/.credentials.json | jq type` returns `"object"` (i.e. file was replaced, not corrupted).
 3. [ ] Switch to B → same two commands reflect B.
@@ -387,7 +387,7 @@ _Depends on:_ T-5.1
 
 ---
 
-### T-5.3 Build Windows installer with feature enabled
+### T-5.3 Build Windows installer with feature enabled ✅
 
 Run the existing build pipeline (`pnpm tauri build`) from a clean tree. Confirm the installer builds and version is bumped appropriately (follow the pattern in `src-tauri/tauri.conf.json` — bump patch version). Installer ends up at `src-tauri/target/release/bundle/nsis/Switchy_{version}_x64-setup.exe`.
 

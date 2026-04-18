@@ -299,6 +299,21 @@ pub struct ProviderMeta {
     /// 用于多账号支持，关联到特定的 GitHub 账号
     #[serde(rename = "githubAccountId", skip_serializing_if = "Option::is_none")]
     pub github_account_id: Option<String>,
+    /// Captured Claude OAuth identity for this provider (Official/Claude only).
+    /// Presence implies a snapshot exists under ~/.switchy/accounts/{id}/.
+    #[serde(
+        rename = "capturedClaudeAccount",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub captured_claude_account: Option<CapturedClaudeAccountMeta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapturedClaudeAccountMeta {
+    pub account_uuid: String,
+    pub email_address: String,
+    pub captured_at: i64,
 }
 
 impl ProviderMeta {
@@ -718,10 +733,63 @@ pub struct OpenCodeModelLimit {
 #[cfg(test)]
 mod tests {
     use super::{
-        ClaudeModelConfig, CodexModelConfig, GeminiModelConfig, OpenCodeProviderConfig, Provider,
-        ProviderManager, ProviderMeta, UniversalProvider,
+        CapturedClaudeAccountMeta, ClaudeModelConfig, CodexModelConfig, GeminiModelConfig,
+        OpenCodeProviderConfig, Provider, ProviderManager, ProviderMeta, UniversalProvider,
     };
     use serde_json::json;
+
+    #[test]
+    fn provider_meta_captured_claude_account_round_trip() {
+        let mut meta = ProviderMeta::default();
+        meta.captured_claude_account = Some(CapturedClaudeAccountMeta {
+            account_uuid: "11111111-2222-3333-4444-555555555555".into(),
+            email_address: "alice@example.com".into(),
+            captured_at: 1_760_000_000,
+        });
+
+        let value = serde_json::to_value(&meta).expect("serialize ProviderMeta");
+        let captured = value
+            .get("capturedClaudeAccount")
+            .expect("capturedClaudeAccount key present")
+            .as_object()
+            .expect("capturedClaudeAccount is object");
+        assert_eq!(
+            captured.get("accountUuid").and_then(|v| v.as_str()),
+            Some("11111111-2222-3333-4444-555555555555")
+        );
+        assert_eq!(
+            captured.get("emailAddress").and_then(|v| v.as_str()),
+            Some("alice@example.com")
+        );
+        assert_eq!(
+            captured.get("capturedAt").and_then(|v| v.as_i64()),
+            Some(1_760_000_000)
+        );
+
+        let round_tripped: ProviderMeta =
+            serde_json::from_value(value).expect("deserialize ProviderMeta");
+        let captured = round_tripped
+            .captured_claude_account
+            .expect("captured preserved");
+        assert_eq!(captured.account_uuid, "11111111-2222-3333-4444-555555555555");
+        assert_eq!(captured.email_address, "alice@example.com");
+        assert_eq!(captured.captured_at, 1_760_000_000);
+    }
+
+    #[test]
+    fn provider_meta_omits_captured_claude_account_when_none() {
+        let meta = ProviderMeta::default();
+        let value = serde_json::to_value(&meta).expect("serialize ProviderMeta");
+        assert!(value.get("capturedClaudeAccount").is_none());
+    }
+
+    #[test]
+    fn provider_meta_deserializes_legacy_json_without_captured_field() {
+        // Simulates loading a pre-feature config.json — no capturedClaudeAccount key.
+        let legacy = serde_json::json!({});
+        let meta: ProviderMeta = serde_json::from_value(legacy).expect("legacy load");
+        assert!(meta.captured_claude_account.is_none());
+    }
 
     #[test]
     fn provider_meta_serializes_pricing_model_source() {

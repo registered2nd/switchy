@@ -379,7 +379,8 @@ describe("useSettings hook", () => {
     );
     expect(directorySettingsMock.resetAllDirectories).toHaveBeenCalledWith(
       "/server/claude",
-      undefined,
+      undefined, // claudeMirrorConfigDir
+      undefined, // codexConfigDir
       undefined, // geminiConfigDir
       undefined, // opencodeConfigDir
     );

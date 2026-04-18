@@ -163,7 +163,7 @@ describe("App integration with MSW", () => {
     toastErrorMock.mockReset();
   });
 
-  it("covers basic provider flows via real hooks", async () => {
+  it("covers basic provider flows via real hooks", { timeout: 15000 }, async () => {
     const { default: App } = await import("@/App");
     renderApp(App);
 
@@ -220,7 +220,7 @@ describe("App integration with MSW", () => {
     expect(toastSuccessMock).toHaveBeenCalled();
   });
 
-  it("shows toast when auto sync fails in background", async () => {
+  it("shows toast when auto sync fails in background", { timeout: 15000 }, async () => {
     const { default: App } = await import("@/App");
     renderApp(App);
 

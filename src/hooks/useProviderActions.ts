@@ -189,15 +189,54 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
         const result = await switchProviderMutation.mutateAsync(provider.id);
         await syncClaudePlugin(provider);
 
-        // Show backfill warning if present
+        // Surface tagged warnings from SwitchResult (AC-2.3 / AC-4.2 / AC-4.3).
         if (result?.warnings?.length) {
-          toast.warning(
-            t("notifications.backfillWarning", {
-              defaultValue:
-                "切换成功，但旧供应商配置回填失败，您手动修改的配置可能未保存",
-            }),
-            { duration: 5000 },
-          );
+          let showedGenericBackfill = false;
+          for (const tag of result.warnings) {
+            if (tag.startsWith("credential_swap_failed:")) {
+              const id = tag.slice("credential_swap_failed:".length);
+              toast.warning(
+                t("claudeAccount.swap.warning.failed_swap", {
+                  id,
+                  defaultValue: `Credential swap failed for ${id}. The switch was saved; retry after closing Claude Code.`,
+                }),
+                { duration: 6000 },
+              );
+            } else if (tag.startsWith("credential_mirror_failed:")) {
+              const rest = tag.slice("credential_mirror_failed:".length);
+              const idx = rest.lastIndexOf(":");
+              const reason = idx === -1 ? "unreachable" : rest.slice(idx + 1);
+              if (reason === "locked") {
+                toast.warning(
+                  t("claudeAccount.swap.warning.locked", {
+                    path: "WSL mirror",
+                    defaultValue: `Swap partially applied: WSL mirror is locked. Close Claude Code and retry.`,
+                  }),
+                  { duration: 6000 },
+                );
+              } else {
+                toast.warning(
+                  t("claudeAccount.swap.warning.mirror_skipped", {
+                    reason,
+                    defaultValue: `WSL mirror skipped — ${reason}`,
+                  }),
+                  { duration: 6000 },
+                );
+              }
+            } else if (
+              tag.startsWith("backfill_failed:") &&
+              !showedGenericBackfill
+            ) {
+              showedGenericBackfill = true;
+              toast.warning(
+                t("notifications.backfillWarning", {
+                  defaultValue:
+                    "切换成功，但旧供应商配置回填失败，您手动修改的配置可能未保存",
+                }),
+                { duration: 5000 },
+              );
+            }
+          }
         }
 
         // 根据供应商类型显示不同的成功提示

@@ -540,6 +540,12 @@ pub fn get_claude_override_dir() -> Option<PathBuf> {
         .map(|p| resolve_override_path(p))
 }
 
+pub fn set_claude_mirror_config_dir(value: Option<PathBuf>) -> Result<(), AppError> {
+    mutate_settings(|s| {
+        s.claude_mirror_config_dir = value.map(|p| p.to_string_lossy().to_string());
+    })
+}
+
 pub fn get_claude_mirror_override_dir() -> Option<PathBuf> {
     let settings = settings_store().read().ok()?;
     settings

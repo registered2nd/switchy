@@ -8,7 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Form, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { providerSchema, type ProviderFormData } from "@/lib/schemas/provider";
-import { providersApi, type AppId } from "@/lib/api";
+import {
+  providersApi,
+  claudeAccountApi,
+  type AppId,
+  type CaptureOutcome,
+  type CapturedIdentity,
+} from "@/lib/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import type {
   ProviderCategory,
   ProviderMeta,
@@ -196,6 +203,19 @@ export function ProviderForm({
     isEditMode,
     initialCategory: initialData?.category,
   });
+  const [capturedIdentity, setCapturedIdentity] =
+    useState<CapturedIdentity | null>(
+      initialData?.meta?.capturedClaudeAccount ?? null,
+    );
+  const [captureConfirm, setCaptureConfirm] = useState<{
+    existing: CapturedIdentity;
+    incoming: CapturedIdentity;
+  } | null>(null);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+
+  const showCaptureControls =
+    isEditMode && appId === "claude" && category === "official" && !!providerId;
   const isOmoCategory = appId === "opencode" && category === "omo";
   const isOmoSlimCategory = appId === "opencode" && category === "omo-slim";
   const isAnyOmoCategory = isOmoCategory || isOmoSlimCategory;
@@ -1052,6 +1072,7 @@ export function ProviderForm({
         supportsFullUrl && category !== "official" && localIsFullUrl
           ? true
           : undefined,
+      capturedClaudeAccount: capturedIdentity ?? undefined,
     };
 
     await onSubmit(payload);
@@ -1789,6 +1810,131 @@ export function ProviderForm({
             onPricingConfigChange={setPricingConfig}
           />
         )}
+
+        {showCaptureControls && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+            <div className="text-xs text-muted-foreground">
+              {capturedIdentity
+                ? t("claudeAccount.card.captured", {
+                    email: capturedIdentity.emailAddress,
+                    defaultValue: `Captured: ${capturedIdentity.emailAddress}`,
+                  })
+                : t("claudeAccount.card.none", {
+                    defaultValue: "No Claude account captured yet.",
+                  })}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                type="button"
+                size="sm"
+                disabled={capturing}
+                onClick={async () => {
+                  if (!providerId) return;
+                  setCapturing(true);
+                  try {
+                    const result: CaptureOutcome =
+                      await claudeAccountApi.capture(providerId, false);
+                    if (result.kind === "captured") {
+                      setCapturedIdentity(result.identity);
+                      toast.success(
+                        t("claudeAccount.capture.success", {
+                          email: result.identity.emailAddress,
+                          defaultValue: `Captured ${result.identity.emailAddress}`,
+                        }),
+                      );
+                    } else {
+                      setCaptureConfirm({
+                        existing: result.existing,
+                        incoming: result.incoming,
+                      });
+                    }
+                  } catch (err) {
+                    toast.error(String(err));
+                  } finally {
+                    setCapturing(false);
+                  }
+                }}
+              >
+                {t("claudeAccount.capture.button", {
+                  defaultValue: "Capture current account",
+                })}
+              </Button>
+              <Button
+                variant="outline"
+                type="button"
+                size="sm"
+                disabled={!capturedIdentity || capturing}
+                onClick={() => setClearConfirmOpen(true)}
+              >
+                {t("claudeAccount.clear.button", {
+                  defaultValue: "Clear captured account",
+                })}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <ConfirmDialog
+          isOpen={!!captureConfirm}
+          title={t("claudeAccount.capture.confirm.title", {
+            defaultValue: "Account UUID changed",
+          })}
+          message={t("claudeAccount.capture.confirm.body", {
+            oldEmail: captureConfirm?.existing.emailAddress ?? "",
+            newEmail: captureConfirm?.incoming.emailAddress ?? "",
+            defaultValue: `Stored: ${captureConfirm?.existing.emailAddress ?? ""}\nIncoming: ${captureConfirm?.incoming.emailAddress ?? ""}\nOverwrite the stored snapshot?`,
+          })}
+          variant="info"
+          onCancel={() => setCaptureConfirm(null)}
+          onConfirm={async () => {
+            if (!providerId) return;
+            setCapturing(true);
+            try {
+              const result = await claudeAccountApi.capture(providerId, true);
+              if (result.kind === "captured") {
+                setCapturedIdentity(result.identity);
+                toast.success(
+                  t("claudeAccount.capture.success", {
+                    email: result.identity.emailAddress,
+                    defaultValue: `Captured ${result.identity.emailAddress}`,
+                  }),
+                );
+              }
+            } catch (err) {
+              toast.error(String(err));
+            } finally {
+              setCapturing(false);
+              setCaptureConfirm(null);
+            }
+          }}
+        />
+
+        <ConfirmDialog
+          isOpen={clearConfirmOpen}
+          title={t("claudeAccount.clear.button", {
+            defaultValue: "Clear captured account",
+          })}
+          message={t("claudeAccount.clear.confirm", {
+            defaultValue:
+              "Forget this captured account? Claude Code stays logged in — this only removes Switchy's snapshot.",
+          })}
+          onCancel={() => setClearConfirmOpen(false)}
+          onConfirm={async () => {
+            if (!providerId) {
+              setClearConfirmOpen(false);
+              return;
+            }
+            try {
+              await claudeAccountApi.clear(providerId);
+              setCapturedIdentity(null);
+            } catch (err) {
+              toast.error(String(err));
+            } finally {
+              setClearConfirmOpen(false);
+            }
+          }}
+        />
 
         {showButtons && (
           <div className="flex justify-end gap-2">

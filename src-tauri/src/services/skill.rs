@@ -435,11 +435,16 @@ impl SkillService {
         }
 
         // 默认路径：回退到用户主目录下的标准位置
-        let home = dirs::home_dir().context(format_skill_error(
-            "GET_HOME_DIR_FAILED",
-            &[],
-            Some("checkPermission"),
-        ))?;
+        // 使用 crate::config::get_home_dir 以便 SWITCHY_TEST_HOME 在 Windows 上也生效
+        // （dirs::home_dir 在 Windows 上走 Known Folder API，不读 HOME/USERPROFILE）。
+        let home = crate::config::get_home_dir();
+        if home.as_os_str().is_empty() {
+            anyhow::bail!(format_skill_error(
+                "GET_HOME_DIR_FAILED",
+                &[],
+                Some("checkPermission"),
+            ));
+        }
 
         Ok(match app {
             AppType::Claude => home.join(".claude").join("skills"),

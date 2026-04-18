@@ -15,6 +15,7 @@ import SubscriptionQuotaFooter from "@/components/SubscriptionQuotaFooter";
 import { ProviderHealthBadge } from "@/components/providers/ProviderHealthBadge";
 import { FailoverPriorityBadge } from "@/components/providers/FailoverPriorityBadge";
 import { extractCodexBaseUrl } from "@/utils/providerConfigUtils";
+import { truncateEmail } from "@/utils/truncateEmail";
 import { useProviderHealth } from "@/lib/query/failover";
 import { useUsageQuery } from "@/lib/query/queries";
 
@@ -326,6 +327,19 @@ export function ProviderCard({
                 )}
             </div>
 
+            {appId === "claude" &&
+              isOfficial &&
+              provider.meta?.capturedClaudeAccount && (
+                <span
+                  className="text-xs text-muted-foreground block"
+                  title={provider.meta.capturedClaudeAccount.accountUuid}
+                >
+                  {truncateEmail(
+                    provider.meta.capturedClaudeAccount.emailAddress,
+                  )}
+                </span>
+              )}
+
             {displayUrl && (
               <button
                 type="button"
@@ -393,7 +407,7 @@ export function ProviderCard({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 flex-shrink-0 opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-focus-within:pointer-events-auto transition-opacity duration-200">
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1.5 flex-shrink-0 rounded-md bg-card/95 pl-2 shadow-sm backdrop-blur-sm opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-focus-within:pointer-events-auto transition-opacity duration-200">
             <ProviderActions
               appId={appId}
               isCurrent={isCurrent}

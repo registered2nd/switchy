@@ -236,9 +236,10 @@ describe("SettingsPage integration", () => {
     fireEvent.click(resetButtons[0]);
     await waitFor(() => expect(appInput.value).toBe("/home/mock/.switchy"));
 
-    const claudeInput = (await screen.findByPlaceholderText(
-      "settings.browsePlaceholderClaude",
-    )) as HTMLInputElement;
+    // Two inputs share the Claude placeholder (main + mirror); index 0 is the main Claude dir.
+    const claudeInput = (
+      await screen.findAllByPlaceholderText("settings.browsePlaceholderClaude")
+    )[0] as HTMLInputElement;
     fireEvent.change(claudeInput, { target: { value: "/custom/claude" } });
     await waitFor(() => expect(claudeInput.value).toBe("/custom/claude"));
 

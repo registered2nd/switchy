@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use cc_switch_lib::{
+use switchy_lib::{
     update_settings, AppSettings, AppState, Database, MultiAppConfig, ProxyService,
 };
 

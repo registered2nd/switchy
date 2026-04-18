@@ -1,3 +1,4 @@
+pub mod claude_account;
 pub mod coding_plan;
 pub mod config;
 pub mod env_checker;

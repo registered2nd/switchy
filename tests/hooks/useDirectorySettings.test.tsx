@@ -7,6 +7,7 @@ const getAppConfigDirOverrideMock = vi.hoisted(() => vi.fn());
 const getConfigDirMock = vi.hoisted(() => vi.fn());
 const selectConfigDirectoryMock = vi.hoisted(() => vi.fn());
 const setAppConfigDirOverrideMock = vi.hoisted(() => vi.fn());
+const getDefaultClaudeMirrorDirMock = vi.hoisted(() => vi.fn());
 const homeDirMock = vi.hoisted(() => vi.fn<() => Promise<string>>());
 const joinMock = vi.hoisted(() =>
   vi.fn(async (...segments: string[]) => segments.join("/")),
@@ -19,6 +20,7 @@ vi.mock("@/lib/api", () => ({
     getConfigDir: getConfigDirMock,
     selectConfigDirectory: selectConfigDirectoryMock,
     setAppConfigDirOverride: setAppConfigDirOverrideMock,
+    getDefaultClaudeMirrorDir: getDefaultClaudeMirrorDirMock,
   },
 }));
 
@@ -64,6 +66,7 @@ describe("useDirectorySettings", () => {
     );
 
     getAppConfigDirOverrideMock.mockResolvedValue(null);
+    getDefaultClaudeMirrorDirMock.mockResolvedValue(null);
     getConfigDirMock.mockImplementation(async (app: string) => {
       if (app === "claude") return "/remote/claude";
       if (app === "codex") return "/remote/codex";
@@ -220,6 +223,7 @@ describe("useDirectorySettings", () => {
     act(() => {
       result.current.resetAllDirectories(
         "/server/claude",
+        undefined,
         "/server/codex",
         "/server/gemini",
         "/server/opencode",

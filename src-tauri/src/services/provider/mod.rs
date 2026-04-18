@@ -1299,6 +1299,15 @@ impl ProviderService {
             ));
         }
 
+        // AC-5.3: remove any captured Claude-OAuth snapshot for this provider
+        // before the DB row goes. A failing clear is non-fatal — a stale snapshot
+        // dir is harmless once the provider row it keys off is gone.
+        if matches!(app_type, AppType::Claude) {
+            if let Err(e) = crate::services::claude_account::clear(state, id) {
+                log::warn!("claude_account::clear failed for '{id}' during delete: {e}");
+            }
+        }
+
         state.db.delete_provider(app_type.as_str(), id)
     }
 
@@ -1538,6 +1547,26 @@ impl ProviderService {
                             provider.id
                         )));
                     }
+                }
+            }
+        }
+
+        // AC-2.2: Claude OAuth swap runs after the settings write so a
+        // credential-side failure surfaces as a warning, not a rollback of the
+        // provider selection the user already clicked.
+        if matches!(app_type, AppType::Claude) {
+            use crate::services::claude_account::{self, SwapOutcome};
+            match claude_account::swap_if_captured(state, provider) {
+                Ok(SwapOutcome::PartialMirror(warnings)) => result.warnings.extend(warnings),
+                Ok(_) => {}
+                Err(e) => {
+                    log::warn!(
+                        "Claude account swap failed for '{}': {e}",
+                        provider.id
+                    );
+                    result
+                        .warnings
+                        .push(format!("credential_swap_failed:{}", provider.id));
                 }
             }
         }

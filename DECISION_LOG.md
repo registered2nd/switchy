@@ -1,5 +1,17 @@
 # Decision Log
 
+## 2026-04-18 — Drop T-5.2 WSL validation from the multi-account ship
+
+- Decision:
+  - T-5.2 (WSL mirror end-to-end walkthrough) is skipped for this ship. The multi-account feature ships after BACKLOG polish items #4–#7 are addressed; WSL validation is not a precondition.
+- Why:
+  - T-5.1 proved the core capture → swap → `/status` contract works end-to-end on Windows. The WSL mirror code paths are already covered by Rust unit tests in `services::claude_account::tests` (happy-path `AppliedWithMirror`, `PartialMirror:parse`, `PartialMirror:unreachable` — AC-4.1 through AC-4.3).
+  - The polish items surfaced in the T-5.1 run (NSIS installer, per-account quota, zh-leak, tray click) are visible to every user on every install and are higher-impact than WSL-specific validation.
+  - Stacking T-5.2 on top delays ship for a feature-path that only the user's WSL setup exercises; better to ship and let any WSL regression surface as its own bug report.
+- Consequence:
+  - `specs/official-multi-account/tasks.md` T-5.2 is marked SKIPPED with its checklist retained for reference.
+  - If a WSL mirror regression is reported post-ship, it becomes a fresh spec session, not a blocker on 3.13.0.
+
 ## 2026-04-17 - De-fork Switchy: supersede upstream namespace decision
 
 - Decision:

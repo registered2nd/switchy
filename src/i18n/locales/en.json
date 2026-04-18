@@ -2298,5 +2298,34 @@
     "expiredHint": "Run the {{tool}} command to refresh your login",
     "queryFailed": "Query failed",
     "refresh": "Refresh"
+  },
+  "claudeAccount": {
+    "card": {
+      "captured": "Captured: {{email}}",
+      "none": "No Claude account captured yet."
+    },
+    "capture": {
+      "button": "Capture current account",
+      "success": "Captured {{email}}",
+      "error": {
+        "credentials_missing": "No Claude Code login found. Run `claude /login` first.",
+        "oauth_missing": "Claude Code config is missing the oauthAccount block. Open and use Claude Code once, then retry."
+      },
+      "confirm": {
+        "title": "Account UUID changed",
+        "body": "Stored: {{oldEmail}}\nIncoming: {{newEmail}}\nOverwrite the stored snapshot?"
+      }
+    },
+    "clear": {
+      "button": "Clear captured account",
+      "confirm": "Forget this captured account? Claude Code stays logged in — this only removes Switchy's snapshot."
+    },
+    "swap": {
+      "warning": {
+        "failed_swap": "Credential swap failed for {{id}}. The switch was saved; retry after closing Claude Code.",
+        "locked": "Swap partially applied: {{path}} is locked. Close Claude Code and try the switch again.",
+        "mirror_skipped": "WSL mirror skipped — {{reason}}"
+      }
+    }
   }
 }

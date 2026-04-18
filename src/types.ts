@@ -172,6 +172,13 @@ export interface ProviderMeta {
   providerType?: string;
   // GitHub Copilot 关联账号 ID（旧字段，保留兼容读取）
   githubAccountId?: string;
+  // Captured Claude OAuth identity (Official/Claude providers only).
+  // Presence implies a snapshot exists under ~/.switchy/accounts/{id}/.
+  capturedClaudeAccount?: {
+    accountUuid: string;
+    emailAddress: string;
+    capturedAt: number;
+  };
 }
 
 // Skill 同步方式

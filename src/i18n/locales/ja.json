@@ -2298,5 +2298,34 @@
     "expiredHint": "{{tool}}コマンドを実行してログインを更新してください",
     "queryFailed": "クエリに失敗しました",
     "refresh": "更新"
+  },
+  "claudeAccount": {
+    "card": {
+      "captured": "キャプチャ済み: {{email}}",
+      "none": "Claude アカウント未キャプチャ"
+    },
+    "capture": {
+      "button": "現在のアカウントをキャプチャ",
+      "success": "{{email}} をキャプチャしました",
+      "error": {
+        "credentials_missing": "Claude Code のログインが見つかりません。まず `claude /login` を実行してください。",
+        "oauth_missing": "Claude Code 設定に oauthAccount がありません。Claude Code を一度起動してから再試行してください。"
+      },
+      "confirm": {
+        "title": "アカウント UUID が変更されました",
+        "body": "保存済み: {{oldEmail}}\n新規: {{newEmail}}\n保存済みスナップショットを上書きしますか？"
+      }
+    },
+    "clear": {
+      "button": "キャプチャ済みアカウントをクリア",
+      "confirm": "このキャプチャ済みアカウントを削除しますか？Claude Code のログインは維持されます —— Switchy のスナップショットのみ削除されます。"
+    },
+    "swap": {
+      "warning": {
+        "failed_swap": "資格情報の切り替えに失敗しました（{{id}}）。切り替えは保存済みです。Claude Code を閉じてから再試行してください。",
+        "locked": "部分的に適用: {{path}} はロック中です。Claude Code を閉じてから再試行してください。",
+        "mirror_skipped": "WSL ミラーをスキップ —— {{reason}}"
+      }
+    }
   }
 }

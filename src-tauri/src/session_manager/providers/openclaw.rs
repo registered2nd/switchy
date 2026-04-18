@@ -299,21 +299,26 @@ mod tests {
             ),
         )
         .expect("write session");
+        let session_path_json = serde_json::to_string(&session_path.to_string_lossy()).unwrap();
+        let other_path_json = serde_json::to_string(
+            &sessions_dir
+                .join("session-456.jsonl")
+                .to_string_lossy(),
+        )
+        .unwrap();
         std::fs::write(
             sessions_dir.join("sessions.json"),
             format!(
                 r#"{{
                   "agent:main:main": {{
                     "sessionId": "session-123",
-                    "sessionFile": "{}"
+                    "sessionFile": {session_path_json}
                   }},
                   "agent:main:other": {{
                     "sessionId": "session-456",
-                    "sessionFile": "{}/session-456.jsonl"
+                    "sessionFile": {other_path_json}
                   }}
-                }}"#,
-                session_path.display(),
-                sessions_dir.display()
+                }}"#
             ),
         )
         .expect("write index");

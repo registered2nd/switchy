@@ -2298,5 +2298,34 @@
     "expiredHint": "请运行 {{tool}} 命令刷新登录",
     "queryFailed": "查询失败",
     "refresh": "刷新"
+  },
+  "claudeAccount": {
+    "card": {
+      "captured": "已捕获：{{email}}",
+      "none": "尚未捕获 Claude 账号"
+    },
+    "capture": {
+      "button": "捕获当前账号",
+      "success": "已捕获 {{email}}",
+      "error": {
+        "credentials_missing": "未找到 Claude Code 登录凭据，请先运行 `claude /login`",
+        "oauth_missing": "Claude Code 配置缺少 oauthAccount，请先登录一次"
+      },
+      "confirm": {
+        "title": "账号 UUID 已变化",
+        "body": "已存储：{{oldEmail}}\n新读取：{{newEmail}}\n是否覆盖已存储的快照？"
+      }
+    },
+    "clear": {
+      "button": "清除捕获账号",
+      "confirm": "确定要清除此捕获账号吗？Claude Code 仍会保持登录 —— 只会删除 Switchy 的快照。"
+    },
+    "swap": {
+      "warning": {
+        "failed_swap": "凭据切换失败（{{id}}）。供应商切换已保存；请关闭 Claude Code 后重试。",
+        "locked": "部分应用：{{path}} 被占用。请关闭 Claude Code 后重新切换。",
+        "mirror_skipped": "WSL 镜像跳过 —— {{reason}}"
+      }
+    }
   }
 }
