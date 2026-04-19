@@ -254,7 +254,7 @@ pub fn clear(state: &AppState, provider_id: &str) -> Result<(), AppError> {
 /// guard passes. Errors bubble up to the switch path, which converts them to
 /// tagged warnings on `SwitchResult`.
 pub fn swap_if_captured(
-    _state: &AppState,
+    state: &AppState,
     provider: &Provider,
 ) -> Result<SwapOutcome, AppError> {
     // Guard: Claude + Official + captured.
@@ -287,6 +287,19 @@ pub fn swap_if_captured(
             .map(|c| c.account_uuid.as_str())
             .unwrap_or("?")
     );
+
+    // Switch-away sync (BACKLOG #5): before overwriting live creds with the
+    // incoming snapshot, persist the current live creds back into whichever
+    // captured provider they currently belong to. Claude Code refreshes tokens
+    // in the background; without this sync those refreshes would be discarded
+    // on each switch, collapsing the practical multi-account window.
+    // Best-effort: any failure is logged but does not abort the switch.
+    if let Err(e) = sync_outgoing_snapshot(state, &provider.id) {
+        log::warn!(
+            "[claude_account] sync_out error (non-fatal) for provider={}: {e}",
+            provider.id
+        );
+    }
 
     let cred_snapshot = paths::snapshot_credentials_path(&provider.id);
     let oauth_snapshot = paths::snapshot_oauth_account_path(&provider.id);
@@ -409,6 +422,79 @@ pub fn swap_if_captured(
         );
         Ok(SwapOutcome::PartialMirror(warnings))
     }
+}
+
+/// Persists current live credentials + oauthAccount back into whichever
+/// captured Claude provider's snapshot owns the live account (matched by
+/// `account_uuid`), excluding the incoming provider. Best-effort:
+/// unreachable/unparseable live state is a no-op, not an error.
+fn sync_outgoing_snapshot(
+    state: &AppState,
+    incoming_provider_id: &str,
+) -> Result<(), AppError> {
+    let cred_path = paths::live_credentials_path();
+    let cred_bytes = match fs::read(&cred_path) {
+        Ok(b) => b,
+        Err(_) => return Ok(()),
+    };
+    if serde_json::from_slice::<Value>(&cred_bytes).is_err() {
+        log::warn!("[claude_account] sync_out skip: live creds unparseable");
+        return Ok(());
+    }
+
+    let config_path = paths::live_claude_config_path();
+    let (oauth_value, live_uuid, _email) = match read_oauth_from_live(&config_path) {
+        Ok(t) => t,
+        Err(_) => {
+            log::warn!(
+                "[claude_account] sync_out skip: live oauthAccount missing/unparseable"
+            );
+            return Ok(());
+        }
+    };
+
+    let all = state.db.get_all_providers(CLAUDE_APP_TYPE)?;
+    let Some((outgoing_id, _)) = all.iter().find(|(id, p)| {
+        if id.as_str() == incoming_provider_id {
+            return false;
+        }
+        p.meta
+            .as_ref()
+            .and_then(|m| m.captured_claude_account.as_ref())
+            .map(|c| c.account_uuid == live_uuid)
+            .unwrap_or(false)
+    }) else {
+        log::info!(
+            "[claude_account] sync_out skip: no captured provider matches live uuid={live_uuid}"
+        );
+        return Ok(());
+    };
+
+    let oauth_bytes = serde_json::to_vec_pretty(&oauth_value)
+        .map_err(|e| AppError::JsonSerialize { source: e })?;
+    if let Err(e) = store::write_snapshot_atomic(
+        &paths::snapshot_credentials_path(outgoing_id),
+        &cred_bytes,
+    ) {
+        log::warn!(
+            "[claude_account] sync_out credential write failed for {outgoing_id}: {e}"
+        );
+        return Ok(());
+    }
+    if let Err(e) = store::write_snapshot_atomic(
+        &paths::snapshot_oauth_account_path(outgoing_id),
+        &oauth_bytes,
+    ) {
+        log::warn!(
+            "[claude_account] sync_out oauth write failed for {outgoing_id}: {e}"
+        );
+        return Ok(());
+    }
+
+    log::info!(
+        "[claude_account] sync_out updated outgoing provider={outgoing_id} uuid={live_uuid}"
+    );
+    Ok(())
 }
 
 fn classify_mirror_error(err: &AppError) -> &'static str {

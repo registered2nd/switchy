@@ -608,6 +608,116 @@ fn swap_partial_mirror_when_mirror_unreachable() {
     );
 }
 
+#[test]
+#[serial]
+fn swap_syncs_outgoing_snapshot_before_overwriting_live() {
+    // BACKLOG #5: capture A, let live creds "refresh" in the background,
+    // then switch to B. A's snapshot must absorb the refreshed live creds
+    // before B's snapshot clobbers the live file.
+    let home = ScopedHome::new();
+    let state = make_state();
+    seed_provider(&state, &official_provider("a"));
+    seed_provider(&state, &official_provider("b"));
+
+    write_live_files(&home, "uuid-A", "alice@example.com");
+    capture(&state, "a", false).unwrap();
+
+    write_live_files(&home, "uuid-B", "bob@example.com");
+    capture(&state, "b", false).unwrap();
+
+    // Simulate Claude Code background-refreshing A's tokens while A is live.
+    let claude_dir = home.claude_dir();
+    fs::write(
+        claude_dir.join(".credentials.json"),
+        json!({ "oauth": { "token": "A-refreshed", "expiresAt": 999 } }).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        claude_dir.join(".claude.json"),
+        json!({
+            "oauthAccount": {
+                "accountUuid": "uuid-A",
+                "emailAddress": "alice@example.com",
+                "rotation": "new",
+            },
+            "projects": {}
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // Record A's snapshot before the switch.
+    let before_cred =
+        fs::read(paths::snapshot_credentials_path("a")).expect("A cred snapshot exists");
+
+    // Switch to B — must first sync outgoing (A) from live, then apply B.
+    let provider_b = state.db.get_provider_by_id("b", "claude").unwrap().unwrap();
+    let outcome = swap_if_captured(&state, &provider_b).unwrap();
+    assert!(matches!(outcome, SwapOutcome::Applied));
+
+    // A's credential snapshot now reflects the refreshed live creds.
+    let after_cred =
+        fs::read(paths::snapshot_credentials_path("a")).expect("A cred snapshot still exists");
+    assert_ne!(before_cred, after_cred, "A's snapshot should have been synced");
+    let after_val: Value = serde_json::from_slice(&after_cred).unwrap();
+    assert_eq!(
+        after_val
+            .get("oauth")
+            .and_then(|v| v.get("token"))
+            .and_then(|v| v.as_str()),
+        Some("A-refreshed")
+    );
+
+    // A's oauthAccount snapshot updated too.
+    let oauth_snap: Value =
+        serde_json::from_slice(&fs::read(paths::snapshot_oauth_account_path("a")).unwrap())
+            .unwrap();
+    assert_eq!(
+        oauth_snap.get("rotation").and_then(|v| v.as_str()),
+        Some("new")
+    );
+
+    // Live now carries B's snapshot.
+    let live_config: Value = serde_json::from_slice(
+        &fs::read(paths::live_claude_config_path()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        live_config
+            .get("oauthAccount")
+            .and_then(|v| v.get("accountUuid"))
+            .and_then(|v| v.as_str()),
+        Some("uuid-B")
+    );
+}
+
+#[test]
+#[serial]
+fn swap_sync_noop_when_live_uuid_has_no_matching_captured_provider() {
+    let home = ScopedHome::new();
+    let state = make_state();
+    seed_provider(&state, &official_provider("b"));
+
+    // Capture B with uuid-B.
+    write_live_files(&home, "uuid-B", "bob@example.com");
+    capture(&state, "b", false).unwrap();
+
+    // Live is now some unknown account (fresh login, no Switchy capture).
+    write_live_files(&home, "uuid-STRAY", "stray@example.com");
+
+    let provider_b = state.db.get_provider_by_id("b", "claude").unwrap().unwrap();
+    let outcome = swap_if_captured(&state, &provider_b).unwrap();
+    assert!(matches!(outcome, SwapOutcome::Applied));
+    // B's snapshot is unchanged (no stray match, no write).
+    let oauth_snap: Value =
+        serde_json::from_slice(&fs::read(paths::snapshot_oauth_account_path("b")).unwrap())
+            .unwrap();
+    assert_eq!(
+        oauth_snap.get("accountUuid").and_then(|v| v.as_str()),
+        Some("uuid-B")
+    );
+}
+
 // ---------- read_captured_identity ----------
 
 #[test]
