@@ -415,7 +415,7 @@ export function ProviderCard({
             </div>
           </div>
 
-          <div className="absolute right-4 top-2 z-10 flex items-center gap-1.5 flex-shrink-0 rounded-md bg-card/95 px-2 py-1 shadow-sm backdrop-blur-sm opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-focus-within:pointer-events-auto transition-opacity duration-200">
+          <div className="absolute right-4 bottom-2 z-10 flex items-center gap-1.5 flex-shrink-0 rounded-md bg-card/95 px-2 py-1 shadow-sm backdrop-blur-sm opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-focus-within:pointer-events-auto transition-opacity duration-200">
             <ProviderActions
               appId={appId}
               isCurrent={isCurrent}
