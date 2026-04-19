@@ -360,7 +360,41 @@ export function ProviderCard({
         </div>
 
         <div className="flex items-center ml-auto min-w-0 gap-3">
-          <div className="relative z-20 ml-auto">
+          <div className="hidden items-center gap-1.5 rounded-md bg-card/95 px-2 py-1 shadow-sm group-hover:flex group-focus-within:flex">
+            <ProviderActions
+              appId={appId}
+              isCurrent={isCurrent}
+              isInConfig={isInConfig}
+              isTesting={isTesting}
+              isProxyTakeover={isProxyTakeover}
+              isOmo={isAnyOmo}
+              onSwitch={() => onSwitch(provider)}
+              onEdit={() => onEdit(provider)}
+              onDuplicate={() => onDuplicate(provider)}
+              onTest={
+                onTest && !isOfficial ? () => onTest(provider) : undefined
+              }
+              onConfigureUsage={
+                isOfficial ? undefined : () => onConfigureUsage(provider)
+              }
+              onDelete={() => onDelete(provider)}
+              onRemoveFromConfig={
+                onRemoveFromConfig
+                  ? () => onRemoveFromConfig(provider)
+                  : undefined
+              }
+              onDisableOmo={handleDisableAnyOmo}
+              onOpenTerminal={
+                onOpenTerminal ? () => onOpenTerminal(provider) : undefined
+              }
+              isAutoFailoverEnabled={isAutoFailoverEnabled}
+              isInFailoverQueue={isInFailoverQueue}
+              onToggleFailover={onToggleFailover}
+              isDefaultModel={isDefaultModel}
+              onSetAsDefault={onSetAsDefault}
+            />
+          </div>
+          <div className="ml-auto">
             <div className="flex items-center gap-1">
               {isOfficial ? (
                 <SubscriptionQuotaFooter
@@ -415,41 +449,6 @@ export function ProviderCard({
             </div>
           </div>
 
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1.5 flex-shrink-0 rounded-md bg-card/95 px-2 py-1 shadow-sm backdrop-blur-sm opacity-0 pointer-events-none group-hover:opacity-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-focus-within:pointer-events-auto transition-opacity duration-200">
-            <ProviderActions
-              appId={appId}
-              isCurrent={isCurrent}
-              isInConfig={isInConfig}
-              isTesting={isTesting}
-              isProxyTakeover={isProxyTakeover}
-              isOmo={isAnyOmo}
-              onSwitch={() => onSwitch(provider)}
-              onEdit={() => onEdit(provider)}
-              onDuplicate={() => onDuplicate(provider)}
-              onTest={
-                onTest && !isOfficial ? () => onTest(provider) : undefined
-              }
-              onConfigureUsage={
-                isOfficial ? undefined : () => onConfigureUsage(provider)
-              }
-              onDelete={() => onDelete(provider)}
-              onRemoveFromConfig={
-                onRemoveFromConfig
-                  ? () => onRemoveFromConfig(provider)
-                  : undefined
-              }
-              onDisableOmo={handleDisableAnyOmo}
-              onOpenTerminal={
-                onOpenTerminal ? () => onOpenTerminal(provider) : undefined
-              }
-              isAutoFailoverEnabled={isAutoFailoverEnabled}
-              isInFailoverQueue={isInFailoverQueue}
-              onToggleFailover={onToggleFailover}
-              // OpenClaw: default model
-              isDefaultModel={isDefaultModel}
-              onSetAsDefault={onSetAsDefault}
-            />
-          </div>
         </div>
       </div>
 
