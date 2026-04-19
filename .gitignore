@@ -30,3 +30,8 @@ copilot-api
 CODEBUDDY.md
 .github
 cc-switch-setup-backup/
+
+# Shipped installer artifacts (built via pnpm tauri build, not committed)
+/Switchy_*_x64-setup.exe
+/Switchy_*_x64_en-US.msi
+.specstory/

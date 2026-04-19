@@ -385,7 +385,18 @@ fn detect_system_device_name() -> Option<String> {
         return env_name;
     }
 
+    #[cfg(target_os = "windows")]
+    let output = {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        Command::new("hostname")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .ok()?
+    };
+    #[cfg(not(target_os = "windows"))]
     let output = Command::new("hostname").output().ok()?;
+
     if !output.status.success() {
         return None;
     }

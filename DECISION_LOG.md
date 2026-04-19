@@ -1,5 +1,47 @@
 # Decision Log
 
+## 2026-04-19 — OAuth token lifetime bounds the multi-account feature
+
+- Constraint:
+  - Anthropic Claude Code OAuth tokens have a short effective lifetime.
+    Access tokens: **~8–12h**. Refresh tokens: **~24h** practical ceiling
+    (inferred from [anthropics/claude-code#42904](https://github.com/anthropics/claude-code/issues/42904)
+    — subscription users re-login daily regardless of tooling). Rotation
+    appears aggressive — each refresh likely invalidates the prior
+    refresh_token.
+- Consequence for the captured-account design:
+  - The multi-account feature can guarantee switching within **~8h** of the
+    most-recent refresh on an account, and is **unreliable past ~24h**. For
+    dormant accounts (not used in >24h), switching back will require
+    re-login through Claude Code — no local state management fixes this.
+  - Therefore: future improvements should be framed as **extending the
+    practical window**, not achieving indefinite dormancy.
+- Implications for future work (tracked in `BACKLOG.md`):
+  - **Switch-away sync** (update outgoing provider's snapshot from live
+    creds before writing the incoming provider's snapshot). Stops us from
+    silently discarding the newest refresh_token on every switch. This is
+    the cheapest buy — roughly doubles the realistic dormancy window
+    because each snapshot carries the freshest token that account has
+    ever produced.
+  - **Snapshot OAuth refresh on demand** (when quota query / switch sees
+    an expired access_token but a present refresh_token, hit
+    `console.anthropic.com/v1/oauth/token` with grant_type=refresh_token,
+    persist new tokens into the snapshot). Works around the access-token
+    ceiling, not the refresh-token ceiling. Fragile — Anthropic has been
+    deprecating third-party OAuth usage.
+  - **Periodic background refresh loop** (Switchy keeps captured accounts
+    warm by refreshing them before they expire). Theoretically pushes the
+    window toward "indefinite" but hammers Anthropic's endpoints and
+    assumes OAuth continues to be available to third-party apps. Not
+    recommended as a priority.
+- Where NOT to look for fixes:
+  - Snapshot encryption, different file layouts, more atomic writes — all
+    orthogonal to the token-lifetime problem.
+  - `claude setup-token` produces a 1-year token but is a different auth
+    mode (automation/headless). Switchy cannot transparently upgrade a
+    captured subscription OAuth to a setup-token; the user would need to
+    re-auth via that flow explicitly.
+
 ## 2026-04-18 (evening) — NSIS PREINSTALL hook does NOT force-kill the running app
 
 - Decision:

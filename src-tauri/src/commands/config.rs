@@ -15,10 +15,18 @@ fn decode_wsl_output(raw: &[u8]) -> String {
 }
 
 #[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[cfg(target_os = "windows")]
 fn get_default_wsl_distro() -> Option<String> {
+    use std::os::windows::process::CommandExt;
     use std::process::Command;
 
-    let output = Command::new("wsl.exe").args(["-l", "-v"]).output().ok()?;
+    let output = Command::new("wsl.exe")
+        .args(["-l", "-v"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
     let decoded = decode_wsl_output(&output.stdout);
 
     for line in decoded.lines() {
@@ -31,7 +39,11 @@ fn get_default_wsl_distro() -> Option<String> {
         }
     }
 
-    let output = Command::new("wsl.exe").args(["-l", "-q"]).output().ok()?;
+    let output = Command::new("wsl.exe")
+        .args(["-l", "-q"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
     let decoded = decode_wsl_output(&output.stdout);
     decoded
         .lines()
@@ -42,10 +54,12 @@ fn get_default_wsl_distro() -> Option<String> {
 
 #[cfg(target_os = "windows")]
 fn get_wsl_home_dir(distro: &str) -> Option<String> {
+    use std::os::windows::process::CommandExt;
     use std::process::Command;
 
     let output = Command::new("wsl.exe")
         .args(["-d", distro, "--", "sh", "-lc", "cd ~ && pwd"])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .ok()?;
 

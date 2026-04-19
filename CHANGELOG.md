@@ -6,12 +6,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
-Entries below predate the April 2026 Switchy rename and describe upstream
-CC Switch releases — preserved verbatim as history.
+## [1.0.0] — 2026-04-18 — Switchy stands on its own
 
-## [Unreleased]
+First release under the Switchy name. Cuts the project free from its upstream
+fork lineage and ships native multi-account switching for Claude Code, plus
+the installer/UX polish needed for a first-run-worthy build.
+
+### Added
+
+- **Native multi-account switching for "Official" Claude providers.** Each
+  Official provider can be bound to a distinct Anthropic account via a
+  one-click Capture. Switching between providers now swaps the full OAuth
+  state in `~/.claude/`, mirrored to the configured WSL Claude target when
+  applicable. Captured email is shown on the provider card; UUID is in the
+  hover tooltip.
+- **Per-account subscription quota on captured providers.** Provider cards
+  bound to a captured account read quota from that account's credential
+  snapshot instead of the live `~/.claude/` creds, so two Official cards no
+  longer show the same number.
+- **Tray left-click now surfaces the main window** (standard Windows tray
+  behavior). Right-click still opens the menu.
+- **NSIS installer hooks** that kill a running `switchy.exe` on uninstall
+  and clean `EBWebView` / `$INSTDIR` so a fresh install doesn't inherit the
+  old webview cache. Install-time kept non-destructive — the "app is
+  running" prompt during upgrade is preserved.
+
+### Changed
+
+- **Project namespace** is now Switchy throughout: bundle id, binary name,
+  Rust crate, Cargo + `package.json` metadata, GitHub repo, deep-link
+  scheme (`switchy://`). Legacy `ccswitch://` links continue to resolve.
+- **App data directory** is now `~/.switchy/` (was `~/.cc-switch/`) and the
+  database file is `switchy.db`. First launch of this build runs a one-shot
+  migration shim that renames the old directory in place — existing
+  providers, skills, and WebDAV state carry over untouched.
+- **Version line reset to 1.0.0.** Prior 3.x entries below describe upstream
+  CC Switch releases that Switchy inherited via fork — preserved verbatim as
+  history, not as Switchy's own release line.
+
+### Fixed
+
+- Auth Center settings panel now renders in English when the locale is
+  English (10 missing `t()` keys added across EN/ZH/JA locales).
+- `ProviderForm.tsx` capture-save race that was clobbering
+  `capturedClaudeAccount` in the DB when the form was saved after a fresh
+  Capture (stale `initialData` shallow-spread).
 
 ---
+
+## Pre-Switchy history (upstream CC Switch)
+
+Entries below predate the April 2026 Switchy rename and describe upstream
+CC Switch releases — preserved verbatim as history.
 
 ## [3.12.3] - 2026-03-24
 
