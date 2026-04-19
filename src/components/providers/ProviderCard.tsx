@@ -359,8 +359,8 @@ export function ProviderCard({
           </div>
         </div>
 
-        <div className="relative z-20 flex items-center ml-auto min-w-0 gap-3">
-          <div className="ml-auto">
+        <div className="flex items-center ml-auto min-w-0 gap-3">
+          <div className="relative z-20 ml-auto">
             <div className="flex items-center gap-1">
               {isOfficial ? (
                 <SubscriptionQuotaFooter
