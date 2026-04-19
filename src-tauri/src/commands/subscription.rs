@@ -8,3 +8,16 @@ use crate::services::subscription::SubscriptionQuota;
 pub async fn get_subscription_quota(tool: String) -> Result<SubscriptionQuota, String> {
     crate::services::subscription::get_subscription_quota(&tool).await
 }
+
+/// Per-provider Claude subscription quota from a captured snapshot.
+///
+/// Reads `~/.switchy/accounts/{provider_id}/credentials.json` and queries
+/// Anthropic's OAuth usage API. Returns NotFound if the provider has no
+/// captured snapshot — caller should fall back to `get_subscription_quota`
+/// for live credentials in that case.
+#[tauri::command]
+pub async fn get_subscription_quota_for_provider(
+    provider_id: String,
+) -> Result<SubscriptionQuota, String> {
+    crate::services::subscription::get_claude_quota_for_provider(&provider_id).await
+}

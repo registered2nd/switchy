@@ -1278,6 +1278,63 @@ pub async fn get_subscription_quota(tool: &str) -> Result<SubscriptionQuota, Str
     }
 }
 
+/// Claude subscription quota for a specific provider's captured snapshot.
+///
+/// Reads `~/.switchy/accounts/{provider_id}/credentials.json` (the snapshot
+/// captured when the Official Claude provider was bound to an account) and
+/// queries Anthropic's OAuth usage API with those credentials. This is the
+/// per-account counterpart to `get_subscription_quota("claude")`, which
+/// always reads live `~/.claude/.credentials.json` and therefore shows the
+/// same number on every Official card.
+pub async fn get_claude_quota_for_provider(
+    provider_id: &str,
+) -> Result<SubscriptionQuota, String> {
+    let cred_path = crate::services::claude_account::paths::snapshot_credentials_path(provider_id);
+
+    if !cred_path.exists() {
+        return Ok(SubscriptionQuota::not_found("claude"));
+    }
+
+    let content = match std::fs::read_to_string(&cred_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return Ok(SubscriptionQuota::error(
+                "claude",
+                CredentialStatus::ParseError,
+                format!("Failed to read snapshot credentials: {e}"),
+            ));
+        }
+    };
+
+    let (token, status, message) = parse_claude_credentials_json(&content);
+
+    match status {
+        CredentialStatus::NotFound => Ok(SubscriptionQuota::not_found("claude")),
+        CredentialStatus::ParseError => Ok(SubscriptionQuota::error(
+            "claude",
+            CredentialStatus::ParseError,
+            message.unwrap_or_else(|| "Failed to parse snapshot credentials".to_string()),
+        )),
+        CredentialStatus::Expired => {
+            if let Some(token) = token {
+                let result = query_claude_quota(&token).await;
+                if result.success {
+                    return Ok(result);
+                }
+            }
+            Ok(SubscriptionQuota::error(
+                "claude",
+                CredentialStatus::Expired,
+                message.unwrap_or_else(|| "OAuth token has expired".to_string()),
+            ))
+        }
+        CredentialStatus::Valid => {
+            let token = token.expect("token must be Some when status is Valid");
+            Ok(query_claude_quota(&token).await)
+        }
+    }
+}
+
 // ── 辅助函数 ──────────────────────────────────────────────
 
 fn now_millis() -> i64 {

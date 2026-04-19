@@ -1,5 +1,17 @@
 # Decision Log
 
+## 2026-04-18 (evening) — NSIS PREINSTALL hook does NOT force-kill the running app
+
+- Decision:
+  - `src-tauri/nsis/installer-hooks.nsh` runs `taskkill /F /IM switchy.exe /T` in `NSIS_HOOK_PREUNINSTALL` only. The `NSIS_HOOK_PREINSTALL` hook is deliberately a no-op (no taskkill).
+- Why:
+  - The first implementation of BACKLOG #4 put the taskkill in both PREINSTALL and PREUNINSTALL. Tauri's generated `installer.nsi` runs PREINSTALL *before* its built-in `CheckIfAppIsRunning` macro — so killing in PREINSTALL meant the macro found nothing running and the "Switchy is running, close it?" prompt never fired on upgrade. the user flagged this as regressing UX: silent auto-kill on upgrade is surprising and worse than the old prompt-then-maybe-fail behavior.
+  - Uninstall is different: the user has already clicked "uninstall", the decision is already made, and a prompt at that point just adds friction. Force-killing on PREUNINSTALL is fine.
+  - The residual BACKLOG #4 failure mode (install silently skips `switchy.exe` replacement when the user dismisses the prompt without actually closing the app) is accepted — fixing it properly needs a hook *between* `CheckIfAppIsRunning` and `File "${MAINBINARYSRCPATH}"`, which the Tauri template doesn't expose. Options if this re-surfaces: (a) full custom NSIS template, (b) add a post-install verification that retries the file copy.
+- Consequence:
+  - Future sessions touching `installer-hooks.nsh` should not add a PREINSTALL taskkill without understanding this trade-off.
+  - If the silent-skip failure returns, escalate to a full template override rather than re-adding the aggressive kill.
+
 ## 2026-04-18 — Drop T-5.2 WSL validation from the multi-account ship
 
 - Decision:

@@ -148,7 +148,8 @@
         "oauthHint": "Google official uses OAuth personal authentication, no need to fill in API Key. The browser will automatically open for login on first use.",
         "apiKeyPlaceholder": "Enter Gemini API Key"
       }
-    }
+    },
+    "duplicateLiveIdsLoadFailed": "Failed to read provider IDs from config. Please fix the config and try again."
   },
   "notifications": {
     "providerAdded": "Provider added",
@@ -599,7 +600,16 @@
       "defaultCostMultiplierRequired": "Default multiplier is required",
       "defaultCostMultiplierInvalid": "Invalid multiplier format"
     },
-    "saveFailedGeneric": "Save failed, please try again"
+    "saveFailedGeneric": "Save failed, please try again",
+    "authCenter": {
+      "title": "OAuth Auth Center",
+      "description": "Centrally manage OAuth accounts reused across apps. Providers bind to these auth sources — no repeated login.",
+      "copilotDescription": "Manage GitHub Copilot accounts, defaults, and managed credentials bound to Claude / Codex / Gemini.",
+      "heading": "Auth Center",
+      "headingDescription": "Unified management of OAuth accounts and default auth sources that can be reused across apps.",
+      "beta": "Beta"
+    },
+    "tabAuth": "Auth"
   },
   "apps": {
     "claude": "Claude",
@@ -803,7 +813,8 @@
     "fetchModelsNeedConfig": "Please fill in API endpoint and API Key first",
     "fetchModelsAuthFailed": "API Key is invalid or lacks permission",
     "fetchModelsNotSupported": "This provider does not support fetching model list",
-    "fetchModelsTimeout": "Request timed out, please check network connection"
+    "fetchModelsTimeout": "Request timed out, please check network connection",
+    "providerKeyStatusLoading": "Loading provider identity status, please wait."
   },
   "copilot": {
     "authSection": "GitHub Copilot Authentication",
@@ -908,7 +919,8 @@
     "modelNamePlaceholder": "e.g., gpt-5-codex",
     "contextWindow1M": "1M Context Window",
     "autoCompactLimit": "Auto Compact Limit",
-    "autoCompactLimitHint": "Auto-compacts history when context reaches this token limit"
+    "autoCompactLimitHint": "Auto-compacts history when context reaches this token limit",
+    "noCommonConfigToApply": "Common config snippet is empty; nothing to apply."
   },
   "geminiConfig": {
     "envFile": "Environment Variables (.env)",

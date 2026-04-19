@@ -2,11 +2,21 @@ import React from "react";
 import { RefreshCw, AlertCircle, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AppId } from "@/lib/api";
-import { useSubscriptionQuota } from "@/lib/query/subscription";
+import {
+  useSubscriptionQuota,
+  useSubscriptionQuotaForProvider,
+} from "@/lib/query/subscription";
 import type { QuotaTier } from "@/types/subscription";
 
 interface SubscriptionQuotaFooterProps {
   appId: AppId;
+  /**
+   * When supplied (Official Claude cards with a captured account), reads the
+   * per-provider snapshot under `~/.switchy/accounts/{providerId}/` instead
+   * of live `~/.claude/` credentials. This makes each captured card show its
+   * own account's quota. See BACKLOG #5.
+   */
+  providerId?: string;
   inline?: boolean;
 }
 
@@ -78,14 +88,20 @@ function formatRelativeTime(
 
 const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
   appId,
+  providerId,
   inline = false,
 }) => {
   const { t } = useTranslation();
+  const liveQuery = useSubscriptionQuota(appId, !providerId);
+  const providerQuery = useSubscriptionQuotaForProvider(
+    providerId ?? "",
+    !!providerId,
+  );
   const {
     data: quota,
     isFetching: loading,
     refetch,
-  } = useSubscriptionQuota(appId, true);
+  } = providerId ? providerQuery : liveQuery;
 
   // 定期更新相对时间显示
   const [now, setNow] = React.useState(Date.now());

@@ -148,7 +148,8 @@
         "oauthHint": "Google 官方使用 OAuth 个人认证，无需填写 API Key。首次使用时会自动打开浏览器进行登录。",
         "apiKeyPlaceholder": "请输入 Gemini API Key"
       }
-    }
+    },
+    "duplicateLiveIdsLoadFailed": "读取配置中的供应商标识失败，请先修复配置后再试"
   },
   "notifications": {
     "providerAdded": "供应商已添加",
@@ -599,7 +600,16 @@
       "defaultCostMultiplierRequired": "默认倍率不能为空",
       "defaultCostMultiplierInvalid": "默认倍率格式不正确"
     },
-    "saveFailedGeneric": "保存失败，请重试"
+    "saveFailedGeneric": "保存失败，请重试",
+    "authCenter": {
+      "title": "OAuth 认证中心",
+      "description": "集中管理跨应用复用的 OAuth 账号。Provider 只绑定这些认证源，不再重复登录。",
+      "copilotDescription": "管理 GitHub Copilot 账号、默认账号以及供 Claude / Codex / Gemini 绑定的托管凭据。",
+      "heading": "认证中心",
+      "headingDescription": "统一管理可跨应用复用的 OAuth 账号和默认认证来源。",
+      "beta": "Beta"
+    },
+    "tabAuth": "认证"
   },
   "apps": {
     "claude": "Claude",
@@ -803,7 +813,8 @@
     "fetchModelsNeedConfig": "请先填写 API 端点和 API Key",
     "fetchModelsAuthFailed": "API Key 无效或无权限",
     "fetchModelsNotSupported": "该供应商不支持获取模型列表",
-    "fetchModelsTimeout": "请求超时，请检查网络连接"
+    "fetchModelsTimeout": "请求超时，请检查网络连接",
+    "providerKeyStatusLoading": "正在加载供应商标识状态，请稍后再试"
   },
   "copilot": {
     "authSection": "GitHub Copilot 认证",
@@ -908,7 +919,8 @@
     "modelNamePlaceholder": "例如: gpt-5-codex",
     "contextWindow1M": "1M 上下文窗口",
     "autoCompactLimit": "压缩阈值",
-    "autoCompactLimitHint": "上下文 token 数达到此阈值时自动压缩历史"
+    "autoCompactLimitHint": "上下文 token 数达到此阈值时自动压缩历史",
+    "noCommonConfigToApply": "通用配置片段为空或没有可写入的内容"
   },
   "geminiConfig": {
     "envFile": "环境变量 (.env)",

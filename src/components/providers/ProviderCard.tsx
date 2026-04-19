@@ -363,7 +363,15 @@ export function ProviderCard({
           <div className="ml-auto">
             <div className="flex items-center gap-1">
               {isOfficial ? (
-                <SubscriptionQuotaFooter appId={appId} inline={true} />
+                <SubscriptionQuotaFooter
+                  appId={appId}
+                  providerId={
+                    provider.meta?.capturedClaudeAccount
+                      ? provider.id
+                      : undefined
+                  }
+                  inline={true}
+                />
               ) : hasMultiplePlans ? (
                 <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                   <span className="font-medium">
