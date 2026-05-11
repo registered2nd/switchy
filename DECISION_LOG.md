@@ -1,5 +1,55 @@
 # Decision Log
 
+## 2026-05-06 — Credential mirror watcher: ship the file watcher, one-way live → mirror
+
+- Decision: Ship a `notify`-backed FileSystemWatcher on `~/.claude/.credentials.json` that copies to `mirror_dir/.credentials.json` on every change. **One-way live → mirror only**, not bidirectional. Retain the existing swap-time `.credentials.json` mirror in `services/claude_account/mod.rs` for the first-swap-into-an-account case (before the watcher has anything to fire on).
+- Why:
+  1. **The 2026-05-04 entry's conclusion was wrong, and this session's forensic data corrects it.** That entry decided the post-switch refresh race wasn't supported by observation, based on a 20-minute manual-cp re-test where both sides held identical sha256. Today's WSL 401 traced to exactly the rotation race: Win refreshed `R0 → R1` over the evening, WSL was left holding R0, WSL's later refresh attempt got rejected, Claude Code blanked WSL's refresh_token field (length 0). The 2026-05-04 test was within access-token validity — neither side *needed* to refresh in 20 minutes, so the race couldn't manifest. SESSION_LOG today has the full timeline.
+  2. **OAuth refresh tokens are server-rotated single-use.** Once two filesystem stores diverge from a shared starting credential, whichever side refreshes first invalidates the other side's refresh token. Sharing `.credentials.json` across the WSL boundary is structurally doomed without sustained sync — exactly what the watcher provides.
+  3. **One-way (not bidirectional) is the right shape today.** Win is the active refresher in normal use (the user runs Claude Code there continuously); WSL is the consumer. One-way live → mirror keeps WSL strictly downstream so its Claude Code never has to attempt a refresh on its own. Bidirectional last-writer-wins works in theory but adds a way for WSL's spurious refresh attempt to overwrite Win's good state. Defer until the Win-side failure mode actually bites (BACKLOG #10).
+  4. **The swap-time `.credentials.json` mirror is still needed for first-swap.** The watcher only fires on changes after the live file already exists. The first time a user switches into an account, the swap-time mirror is what populates the WSL side. Removing it would force a one-app-restart wait for the watcher's startup one-shot to copy.
+- Consequence:
+  - 1.0.5 ships the watcher. `services::credential_mirror::start()` called from `lib.rs` setup hook on every app launch; logs each mirror under `[credential_mirror]` to `switchy.log`.
+  - The 2026-05-04 decision's "do not build a watcher" guidance is **superseded** by this entry. The diagnostic logging that 2026-05-04 added remains useful for first-swap-failure diagnosis and is retained.
+  - BACKLOG #9 (verify mirror via diagnostic logging) is closed by this session — the mirror IS firing; the bug was downstream rotation drift, not the swap-time write.
+  - New BACKLOG items added: bidirectional last-writer-wins (#10), late-appearing watch dir (#11), and a deferred reconsideration of whether the swap-time `.credentials.json` mirror should be dropped now that the watcher exists (#12 — current call: keep it).
+
+## 2026-05-03 — Patch-bump (1.0.3) for the WSL mirror fixes, not minor-bump (1.1.0)
+
+- Decision: The 2026-05-02 → 2026-05-03 ship is **1.0.3**, not 1.1.0. Treat the unreleased committed fixes (`08f19e2c` switch-away sync, plus the four hover/overlay commits `4c9256bf`/`d2f365fc`/`48b10153`/`2965fd84`) as the logical 1.0.1 and 1.0.2 even though they were never tagged or released, and bump to 1.0.3 for everything that landed today.
+- Why:
+  1. **Nothing here is genuinely new behavior.** WSL mirror auto-detection, home-root `.claude.json` mirror, quota cache invalidation on switch, refresh pill clickability — every change is making something that was supposed to work in 1.0.0 actually work. None of them give the user a capability the 1.0.0 release notes didn't already advertise.
+  2. **Initial bump to 1.1.0 was reflexive.** I framed "auto-detection without configuration" as a feature; the user pushed back that it's just removing a configuration step that was supposed to be optional anyway. Same for home-root mirror — making the existing mirror feature reach the file Claude Code actually reads.
+  3. **The committed-but-unreleased fixes between 1.0.0 and today represent real semver patch increments.** Six commits since `605e0412`. Pretending they're all part of "1.0.0" undercounts; pretending they're each a release overcount. Treating them as logical 1.0.1 / 1.0.2 lets 1.0.3 actually number the third patch since 1.0.0 instead of compressing six fixes into one bump.
+- Consequence:
+  - 1.0.1 and 1.0.2 are never tagged, never released, never carry CHANGELOG entries — they only exist as logical reference points to make 1.0.3 numerically honest.
+  - Future bug-fix-only ships continue patch-bumping (1.0.4, 1.0.5, ...). Minor bump is reserved for genuinely new user-facing capability — first time a feature does something the prior release explicitly couldn't.
+  - All three version-of-record files (`package.json`, `tauri.conf.json`, `Cargo.toml`) bumped together; CHANGELOG entry header matches.
+
+## 2026-05-04 — Credentials mirror sync: ship diagnostic logging, defer remediation until logs reveal actual behavior
+
+- Decision: Add explicit info-level logging around the Claude credentials mirror write path in `services/claude_account/mod.rs` (`mirror cred write START` + `OK`-with-mtime), but do NOT add a file watcher, manual sync buttons UI, or any other remediation until diagnostic logs from a real provider switch on a rebuilt Switchy reveal what the auto-mirror is actually doing.
+- Why:
+  1. **The post-switch refresh race theory wasn't supported by observation.** Hypothesis was that Windows and WSL Claude Code each refresh OAuth tokens independently after a swap, racing on the rotated refresh_token and producing the `401 Invalid authentication credentials` the user saw on WSL. Empirical re-test 20 minutes after a manual `cp` of `.credentials.json` showed both sides held identical sha256 hashes — neither Claude Code instance had refreshed unprompted. Building a watcher or buttons against a failure mode that doesn't reproduce is premature.
+  2. **The auto-mirror's actual failure mode is unconfirmed.** The existing `swap applied with mirror` log fires unconditionally when the warnings vec is empty; we have no signal from the existing code about whether the credentials write step (vs the `.claude.json` or `settings.json` writes that share the same swap path) actually completed. the user's observation that WSL stayed stale through a switch is not yet reconciled with the function returning Ok and no warning. Logging is the cheapest way to disambiguate.
+  3. **Remediation paths fork on what the logging reveals.** If START fires but no OK and no warning: silent error in `atomic_write` against UNC paths — targeted fix. If both fire and target mtime updates but the user still sees stale: it's a Claude-Code-side caching issue, not a Switchy bug. If neither fires: the function is bailing earlier than expected (`get_claude_mirror_override_dir` returning None? `swap_if_captured` gating?). Each path is a different fix, and shipping a generic watcher hides which one applies.
+- Consequence:
+  - Manual sync UI infrastructure built mid-session was reverted: `services/claude_account/sync.rs` deleted, `ClaudeCredentialsMirrorPanel.tsx` deleted, 3 Tauri commands removed, AuthCenterPanel reverted to pre-session state. Diagnostic logging in `mod.rs` retained.
+  - Next Switchy rebuild + provider switch is the trigger to read the logs and decide remediation.
+  - If diagnostic logs confirm the auto-mirror is working as advertised, the buttons remain unnecessary and the WSL 401 had a different root cause (most likely Claude-Code-side caching of pre-swap credentials before the user typed the next command).
+
+## 2026-04-20 — Abandon snapshot OAuth refresh (BACKLOG #5 and #6)
+
+- Decision: Do not build `snapshot_oauth_refresh` (BACKLOG #5, the on-demand token refresh for captured-but-not-current accounts) or the periodic background refresh loop (BACKLOG #6). Captured-card quota pills showing "Session expired" past the access-token ceiling is the correct user-facing behavior.
+- Why — two independent reasons, either sufficient on its own:
+  1. **Anthropic's April 2026 "Authentication and credential use" policy explicitly prohibits it.** Verbatim: *"OAuth authentication used with Free, Pro, and Max plans is intended exclusively for Claude Code and Claude.ai. Using OAuth tokens obtained through Claude Free, Pro, or Max accounts in any other product, tool, or service is not permitted and constitutes a violation of the Consumer Terms of Service."* BACKLOG #5, even in its carefully-scoped user-initiated-only variant (5b), uses a Pro/Max refresh_token from Switchy — not from Claude Code — and the policy language names this exact case.
+  2. **Cloudflare WAF actively blocks the endpoint for non-browser clients** with the Claude Code Console client_id (`9d1c250a-e61b-44d9-88ed-5944d1962f5e`). This isn't a hypothetical fragility — it's deployed enforcement. Tracked in [anthropics/claude-code#47754](https://github.com/anthropics/claude-code/issues/47754); the same block broke Hermes PKCE refresh ([NousResearch/hermes-agent#6347](https://github.com/NousResearch/hermes-agent/issues/6347)). Even if the policy changes, the engineering path is a moving target.
+- Consequence:
+  - `specs/snapshot_oauth_refresh/requirements.md` is retained as a historical artifact with an abandonment note at the top. Design and tasks stages are not written.
+  - The 2026-04-19 entry below referenced #5 and #6 as "future improvements that extend the window." Those paragraphs are **superseded by this entry** — the window cannot be extended within ToS, full stop. The 8h access-token / ~24h refresh-token ceiling is the feature ceiling, not a lower bound to work up from.
+  - If a future session considers similar "help Switchy do more with captured credentials" features, the first check is: does it make any authenticated request using Pro/Max OAuth credentials from a non-Claude-Code-non-Claude.ai client? If yes, it's ToS-prohibited, regardless of how thin or user-initiated the path is.
+  - The existing captured-snapshot **quota read** path (which uses the captured `access_token`, not `refresh_token`, against Anthropic's usage endpoint) is a milder version of the same question but is not affected by this decision — it uses tokens while they're still valid, does not call the OAuth refresh endpoint, and is the feature-parity story for BACKLOG #5 of the 2026-04-19 multi-account plan which was retired when switch-away sync shipped. Leave it alone; flag if/when future policy updates extend the prohibition to usage-endpoint reads.
+
 ## 2026-04-19 — OAuth token lifetime bounds the multi-account feature
 
 - Constraint:

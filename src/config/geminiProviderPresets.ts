@@ -100,7 +100,7 @@ export const geminiProviderPresets: GeminiProviderPreset[] = [
   {
     name: "AIGoCode",
     websiteUrl: "https://aigocode.com",
-    apiKeyUrl: "https://aigocode.com/invite/CC-SWITCH",
+    apiKeyUrl: "https://aigocode.com",
     settingsConfig: {
       env: {
         GOOGLE_GEMINI_BASE_URL: "https://api.aigocode.com",
@@ -143,7 +143,7 @@ export const geminiProviderPresets: GeminiProviderPreset[] = [
   {
     name: "AICoding",
     websiteUrl: "https://aicoding.sh",
-    apiKeyUrl: "https://aicoding.sh/i/CCSWITCH",
+    apiKeyUrl: "https://aicoding.sh",
     settingsConfig: {
       env: {
         GOOGLE_GEMINI_BASE_URL: "https://api.aicoding.sh",

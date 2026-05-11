@@ -1,6 +1,7 @@
 pub mod claude_account;
 pub mod coding_plan;
 pub mod config;
+pub mod credential_mirror;
 pub mod env_checker;
 pub mod env_manager;
 pub mod mcp;

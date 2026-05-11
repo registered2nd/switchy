@@ -3,7 +3,7 @@
 mod auth;
 mod claude_account;
 mod coding_plan;
-mod config;
+pub(crate) mod config;
 mod copilot;
 mod deeplink;
 mod env;

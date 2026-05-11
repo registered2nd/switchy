@@ -996,7 +996,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
   {
     name: "AIGoCode",
     websiteUrl: "https://aigocode.com",
-    apiKeyUrl: "https://aigocode.com/invite/CC-SWITCH",
+    apiKeyUrl: "https://aigocode.com",
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "AIGoCode",
@@ -1085,7 +1085,7 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
   {
     name: "AICoding",
     websiteUrl: "https://aicoding.sh",
-    apiKeyUrl: "https://aicoding.sh/i/CCSWITCH",
+    apiKeyUrl: "https://aicoding.sh",
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
       name: "AICoding",

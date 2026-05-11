@@ -76,7 +76,7 @@ fn get_wsl_home_dir(distro: &str) -> Option<String> {
 }
 
 #[cfg(target_os = "windows")]
-fn build_default_claude_mirror_dir() -> Option<String> {
+pub(crate) fn build_default_claude_mirror_dir() -> Option<String> {
     let distro = get_default_wsl_distro()?;
     let home = get_wsl_home_dir(&distro)?;
     let suffix = home
@@ -86,7 +86,7 @@ fn build_default_claude_mirror_dir() -> Option<String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn build_default_claude_mirror_dir() -> Option<String> {
+pub(crate) fn build_default_claude_mirror_dir() -> Option<String> {
     None
 }
 

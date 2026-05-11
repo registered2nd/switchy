@@ -6,6 +6,68 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.5] — 2026-05-06 — Credential-mirror watcher keeps WSL Claude Code in sync after every refresh
+
+### Added
+
+- **Background credential-mirror watcher.** Switchy now watches
+  `~/.claude/.credentials.json` for changes (atomic-write events from
+  Claude Code's own OAuth refreshes) and copies the file to the configured
+  mirror directory automatically. A one-shot startup copy catches up if the
+  mirror is stale on app launch. Every mirror is logged under
+  `[credential_mirror]` in `switchy.log`.
+
+### Fixed
+
+- **WSL Claude Code intermittently returning 401 hours after a switch.** The
+  swap-time credential mirror correctly delivers tokens to both Windows and
+  WSL, but Claude Code's OAuth refresh tokens are single-use and rotate
+  server-side: whichever side refreshes first invalidates the other side's
+  refresh token, leaving the loser unrecoverable. The watcher keeps WSL
+  strictly downstream of Win's rotation chain, so WSL's Claude Code never
+  has to attempt its own refresh against an already-burned token.
+
+---
+
+## [1.0.3] — 2026-05-02 — WSL mirror actually works, quota pollution fixed
+
+### Added
+
+- **WSL mirror auto-detection.** Switchy now auto-detects the default WSL
+  distro and mirrors credentials there on every provider switch — no manual
+  configuration required. The detected path is cached so the two `wsl.exe`
+  probes only run once per app session.
+- **Post-build installer copy.** `pnpm build` now copies the NSIS installer
+  to the project root automatically.
+
+### Fixed
+
+- **WSL mirror never persisted.** The frontend auto-seed condition for the
+  mirror directory was always false (`claudeMirrorDir === defaultClaudeMirrorDir`
+  after the initial load set both to the same value). The backend now falls
+  back to auto-detected WSL path regardless of whether the setting was saved.
+- **`claude auth status` showed wrong account on WSL.** The credential mirror
+  wrote `oauthAccount` to `~/.claude/.claude.json`, but Claude Code reads
+  identity from `~/.claude.json` (home root). The mirror now updates both
+  files.
+- **Quota pollution on account switch.** Switching from account A to B showed
+  A's cached quota on B's card. The live subscription query cache (5-minute
+  staleTime) was never invalidated on switch. Now all subscription quota
+  queries are invalidated when switching providers.
+- **Refresh pill blocked by hover overlay.** Restored `relative z-20` on the
+  quota pill container, lost during the flex-sibling refactor in `2965fd84`.
+- **Hover overlay covering refresh pill** (commits `d2f365fc`–`2965fd84`).
+  Four iterations moved the action strip from absolute-overlay to in-flow
+  flex sibling.
+- **Tray menu defaulting to Chinese** when system locale was English
+  (`d2f365fc`).
+- **Switch-away credential sync** (`08f19e2c`). Live credentials (potentially
+  refreshed by Claude Code in the background) are now persisted back into the
+  outgoing provider's snapshot before each switch, preventing token loss on
+  multi-account rotation.
+
+---
+
 ## [1.0.0] — 2026-04-18 — Switchy stands on its own
 
 First release under the Switchy name. Cuts the project free from its upstream

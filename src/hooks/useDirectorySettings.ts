@@ -216,11 +216,7 @@ export function useDirectorySettings({
       return;
     }
 
-    if (
-      !mirrorSeededRef.current &&
-      defaultClaudeMirrorDir &&
-      claudeMirrorDir !== defaultClaudeMirrorDir
-    ) {
+    if (!mirrorSeededRef.current && defaultClaudeMirrorDir) {
       setClaudeMirrorDir(defaultClaudeMirrorDir);
       onUpdateSettings({ claudeMirrorConfigDir: defaultClaudeMirrorDir });
       mirrorSeededRef.current = true;

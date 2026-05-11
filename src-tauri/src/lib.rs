@@ -818,6 +818,12 @@ pub fn run() {
                 });
             });
 
+            // Mirror the live Claude credentials file to the configured mirror
+            // dir on every change. Keeps WSL (or any mirror target) downstream
+            // of the rotating live refresh-token chain so the two sides don't
+            // race each other to invalidate the shared refresh_token.
+            services::credential_mirror::start();
+
             // Linux: 禁用 WebKitGTK 硬件加速，防止 EGL 初始化失败导致白屏
             #[cfg(target_os = "linux")]
             {
@@ -1055,6 +1061,8 @@ pub fn run() {
             commands::get_session_messages,
             commands::delete_session,
             commands::delete_sessions,
+            commands::scan_broken_sessions,
+            commands::repair_broken_session,
             commands::launch_session_terminal,
             commands::get_tool_versions,
             // Provider terminal

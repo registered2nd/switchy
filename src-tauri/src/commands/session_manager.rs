@@ -83,3 +83,21 @@ pub async fn delete_sessions(
         .await
         .map_err(|e| format!("Failed to delete sessions: {e}"))
 }
+
+#[tauri::command]
+pub async fn scan_broken_sessions(
+) -> Result<Vec<session_manager::repair::BrokenSessionInfo>, String> {
+    tauri::async_runtime::spawn_blocking(session_manager::repair::scan_broken_sessions)
+        .await
+        .map_err(|e| format!("Failed to scan sessions: {e}"))
+}
+
+#[tauri::command]
+pub async fn repair_broken_session(
+    sourcePath: String,
+) -> Result<session_manager::repair::RepairResult, String> {
+    let path = std::path::PathBuf::from(sourcePath);
+    tauri::async_runtime::spawn_blocking(move || session_manager::repair::repair_session(&path))
+        .await
+        .map_err(|e| format!("Failed to repair session: {e}"))?
+}

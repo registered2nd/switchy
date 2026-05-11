@@ -179,7 +179,7 @@ requires_openai_auth = true`,
   {
     name: "AIGoCode",
     websiteUrl: "https://aigocode.com",
-    apiKeyUrl: "https://aigocode.com/invite/CC-SWITCH",
+    apiKeyUrl: "https://aigocode.com",
     category: "third_party",
     auth: generateThirdPartyAuth(""),
     config: generateThirdPartyConfig(
@@ -231,7 +231,7 @@ requires_openai_auth = true`,
   {
     name: "AICoding",
     websiteUrl: "https://aicoding.sh",
-    apiKeyUrl: "https://aicoding.sh/i/CCSWITCH",
+    apiKeyUrl: "https://aicoding.sh",
     auth: generateThirdPartyAuth(""),
     config: generateThirdPartyConfig(
       "aicoding",

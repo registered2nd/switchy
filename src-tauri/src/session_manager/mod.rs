@@ -1,4 +1,5 @@
 pub mod providers;
+pub mod repair;
 pub mod terminal;
 
 use serde::{Deserialize, Serialize};

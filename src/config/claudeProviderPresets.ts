@@ -477,7 +477,7 @@ export const providerPresets: ProviderPreset[] = [
   {
     name: "AIGoCode",
     websiteUrl: "https://aigocode.com",
-    apiKeyUrl: "https://aigocode.com/invite/CC-SWITCH",
+    apiKeyUrl: "https://aigocode.com",
     settingsConfig: {
       env: {
         ANTHROPIC_BASE_URL: "https://api.aigocode.com",
@@ -531,7 +531,7 @@ export const providerPresets: ProviderPreset[] = [
   {
     name: "AICoding",
     websiteUrl: "https://aicoding.sh",
-    apiKeyUrl: "https://aicoding.sh/i/CCSWITCH",
+    apiKeyUrl: "https://aicoding.sh",
     settingsConfig: {
       env: {
         ANTHROPIC_BASE_URL: "https://api.aicoding.sh",

@@ -1,6 +1,6 @@
 [package]
 name = "switchy"
-version = "1.0.0"
+version = "1.0.5"
 description = "All-in-One Assistant for Claude Code, Codex & Gemini CLI"
 authors = ["registered2nd"]
 license = "MIT"
@@ -78,6 +78,7 @@ uuid = { version = "1.11", features = ["v4"] }
 sha2 = "0.10"
 json5 = "0.4"
 json-five = "0.3.1"
+notify = "6"
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"

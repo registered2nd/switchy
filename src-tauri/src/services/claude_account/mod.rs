@@ -345,15 +345,38 @@ pub fn swap_if_captured(
     let mut warnings: Vec<String> = Vec::new();
 
     let mirror_cred = mirror_dir.join(".credentials.json");
-    if let Err(e) = store::write_snapshot_atomic(&mirror_cred, &cred_bytes) {
-        log::warn!(
-            "credential mirror write failed for '{}': {e}",
-            provider.id
-        );
-        let tag = classify_mirror_error(&e);
-        warnings.push(format!("credential_mirror_failed:{}:{}", provider.id, tag));
+    log::info!(
+        "[claude_account] mirror cred write START path='{}' bytes={} provider={}",
+        mirror_cred.display(),
+        cred_bytes.len(),
+        provider.id
+    );
+    match store::write_snapshot_atomic(&mirror_cred, &cred_bytes) {
+        Ok(()) => {
+            let mtime_ms = std::fs::metadata(&mirror_cred)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis())
+                .unwrap_or(0);
+            log::info!(
+                "[claude_account] mirror cred write OK path='{}' mtime_ms={} provider={}",
+                mirror_cred.display(),
+                mtime_ms,
+                provider.id
+            );
+        }
+        Err(e) => {
+            log::warn!(
+                "credential mirror write failed for '{}': {e}",
+                provider.id
+            );
+            let tag = classify_mirror_error(&e);
+            warnings.push(format!("credential_mirror_failed:{}:{}", provider.id, tag));
+        }
     }
 
+    let oauth_value_for_home_root = oauth_value.clone();
     let mirror_config = paths::mirror_claude_config_path(&mirror_dir);
     match fs::read(&mirror_config) {
         Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
@@ -405,6 +428,34 @@ pub fn swap_if_captured(
             log::warn!("mirror .claude.json read failed for '{}': {e}", provider.id);
             let tag = classify_mirror_error_from_io(&e);
             warnings.push(format!("credential_mirror_failed:{}:{}", provider.id, tag));
+        }
+    }
+
+    // Claude Code may also read oauthAccount from ~/.claude.json (home root),
+    // not just ~/.claude/.claude.json. Update the home-root file if it exists.
+    if let Some(home) = mirror_dir.parent() {
+        let home_root_config = home.join(".claude.json");
+        if home_root_config.exists() && home_root_config != mirror_config {
+            match fs::read(&home_root_config) {
+                Ok(bytes) => {
+                    if let Ok(mut root) = serde_json::from_slice::<Value>(&bytes) {
+                        if merge::replace_oauth_account(&mut root, oauth_value_for_home_root).is_ok() {
+                            if let Ok(out) = serde_json::to_vec_pretty(&root) {
+                                if let Err(e) =
+                                    store::write_snapshot_atomic(&home_root_config, &out)
+                                {
+                                    log::warn!(
+                                        "home-root .claude.json mirror write failed: {e}"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("home-root .claude.json read failed: {e}");
+                }
+            }
         }
     }
 

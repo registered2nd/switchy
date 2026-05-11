@@ -394,7 +394,7 @@ export function ProviderCard({
               onSetAsDefault={onSetAsDefault}
             />
           </div>
-          <div className="ml-auto">
+          <div className="relative z-20 ml-auto">
             <div className="flex items-center gap-1">
               {isOfficial ? (
                 <SubscriptionQuotaFooter

@@ -548,10 +548,15 @@ pub fn set_claude_mirror_config_dir(value: Option<PathBuf>) -> Result<(), AppErr
 
 pub fn get_claude_mirror_override_dir() -> Option<PathBuf> {
     let settings = settings_store().read().ok()?;
-    settings
-        .claude_mirror_config_dir
+    if let Some(p) = settings.claude_mirror_config_dir.as_ref() {
+        return Some(resolve_override_path(p));
+    }
+    drop(settings);
+    static DEFAULT_MIRROR: OnceLock<Option<String>> = OnceLock::new();
+    DEFAULT_MIRROR
+        .get_or_init(|| crate::commands::config::build_default_claude_mirror_dir())
         .as_ref()
-        .map(|p| resolve_override_path(p))
+        .map(|p| PathBuf::from(p))
 }
 
 pub fn get_codex_override_dir() -> Option<PathBuf> {
