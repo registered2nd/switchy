@@ -8,7 +8,7 @@
         "-y",
         "@playwright/mcp@latest",
         "--user-data-dir",
-        "C:/Users/Administrator/.agent-chrome-profile-switchy"
+        "%USERPROFILE%/.agent-chrome-profile-switchy"
       ],
       "env": {},
       "type": "stdio"
