@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "pnpm tauri dev",
     "build": "pnpm tauri build && pnpm run postbuild",
-    "postbuild": "node -e \"const{cpSync,readdirSync}=require('fs'),p=require('path'),d='src-tauri/target/release/bundle/nsis';try{readdirSync(d).filter(f=>f.endsWith('-setup.exe')).forEach(f=>cpSync(p.join(d,f),f))}catch{}\"",
+    "postbuild": "node -e \"const{cpSync,readdirSync,mkdirSync}=require('fs'),p=require('path'),d='src-tauri/target/release/bundle/nsis',o='installers';try{mkdirSync(o,{recursive:true});readdirSync(d).filter(f=>f.endsWith('-setup.exe')).forEach(f=>cpSync(p.join(d,f),p.join(o,f)))}catch{}\"",
     "tauri": "tauri",
     "dev:renderer": "vite",
     "build:renderer": "vite build",

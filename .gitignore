@@ -31,7 +31,10 @@ CODEBUDDY.md
 .github
 cc-switch-setup-backup/
 
-# Shipped installer artifacts (built via pnpm tauri build, not committed)
-/Switchy_*_x64-setup.exe
-/Switchy_*_x64_en-US.msi
+# Distribution installers live in installers/. Ignore everything there,
+# then re-include only the current versioned installers so they're tracked.
+/installers/*
+!/installers/Switchy_*-setup.exe
+!/installers/Switchy_*_en-US.msi
+!/installers/Switchy_*.dmg
 .specstory/
