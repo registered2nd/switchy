@@ -1,0 +1,92 @@
+name: Build macOS DMG (unsigned)
+
+# On-demand macOS build that needs NO Apple Developer credentials.
+# Produces a universal (Intel + Apple Silicon) .dmg as a downloadable
+# workflow artifact. Borrowed from Vtype's hdiutil approach because
+# Tauri's built-in DMG styling is unreliable on CI runners.
+#
+# Trigger: Actions tab -> "Build macOS DMG (unsigned)" -> Run workflow.
+#
+# NOTE: the produced app is unsigned/un-notarized. On first launch macOS
+# Gatekeeper will block it; right-click the .app -> Open, or run
+#   xattr -dr com.apple.quarantine /Applications/Switchy.app
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build universal DMG
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.3
+          run_install: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri .app (universal, unsigned)
+        run: pnpm tauri build --target universal-apple-darwin --bundles app
+
+      - name: Package DMG with hdiutil
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bundle_dir="src-tauri/target/universal-apple-darwin/release/bundle/macos"
+          app_bundle_path="$(find "${bundle_dir}" -maxdepth 1 -type d -name '*.app' | head -n 1)"
+          if [[ -z "${app_bundle_path}" ]]; then
+            echo "No .app bundle found under ${bundle_dir}" >&2
+            ls -la "${bundle_dir}" || true
+            exit 1
+          fi
+
+          app_bundle_name="$(basename "${app_bundle_path}")"
+          app_name="${app_bundle_name%.app}"
+          version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          dmg_name="${app_name}_${version}_universal.dmg"
+
+          staging_dir="$(mktemp -d)"
+          trap 'rm -rf "${staging_dir}"' EXIT
+          cp -R "${app_bundle_path}" "${staging_dir}/${app_bundle_name}"
+          ln -s /Applications "${staging_dir}/Applications"
+
+          hdiutil create \
+            -volname "${app_name}" \
+            -srcfolder "${staging_dir}" \
+            -ov \
+            -format UDZO \
+            "${dmg_name}"
+
+          echo "DMG_NAME=${dmg_name}" >> "$GITHUB_ENV"
+          echo "Built ${dmg_name}"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: switchy-macos-dmg
+          path: ${{ env.DMG_NAME }}
+          if-no-files-found: error
+          retention-days: 14
