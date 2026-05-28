@@ -1,9 +1,9 @@
 name: Build macOS DMG (unsigned)
 
 # On-demand macOS build that needs NO Apple Developer credentials.
-# Produces a universal (Intel + Apple Silicon) .dmg as a downloadable
-# workflow artifact. Borrowed from Vtype's hdiutil approach because
-# Tauri's built-in DMG styling is unreliable on CI runners.
+# Produces an Apple Silicon (aarch64) .dmg as a downloadable workflow
+# artifact. Borrowed from Vtype's hdiutil approach because Tauri's
+# built-in DMG styling is unreliable on CI runners.
 #
 # Trigger: Actions tab -> "Build macOS DMG (unsigned)" -> Run workflow.
 #
@@ -37,7 +37,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -47,15 +47,15 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      - name: Build Tauri .app (universal, unsigned)
-        run: pnpm tauri build --target universal-apple-darwin --bundles app
+      - name: Build Tauri .app (Apple Silicon, unsigned)
+        run: pnpm tauri build --target aarch64-apple-darwin --bundles app
 
       - name: Package DMG with hdiutil
         shell: bash
         run: |
           set -euo pipefail
 
-          bundle_dir="src-tauri/target/universal-apple-darwin/release/bundle/macos"
+          bundle_dir="src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
           app_bundle_path="$(find "${bundle_dir}" -maxdepth 1 -type d -name '*.app' | head -n 1)"
           if [[ -z "${app_bundle_path}" ]]; then
             echo "No .app bundle found under ${bundle_dir}" >&2
@@ -66,7 +66,7 @@ jobs:
           app_bundle_name="$(basename "${app_bundle_path}")"
           app_name="${app_bundle_name%.app}"
           version="$(node -p "require('./src-tauri/tauri.conf.json').version")"
-          dmg_name="${app_name}_${version}_universal.dmg"
+          dmg_name="${app_name}_${version}_aarch64.dmg"
 
           staging_dir="$(mktemp -d)"
           trap 'rm -rf "${staging_dir}"' EXIT
