@@ -1,5 +1,19 @@
 # Decision Log
 
+## 2026-05-28 — Fork ships its own unsigned macOS DMG; tracks current installers in git; retires upstream cc-switch versioning
+
+- Decision: (1) Build the fork's macOS DMG via a new on-demand **unsigned** workflow (`build-macos.yml`, hdiutil-packaged, Apple Silicon only), separate from the inherited `release.yml`. (2) **Track the current version's installers in git** (`installers/` with a Vtype-style re-include `.gitignore`), reversing the 2026-04-19 don't-commit-installers decision. (3) Treat upstream cc-switch's `3.13.0` versioning as **retired** — the fork owns its 1.0.x line.
+- Why:
+  1. **The inherited release.yml can't run on this fork.** `release.yml` + the `v3.x` tags came from upstream cc-switch and require Apple Developer signing/notarization secrets the fork doesn't possess. Rather than buy a $99/yr Developer ID for a personal fork, an unsigned hdiutil DMG (Vtype's pattern) gives a working macOS artifact for zero cost. Gatekeeper is cleared per-install with `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+  2. **Apple Silicon only, not universal** — the user's machines are Apple Silicon; the x86_64 slice doubled runner compile time for no benefit.
+  3. **Tracking installers reverses 2026-04-19 deliberately.** That decision kept installers out of git to avoid binary bloat. The countervailing pull now: the user wants the current cross-platform installers gathered and visible in the repo like Vtype does. Mitigated by the re-include pattern tracking ONLY the current version — old versions are pruned by postbuild and never committed, so bloat stays bounded to ~3 files.
+  4. **Retiring 3.13.0 removes version confusion.** 3.13.0 (and the stray 1.1.0) outrank 1.0.5 numerically but are older and not the fork's line. All three version-of-record files agree on 1.0.x; the fork's history starts fresh from 1.0.0.
+- Consequence:
+  - `build-macos.yml` is the fork's macOS build path; trigger via Actions → Run workflow. Re-runs are fast once the cargo cache is warm.
+  - `release.yml` left intact but **dormant** — not deleted, in case upstream-style signed releases are wanted later (would need a Developer ID + secrets).
+  - `scripts/postbuild.mjs` is now the single promote-and-prune mechanism for Windows installers; `installers/` is the canonical distributable location.
+  - macOS support is verified by **source inspection** (cross-platform `get_home_dir`, cfg-gated WSL code) — **not** by launching the build on a real Mac. First actual Mac launch is the outstanding verification.
+
 ## 2026-05-06 — Credential mirror watcher: ship the file watcher, one-way live → mirror
 
 - Decision: Ship a `notify`-backed FileSystemWatcher on `~/.claude/.credentials.json` that copies to `mirror_dir/.credentials.json` on every change. **One-way live → mirror only**, not bidirectional. Retain the existing swap-time `.credentials.json` mirror in `services/claude_account/mod.rs` for the first-swap-into-an-account case (before the watcher has anything to fire on).
