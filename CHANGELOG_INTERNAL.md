@@ -3,6 +3,11 @@
 Repo-level changes that affect how future sessions and agents work in this project.
 Audience: you and future Claude/Codex sessions. Versioned independently from the product `CHANGELOG.md` — internal milestones track capability of the repo (specs, skills, conventions, build identity), not product releases.
 
+## [i1.0.1] — 2026-06-13 — Build requires pnpm 11 `allowBuilds` approval
+
+### Changed
+- **Building under pnpm 11.5.2 now requires explicit build-script approval.** `pnpm-workspace.yaml` gained an `allowBuilds:` map (`esbuild: true`, `msw: true`) — pnpm 11's gate that blocks dependency build scripts by default. Builds also need `CI=true` throughout (non-TTY `node_modules` sync). Full recipe in `LEARNINGS.md`. Without these, `pnpm tauri build` fails before compiling (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`, then `ERR_PNPM_IGNORED_BUILDS`).
+
 ## [i1.0.0] — 2026-04-17 — De-fork: Switchy stands on its own
 
 ### Changed

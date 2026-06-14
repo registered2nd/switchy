@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.6] — 2026-06-13 — Credential mirror is now bidirectional, fixing recurring Windows 401s
+
+### Fixed
+
+- **Claude login on Windows expiring every few hours while Switchy is running.**
+  The 1.0.5 credential-mirror was one-way (Windows → WSL): it kept feeding WSL a
+  fresh token, so WSL's Claude Code could win the single-use refresh-token race
+  and leave Windows holding a dead token (401 → re-login). When Windows then
+  blanked its credentials on the failed refresh, the one-way copy propagated that
+  blanked file to WSL too — taking down both sides. The mirror is now
+  **bidirectional and health-aware**: it copies the freshest *valid* login to
+  whichever side is stale, never propagates a blanked/dead file, and only syncs
+  between the same account, so it cannot fight a manual account switch. It syncs
+  only the Claude login block, leaving each machine's own MCP credentials intact.
+
+---
+
 ## [1.0.5] — 2026-05-06 — Credential-mirror watcher keeps WSL Claude Code in sync after every refresh
 
 ### Added

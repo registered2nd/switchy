@@ -4,6 +4,24 @@ Transferable heuristics captured from past sessions on this project. These are r
 
 ---
 
+## pnpm 11 blocks dependency build scripts via `allowBuilds` — `onlyBuiltDependencies` is not enough
+
+Building Switchy under pnpm 11.5.2 (corepack) fails twice before any compile:
+1. **Non-TTY `node_modules` purge.** `pnpm tauri build` runs a deps-status-check that wants to purge+reinstall `node_modules`; with no TTY it aborts (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`).
+2. **Blocked build scripts.** With `CI=true` set it proceeds but then fails (`ERR_PNPM_IGNORED_BUILDS`, exit 1) because `esbuild`/`msw` build scripts aren't approved. In this pnpm version the operative allowlist is the **`allowBuilds:` map** in `pnpm-workspace.yaml` (`esbuild: true` / `msw: true`), which pnpm auto-writes as a `set this to true or false` template — **not** `onlyBuiltDependencies` (that key is honored for already-approved deps like `@tailwindcss/oxide`, but adding entries to it does NOT clear an already-recorded ignored state). Approved scripts only run on an actual (re)install, so a clean reinstall / `--force` is needed for them to execute.
+
+**Rule / recipe:** set `allowBuilds: { esbuild: true, msw: true }` in `pnpm-workspace.yaml`, then `CI=true pnpm install --force`, then `CI=true pnpm tauri build`. `CI=true` is required throughout (non-TTY).
+
+---
+
+## A running Claude Code session re-reads `.credentials.json` per request — a creds swap heals it live
+
+A *running* Claude Code session does **not** cache its OAuth token in memory for the process lifetime — it re-reads `~/.claude/.credentials.json` per request. That's why Switchy's mid-session account switch takes effect immediately, and why writing a valid bundle back into a 401'd side recovers it without a restart. (GH issues claiming "running sessions never recover from a creds-file change" describe a narrower crashed-loop state and over-generalize.)
+
+**Rule:** A file-layer credential fix CAN auto-heal a live session *if* the sync reaches the file the running process reads. So the failure mode to design against is wrong-*direction* sync (one-way leaving the other side stale), not "the process won't notice." Corollary: two long-lived Claude Code installs sharing one single-use rotating refresh token will always race — bidirectional health-aware sync narrows it; only separate logins or a single-refresher broker eliminates it. See [[DECISION_LOG]] 2026-06-13.
+
+---
+
 ## `oauthAccount` is a label, not the credential — and Switchy reads it from `~/.claude/.claude.json` first
 
 When diagnosing "Switchy captured/switched the wrong account," separate the two halves of a Claude credential:

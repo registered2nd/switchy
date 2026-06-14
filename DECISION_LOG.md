@@ -1,5 +1,18 @@
 # Decision Log
 
+## 2026-06-13 — Credential mirror: bidirectional + health-aware + account-guarded, superseding one-way
+
+- Decision: Replace 1.0.5's one-way (live → mirror) credential-mirror watcher with a **bidirectional, health-aware, account-guarded reconciler** (1.0.6). It propagates the freshest *valid* `claudeAiOauth` bundle in whichever direction is stale, but only between sides that are the **same account** (matched by `oauthAccount` UUID); it never propagates a dead/blanked bundle, and it syncs only the `claudeAiOauth` block (preserving each machine's `mcpOAuth`).
+- Why:
+  1. **One-way re-armed the race instead of ending it.** The 2026-05-06 design assumed Win is the sole refresher and WSL a passive downstream consumer. In practice WSL runs its own (multiple) long-lived Claude Code processes that refresh on their own ~8h schedule. The one-way watcher continuously fed WSL a fresh token, keeping it eligible to win the refresh race; when WSL won, Win was left on a dead token (401), and the one-way copy then propagated Win's *blanked* file onto WSL too — killing both. Turning Switchy off (no re-arming → WSL falls out of the chain) is what made the 401s stop, which is the proof the watcher was the driver.
+  2. **A running Claude Code session re-reads `.credentials.json` per request** — demonstrated by Switchy's own mid-session account-switch working immediately. So writing the winner's fresh bundle back to the loser's file auto-recovers it; the file layer *is* the right place to fix this, provided the sync is bidirectional. (See `LEARNINGS.md`.)
+  3. **Not naive last-writer-wins (the BACKLOG #10 sketch).** mtime-newest would copy a blanked failed-refresh file (it's the newest write) over a good one. Freshness must be judged by `expiresAt` among *valid* bundles only, and direction gated by same-account — otherwise a mid-switch transient or a deliberate per-machine login would get clobbered/reverted.
+- Consequence:
+  - 1.0.6 ships the reconciler (`services/credential_mirror.rs`, full rewrite, 13 unit tests). `start()` wiring in `lib.rs` unchanged.
+  - The swap-time `.credentials.json` mirror in `mod.rs` is retained (first-swap population); BACKLOG #12's "keep it" call stands.
+  - BACKLOG #10 is closed (built, beyond the naive last-writer-wins it described).
+  - Residual: the rare sub-second simultaneous-refresh tie still briefly fails the loser, which then auto-heals on its next request (~poll interval). True zero-blip needs a single-refresher auth-broker (out of scope; Switchy's proxy layer could host it).
+
 ## 2026-05-28 — Fork ships its own unsigned macOS DMG; tracks current installers in git; retires upstream cc-switch versioning
 
 - Decision: (1) Build the fork's macOS DMG via a new on-demand **unsigned** workflow (`build-macos.yml`, hdiutil-packaged, Apple Silicon only), separate from the inherited `release.yml`. (2) **Track the current version's installers in git** (`installers/` with a Vtype-style re-include `.gitignore`), reversing the 2026-04-19 don't-commit-installers decision. (3) Treat upstream cc-switch's `3.13.0` versioning as **retired** — the fork owns its 1.0.x line.
@@ -15,6 +28,8 @@
   - macOS support is verified by **source inspection** (cross-platform `get_home_dir`, cfg-gated WSL code) — **not** by launching the build on a real Mac. First actual Mac launch is the outstanding verification.
 
 ## 2026-05-06 — Credential mirror watcher: ship the file watcher, one-way live → mirror
+
+> **Superseded by 2026-06-13 (bidirectional + health-aware reconciler)** — one-way kept WSL armed to win the refresh race and then propagated the loser's blanked file, killing both sides. Replaced with a bidirectional, account-guarded, health-aware reconcile. The diagnosis of the rotation race itself (why sharing one credential across the WSL boundary needs sustained sync) remains correct.
 
 - Decision: Ship a `notify`-backed FileSystemWatcher on `~/.claude/.credentials.json` that copies to `mirror_dir/.credentials.json` on every change. **One-way live → mirror only**, not bidirectional. Retain the existing swap-time `.credentials.json` mirror in `services/claude_account/mod.rs` for the first-swap-into-an-account case (before the watcher has anything to fire on).
 - Why:
