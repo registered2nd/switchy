@@ -24,7 +24,7 @@ Modern AI-powered coding relies on CLI tools like Claude Code, Codex, Gemini CLI
 
 ## Fork Notes
 
-This fork contains a Windows + WSL Claude mirror feature that is not part of upstream behavior. See [docs/fork-notes-windows-wsl-claude-sync.md](docs/fork-notes-windows-wsl-claude-sync.md) for the exact semantics and caveats.
+This fork contains a Windows + WSL Claude mirror feature that is not part of upstream behavior. See [docs/fork_notes_windows_wsl_claude_sync.md](docs/fork_notes_windows_wsl_claude_sync.md) for the exact semantics and caveats.
 - **No More Manual Editing** — 50+ provider presets including AWS Bedrock, NVIDIA NIM, and community relays; just pick and switch
 - **Unified MCP & Skills Management** — One panel to manage MCP servers and Skills across four apps with bidirectional sync
 - **System Tray Quick Switch** — Switch providers instantly from the tray menu, no need to open the full app

@@ -4,7 +4,7 @@
 //! so switching Official providers also swaps `~/.claude/.credentials.json`
 //! and the `oauthAccount` block in `.claude.json`.
 //!
-//! See `specs/official-multi-account/design.md` for the data-flow contract.
+//! See `specs/official_multi_account/design.md` for the data-flow contract.
 
 pub mod merge;
 pub mod paths;

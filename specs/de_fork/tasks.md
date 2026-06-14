@@ -58,7 +58,7 @@ Order matters. Path/build changes first (they determine what the code compiles t
 - [ ] **T40.** `DECISION_LOG.md` — append supersession entry for 2026-04-07 namespace decision. Do not edit old entries.
 - [ ] **T41.** `BACKLOG.md` — remove item 4 (namespace decision) since implemented.
 - [ ] **T42.** `NEXT_SESSION.md`, `session-manager.md`, `deplink.html` — forward-looking references updated.
-- [ ] **T43.** `specs/official-multi-account/{requirements,design,tasks}.md` — update path references from `~/.cc-switch/` to `~/.switchy/` (the spec is still active work).
+- [ ] **T43.** `specs/official_multi_account/{requirements,design,tasks}.md` — update path references from `~/.cc-switch/` to `~/.switchy/` (the spec is still active work).
 
 ## Phase 6 — Git remote
 

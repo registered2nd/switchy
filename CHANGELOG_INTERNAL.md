@@ -13,7 +13,7 @@ Audience: you and future Claude/Codex sessions. Versioned independently from the
 - **`paths` module** (`src-tauri/src/paths.rs` + `src/lib/paths.ts`) — single source of truth for app-dir and DB-file names, including `LEGACY_*` constants used by the migration shim. Replaces hardcoded literals across config, panic hook, settings, env manager, database, and TS directory hooks.
 - **Migration shim** (`src-tauri/src/migrate_paths.rs`) — one-shot startup rename of `~/.cc-switch/` → `~/.switchy/` (plus DB file). Idempotent; no-ops when new dir already exists or neither exists; warns when both exist. Unit-tested for the four scenarios. Intended for removal after one release cycle.
 - **`SWITCHY_TEST_HOME` env var** for test-home override, with fallback to the legacy `CC_SWITCH_TEST_HOME` so in-flight tests keep passing during transition.
-- **`specs/de-fork/{requirements,design,tasks}.md`** — the spec this work was executed against.
+- **`specs/de_fork/{requirements,design,tasks}.md`** — the spec this work was executed against.
 
 ### Removed
 - Dual-scheme deep-link handler (kept only `switchy://`).

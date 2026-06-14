@@ -4,6 +4,19 @@ Transferable heuristics captured from past sessions on this project. These are r
 
 ---
 
+## `oauthAccount` is a label, not the credential — and Switchy reads it from `~/.claude/.claude.json` first
+
+When diagnosing "Switchy captured/switched the wrong account," separate the two halves of a Claude credential:
+
+- **The token** (`.credentials.json` → `accessToken`/`refreshToken`) *is* the account — it authenticates and spends. Identify an account by token sha, never by displayed name.
+- **The `oauthAccount` block** (in `.claude.json`) is a cosmetic label (email/uuid/org for display). It can be stale or flat wrong relative to the token sitting beside it.
+
+So: two snapshots with the **same name** but **different token shas** are two different accounts (the name was just mislabeled); the same token sha under two names is one account. Diagnose by sha.
+
+Precedence trap that bit us 2026-06-09: Switchy's `live_claude_config_path()` (`services/claude_account/paths.rs:35`) reads `oauthAccount` from **`~/.claude/.claude.json` in preference to the home-root `~/.claude.json`**. Claude Code itself maintains the home-root file; `~/.claude/.claude.json` is often absent. If anything writes a stale/static `oauthAccount` into `~/.claude/.claude.json`, it **silently overrides the real login** for every `capture` (and `swap`'s `read_oauth_from_live`) — the captured *token* is correct but the recorded *name* is whatever that file says. Never hand-write `~/.claude/.claude.json` to "fix" identity; if a capture shows the wrong name, first check which of the two config files capture is reading.
+
+---
+
 ## Compare AI gateway costs in real USD per workload mix — rate cards mislead Switchy preset selection
 
 When evaluating gateways for Switchy presets (Aiberm, RightCode, bltcy/柏拉图AI, etc.) or recommending one in conversation, don't compare their published per-M token rates. Three sources of distortion stack and the ranking inverts depending on which you miss:

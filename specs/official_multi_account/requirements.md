@@ -19,7 +19,7 @@ This spec owns:
 This spec does NOT own:
 
 - Non-Official provider behavior (third-party providers keep today's env-only semantics — unchanged).
-- The existing WSL provider-field mirror semantics (`env` subset + `model` + `permissions` + `effortLevel`) — see `docs/fork-notes-windows-wsl-claude-sync.md` and `DECISION_LOG.md` 2026-04-07. This spec adds a parallel credential-swap pass; it does not revisit the provider-field decision.
+- The existing WSL provider-field mirror semantics (`env` subset + `model` + `permissions` + `effortLevel`) — see `docs/fork_notes_windows_wsl_claude_sync.md` and `DECISION_LOG.md` 2026-04-07. This spec adds a parallel credential-swap pass; it does not revisit the provider-field decision.
 - macOS Keychain handling (deferred — see "Out of scope").
 - Codex / Gemini / OpenCode / OpenClaw apps (Claude only in v1).
 - The existing `~/.switchy/` namespace (see `DECISION_LOG.md` 2026-04-07).
