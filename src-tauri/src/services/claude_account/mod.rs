@@ -10,6 +10,9 @@ pub mod merge;
 pub mod paths;
 pub mod store;
 
+#[cfg(target_os = "macos")]
+mod keychain;
+
 #[cfg(test)]
 mod tests;
 
@@ -82,6 +85,46 @@ pub enum SwapOutcome {
 }
 
 // =====================================================================
+//  live credential store (platform-abstracted)
+// =====================================================================
+
+/// Reads Claude Code's live credentials blob from the authoritative store for
+/// this platform: the macOS login Keychain (`Claude Code-credentials`), or the
+/// `~/.claude/.credentials.json` file on Windows/Linux. Returns `Ok(None)`
+/// when no login exists yet.
+fn read_live_credentials() -> Result<Option<Vec<u8>>, AppError> {
+    // The Keychain is a global side-channel the `SWITCHY_TEST_HOME` file
+    // redirect can't sandbox, so tests bypass it and use the redirected file.
+    #[cfg(target_os = "macos")]
+    if std::env::var_os("SWITCHY_TEST_HOME").is_none() {
+        if let Some(bytes) = keychain::read_credentials()? {
+            return Ok(Some(bytes));
+        }
+        // Fall through to the file in case an older Claude Code wrote one.
+    }
+
+    let path = paths::live_credentials_path();
+    match fs::read(&path) {
+        Ok(b) => Ok(Some(b)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(AppError::io(&path, e)),
+    }
+}
+
+/// Writes `blob` to Claude Code's live credential store for this platform: the
+/// macOS Keychain, or `~/.claude/.credentials.json` on Windows/Linux.
+fn write_live_credentials(blob: &[u8]) -> Result<(), AppError> {
+    // See `read_live_credentials`: tests bypass the Keychain via the file path.
+    #[cfg(target_os = "macos")]
+    if std::env::var_os("SWITCHY_TEST_HOME").is_none() {
+        return keychain::write_credentials(blob);
+    }
+
+    let target = paths::live_credentials_path();
+    store::write_snapshot_atomic(&target, blob)
+}
+
+// =====================================================================
 //  capture
 // =====================================================================
 
@@ -97,18 +140,17 @@ pub fn capture(
         .get_provider_by_id(provider_id, CLAUDE_APP_TYPE)?
         .ok_or_else(|| AppError::Message(format!("Provider {provider_id} not found")))?;
 
-    // 1. Read live credentials blob.
-    let credentials_path = paths::live_credentials_path();
-    let credentials_bytes = match fs::read(&credentials_path) {
-        Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+    // 1. Read live credentials blob from the platform's credential store
+    //    (macOS Keychain, or ~/.claude/.credentials.json on Windows/Linux).
+    let credentials_bytes = match read_live_credentials()? {
+        Some(b) => b,
+        None => {
             return Err(AppError::localized(
                 "claudeAccount.capture.error.credentials_missing",
                 "未找到 Claude Code 登录凭据，请先运行 `claude /login`",
                 "No Claude Code login found. Run `claude /login` first.",
             ));
         }
-        Err(e) => return Err(AppError::io(&credentials_path, e)),
     };
     // Parse-validate; we don't care about shape beyond "is JSON we can round-trip".
     let _: Value = serde_json::from_slice(&credentials_bytes).map_err(|_| {
@@ -314,11 +356,10 @@ pub fn swap_if_captured(
     let cred_value = store::read_snapshot(&cred_snapshot)?;
     let oauth_value = store::read_snapshot(&oauth_snapshot)?;
 
-    // --- Windows targets ---
+    // --- Live credential store (Keychain on macOS, file on Windows/Linux) ---
     let cred_bytes =
         serde_json::to_vec_pretty(&cred_value).map_err(|e| AppError::JsonSerialize { source: e })?;
-    let target_cred = paths::live_credentials_path();
-    store::write_snapshot_atomic(&target_cred, &cred_bytes)?;
+    write_live_credentials(&cred_bytes)?;
 
     let target_config = paths::live_claude_config_path();
     let mut root = if target_config.exists() {
@@ -333,7 +374,7 @@ pub fn swap_if_captured(
     store::write_snapshot_atomic(&target_config, &root_bytes)?;
 
     log::info!(
-        "[claude_account] swap applied (Windows targets) provider={}",
+        "[claude_account] swap applied (live credential store) provider={}",
         provider.id
     );
 
@@ -483,10 +524,9 @@ fn sync_outgoing_snapshot(
     state: &AppState,
     incoming_provider_id: &str,
 ) -> Result<(), AppError> {
-    let cred_path = paths::live_credentials_path();
-    let cred_bytes = match fs::read(&cred_path) {
-        Ok(b) => b,
-        Err(_) => return Ok(()),
+    let cred_bytes = match read_live_credentials() {
+        Ok(Some(b)) => b,
+        Ok(None) | Err(_) => return Ok(()),
     };
     if serde_json::from_slice::<Value>(&cred_bytes).is_err() {
         log::warn!("[claude_account] sync_out skip: live creds unparseable");

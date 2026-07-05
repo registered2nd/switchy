@@ -6,6 +6,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.7] — 2026-07-05 — Capturing and switching Official Claude accounts now works on macOS
+
+### Fixed
+
+- **"Capture current account" failing on macOS with "No Claude Code login
+  found" even when logged in.** On macOS, Claude Code keeps its OAuth
+  credentials in the login Keychain (`Claude Code-credentials`), not the
+  `~/.claude/.credentials.json` file used on Windows and Linux. Capture read
+  only the file, so it always reported no login; switching an Official account
+  wrote a file Claude Code never reads, so the swap silently didn't take.
+  Capture now reads the blob from the Keychain, and switching writes it back —
+  updating the existing Keychain item in place when one is already there, so it
+  overwrites the current login instead of leaving a duplicate. Windows and Linux
+  are unchanged.
+
+---
+
 ## [1.0.6] — 2026-06-13 — Credential mirror is now bidirectional, fixing recurring Windows 401s
 
 ### Fixed
