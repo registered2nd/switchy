@@ -4,6 +4,14 @@ Transferable heuristics captured from past sessions on this project. These are r
 
 ---
 
+## Claude Code stores its OAuth credentials in the macOS **Keychain**, not `~/.claude/.credentials.json`
+
+On macOS, Claude Code keeps its login blob as a login-Keychain generic-password item (service `Claude Code-credentials`), **not** in the `~/.claude/.credentials.json` file it uses on Windows and Linux. A file-only code path silently no-ops on macOS: reads find nothing ("No login found" even when logged in), and writes land in a file Claude Code never reads (a swap that *looks* like it succeeded but doesn't take). Only the token blob moves to the Keychain — the `oauthAccount` block in `~/.claude/.claude.json` stays file-based on every platform.
+
+**Rule:** For live Claude-cred read/write, abstract the store per-OS (`read_live_credentials` / `write_live_credentials` in `services/claude_account`). On macOS shell out to `security find-generic-password -s "Claude Code-credentials" -w` to read and `add-generic-password -U -s "Claude Code-credentials" -a <acct> -w <blob>` to update the current login **in place**. `services::subscription` already reads this item — reuse that pattern, don't re-derive. Tests must bypass the Keychain (it's a global side-channel `SWITCHY_TEST_HOME` can't sandbox). See [[DECISION_LOG]] 2026-07-05.
+
+---
+
 ## pnpm 11 blocks dependency build scripts via `allowBuilds` — `onlyBuiltDependencies` is not enough
 
 Building Switchy under pnpm 11.5.2 (corepack) fails twice before any compile:
