@@ -12,7 +12,7 @@
   - Tests bypass the Keychain via `SWITCHY_TEST_HOME` (the Keychain is a global side-channel the file redirect can't sandbox) so they stay hermetic.
 - Consequence:
   - Windows/Linux behavior unchanged (file path preserved).
-  - Shipped as **1.0.7** on branch `fix/macos-keychain-capture`; macOS CI build compiled clean; DMG released to `switchy-dist`. **Not yet runtime-verified on a real Mac** — see `NEXT_SESSION.md`.
+  - Shipped as **1.0.7** (merged to `main`); macOS CI build compiled clean; DMG released to `switchy-dist`. **Not yet runtime-verified on a real Mac** — see `NEXT_SESSION.md`.
   - Known macOS UX caveat: reading the Keychain item may raise a one-time "security wants to access…" prompt (choose Always Allow), since Switchy isn't signed under Claude Code's identity.
 
 ## 2026-06-13 — Credential mirror: bidirectional + health-aware + account-guarded, superseding one-way
