@@ -1,5 +1,20 @@
 # Decision Log
 
+## 2026-07-05 — macOS Keychain capture/swap implemented (the deferred v2), superseding the 2026-04-16 macOS-out-of-scope call
+
+- Decision: Implement Claude-account **capture and swap on macOS** by reading/writing Claude Code's login-Keychain item (`Claude Code-credentials`) instead of the `~/.claude/.credentials.json` file used on Windows/Linux. Closes the macOS gap the 2026-04-16 entry deferred to "v2."
+- Why:
+  1. Capture hard-failed on macOS with "No Claude Code login found" even when logged in — Claude Code on macOS stores its OAuth blob in the Keychain, not a file; swap wrote a file Claude Code never reads, so switching silently didn't take. The feature was effectively unusable on the platform.
+  2. The read half already existed in-tree: `services::subscription` reads the same `Claude Code-credentials` item via the `security` CLI. Low incremental cost, proven pattern.
+- Approach:
+  - New macOS-only `services/claude_account/keychain.rs` shells out to `security` (no new dependency, consistent with `subscription.rs`). Capture, swap-restore, and switch-away sync route through platform-abstracted `read_live_credentials` / `write_live_credentials` helpers in `mod.rs`.
+  - Writes update the existing Keychain item **in place** (`add-generic-password -U` against the item's own `acct`) so a re-capture or account swap overwrites the current login rather than duplicating it.
+  - Tests bypass the Keychain via `SWITCHY_TEST_HOME` (the Keychain is a global side-channel the file redirect can't sandbox) so they stay hermetic.
+- Consequence:
+  - Windows/Linux behavior unchanged (file path preserved).
+  - Shipped as **1.0.7** on branch `fix/macos-keychain-capture`; macOS CI build compiled clean; DMG released to `switchy-dist`. **Not yet runtime-verified on a real Mac** — see `NEXT_SESSION.md`.
+  - Known macOS UX caveat: reading the Keychain item may raise a one-time "security wants to access…" prompt (choose Always Allow), since Switchy isn't signed under Claude Code's identity.
+
 ## 2026-06-13 — Credential mirror: bidirectional + health-aware + account-guarded, superseding one-way
 
 - Decision: Replace 1.0.5's one-way (live → mirror) credential-mirror watcher with a **bidirectional, health-aware, account-guarded reconciler** (1.0.6). It propagates the freshest *valid* `claudeAiOauth` bundle in whichever direction is stale, but only between sides that are the **same account** (matched by `oauthAccount` UUID); it never propagates a dead/blanked bundle, and it syncs only the `claudeAiOauth` block (preserving each machine's `mcpOAuth`).
@@ -223,6 +238,8 @@
   - Fork polish (renaming residue, end-to-end installer test, namespace isolation decision) is now backlog, not active. It is preserved in `SESSION_LOG.md` 2026-04-10 entry and should be picked up after the multi-account feature lands or when it becomes blocking.
 
 ## 2026-04-16 - Plaintext snapshots + macOS deferred to v2 (scope-shaping calls from the spec)
+
+> **macOS half superseded by 2026-07-05** — Keychain capture/swap is now implemented (1.0.7). The plaintext-snapshot decision below still stands.
 
 - Decisions (scope-shaping, made during the requirements/design loop for official multi-account):
   - v1 stores per-provider OAuth snapshots plaintext under `~/.cc-switch/accounts/{provider_id}/`, with `0o600` on Unix and default NTFS user-profile ACL on Windows. No encryption.
