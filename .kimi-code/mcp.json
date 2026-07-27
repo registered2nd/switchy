@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "-y",
+        "@playwright/mcp@latest",
+        "--user-data-dir",
+        "%USERPROFILE%/.agent-chrome-profile-switchy"
+      ],
+      "env": {}
+    }
+  }
+}
