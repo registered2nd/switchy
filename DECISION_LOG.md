@@ -1,5 +1,25 @@
 # Decision Log
 
+Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
+
+## 2026-08-16 — One resolver owns `.claude.json`; account state travels as a bounded allowlist; live-credential ownership is recorded, not inferred
+
+- Decision: Four related rules for the Claude account swap, shipped as **1.0.8**.
+  1. **The live `.claude.json` is resolved in exactly one place** (`config::get_claude_config_json_path`), and it is the **sibling** of the Claude config directory (`~/.claude` → `~/.claude.json`), never a file inside it. `get_claude_mcp_path` delegates to the same resolver.
+  2. **Account state is a bounded allowlist** of root-level keys captured and restored alongside `oauthAccount` (`merge::ACCOUNT_STATE_KEYS`), applied with **remove-on-absent** semantics. `machineID` and `userID` are excluded as install identity.
+  3. **Whichever provider owns the live credentials is recorded when they are written** (`~/.switchy/accounts/live_owner.json`), and the switch-away sync attributes them by that record — additionally gated on health, freshness, and the live identity still matching the record.
+  4. **The auto-detected WSL mirror directory is suppressed when `SWITCHY_TEST_HOME` is set**, so tests cannot reach it.
+- Why:
+  1. **Two writers in one binary disagreed about which file is Claude's config.** `claude_account::paths` selected `~/.claude/.claude.json` whenever that file existed, while the MCP writer used `~/.claude.json`. On a machine where both exist, every account swap wrote the identity into a file Claude Code never reads: the credentials swapped correctly and requests really did run on the new account, while `/status` displayed the previous one indefinitely. An existence check cannot decide this — the answer is a rule, not a probe. Upstream `cc-switch` encodes the same sibling rule (`config.rs`), so this converges rather than diverges.
+  2. **`oauthAccount` is no longer the whole account.** Claude Code records usage utilization, subscription availability, extra-usage reason and model-access caches as *siblings* of it. Restoring identity alone left the account line correct and everything around it describing the account just left. Remove-on-absent is required for the same reason: an account that never had a key must not inherit the previous one's value.
+  3. **The credentials blob carries no account identifier**, so attribution previously came from reading the identity file and assuming the two agreed. They can disagree — a manual `claude /login`, or (as in 1) an app that had been writing the identity to the wrong path. A wrong guess files one account's tokens under another account's snapshot, destroying a working login. Recording the pairing at the moment it is created removes the guess; the health/freshness gates are the reconciler's rules (2026-06-13) extended to the snapshot store, which sat outside them.
+  4. **The mirror default is a machine-global side-channel `SWITCHY_TEST_HOME` cannot redirect.** On any developer machine with WSL, `build_default_claude_mirror_dir()` resolves a real path, so "no mirror configured" tests silently became mirror tests — and wrote into the real WSL home. Same reasoning as the macOS Keychain bypass (2026-07-05).
+- Consequence:
+  - Snapshots captured before 1.0.8 have no `account_state.json`; the swap restores identity alone and logs that a re-capture is needed, rather than failing.
+  - The first switch after upgrading finds no ownership marker and skips the switch-away sync by design, recording one instead. This is what makes the upgrade safe on a machine whose two config files currently disagree.
+  - The ad-hoc "also write the home-root `.claude.json`" block in `claude_account::mod` is deleted; the corrected mirror path makes it redundant.
+  - Switchy no longer maintains a `.claude.json` living inside a config directory. An install that genuinely sets `CLAUDE_CONFIG_DIR` keeps its config there and is not swapped unless configured as a mirror — see `LEARNINGS.md`.
+
 ## 2026-07-05 — macOS Keychain capture/swap implemented (the deferred v2), superseding the 2026-04-16 macOS-out-of-scope call
 
 - Decision: Implement Claude-account **capture and swap on macOS** by reading/writing Claude Code's login-Keychain item (`Claude Code-credentials`) instead of the `~/.claude/.credentials.json` file used on Windows/Linux. Closes the macOS gap the 2026-04-16 entry deferred to "v2."
@@ -70,18 +90,6 @@
   - Future bug-fix-only ships continue patch-bumping (1.0.4, 1.0.5, ...). Minor bump is reserved for genuinely new user-facing capability — first time a feature does something the prior release explicitly couldn't.
   - All three version-of-record files (`package.json`, `tauri.conf.json`, `Cargo.toml`) bumped together; CHANGELOG entry header matches.
 
-## 2026-05-04 — Credentials mirror sync: ship diagnostic logging, defer remediation until logs reveal actual behavior
-
-- Decision: Add explicit info-level logging around the Claude credentials mirror write path in `services/claude_account/mod.rs` (`mirror cred write START` + `OK`-with-mtime), but do NOT add a file watcher, manual sync buttons UI, or any other remediation until diagnostic logs from a real provider switch on a rebuilt Switchy reveal what the auto-mirror is actually doing.
-- Why:
-  1. **The post-switch refresh race theory wasn't supported by observation.** Hypothesis was that Windows and WSL Claude Code each refresh OAuth tokens independently after a swap, racing on the rotated refresh_token and producing the `401 Invalid authentication credentials` the user saw on WSL. Empirical re-test 20 minutes after a manual `cp` of `.credentials.json` showed both sides held identical sha256 hashes — neither Claude Code instance had refreshed unprompted. Building a watcher or buttons against a failure mode that doesn't reproduce is premature.
-  2. **The auto-mirror's actual failure mode is unconfirmed.** The existing `swap applied with mirror` log fires unconditionally when the warnings vec is empty; we have no signal from the existing code about whether the credentials write step (vs the `.claude.json` or `settings.json` writes that share the same swap path) actually completed. the user's observation that WSL stayed stale through a switch is not yet reconciled with the function returning Ok and no warning. Logging is the cheapest way to disambiguate.
-  3. **Remediation paths fork on what the logging reveals.** If START fires but no OK and no warning: silent error in `atomic_write` against UNC paths — targeted fix. If both fire and target mtime updates but the user still sees stale: it's a Claude-Code-side caching issue, not a Switchy bug. If neither fires: the function is bailing earlier than expected (`get_claude_mirror_override_dir` returning None? `swap_if_captured` gating?). Each path is a different fix, and shipping a generic watcher hides which one applies.
-- Consequence:
-  - Manual sync UI infrastructure built mid-session was reverted: `services/claude_account/sync.rs` deleted, `ClaudeCredentialsMirrorPanel.tsx` deleted, 3 Tauri commands removed, AuthCenterPanel reverted to pre-session state. Diagnostic logging in `mod.rs` retained.
-  - Next Switchy rebuild + provider switch is the trigger to read the logs and decide remediation.
-  - If diagnostic logs confirm the auto-mirror is working as advertised, the buttons remain unnecessary and the WSL 401 had a different root cause (most likely Claude-Code-side caching of pre-swap credentials before the user typed the next command).
-
 ## 2026-04-20 — Abandon snapshot OAuth refresh (BACKLOG #5 and #6)
 
 - Decision: Do not build `snapshot_oauth_refresh` (BACKLOG #5, the on-demand token refresh for captured-but-not-current accounts) or the periodic background refresh loop (BACKLOG #6). Captured-card quota pills showing "Session expired" past the access-token ceiling is the correct user-facing behavior.
@@ -93,72 +101,6 @@
   - The 2026-04-19 entry below referenced #5 and #6 as "future improvements that extend the window." Those paragraphs are **superseded by this entry** — the window cannot be extended within ToS, full stop. The 8h access-token / ~24h refresh-token ceiling is the feature ceiling, not a lower bound to work up from.
   - If a future session considers similar "help Switchy do more with captured credentials" features, the first check is: does it make any authenticated request using Pro/Max OAuth credentials from a non-Claude-Code-non-Claude.ai client? If yes, it's ToS-prohibited, regardless of how thin or user-initiated the path is.
   - The existing captured-snapshot **quota read** path (which uses the captured `access_token`, not `refresh_token`, against Anthropic's usage endpoint) is a milder version of the same question but is not affected by this decision — it uses tokens while they're still valid, does not call the OAuth refresh endpoint, and is the feature-parity story for BACKLOG #5 of the 2026-04-19 multi-account plan which was retired when switch-away sync shipped. Leave it alone; flag if/when future policy updates extend the prohibition to usage-endpoint reads.
-
-## 2026-04-19 — OAuth token lifetime bounds the multi-account feature
-
-- Constraint:
-  - Anthropic Claude Code OAuth tokens have a short effective lifetime.
-    Access tokens: **~8–12h**. Refresh tokens: **~24h** practical ceiling
-    (inferred from [anthropics/claude-code#42904](https://github.com/anthropics/claude-code/issues/42904)
-    — subscription users re-login daily regardless of tooling). Rotation
-    appears aggressive — each refresh likely invalidates the prior
-    refresh_token.
-- Consequence for the captured-account design:
-  - The multi-account feature can guarantee switching within **~8h** of the
-    most-recent refresh on an account, and is **unreliable past ~24h**. For
-    dormant accounts (not used in >24h), switching back will require
-    re-login through Claude Code — no local state management fixes this.
-  - Therefore: future improvements should be framed as **extending the
-    practical window**, not achieving indefinite dormancy.
-- Implications for future work (tracked in `BACKLOG.md`):
-  - **Switch-away sync** (update outgoing provider's snapshot from live
-    creds before writing the incoming provider's snapshot). Stops us from
-    silently discarding the newest refresh_token on every switch. This is
-    the cheapest buy — roughly doubles the realistic dormancy window
-    because each snapshot carries the freshest token that account has
-    ever produced.
-  - **Snapshot OAuth refresh on demand** (when quota query / switch sees
-    an expired access_token but a present refresh_token, hit
-    `console.anthropic.com/v1/oauth/token` with grant_type=refresh_token,
-    persist new tokens into the snapshot). Works around the access-token
-    ceiling, not the refresh-token ceiling. Fragile — Anthropic has been
-    deprecating third-party OAuth usage.
-  - **Periodic background refresh loop** (Switchy keeps captured accounts
-    warm by refreshing them before they expire). Theoretically pushes the
-    window toward "indefinite" but hammers Anthropic's endpoints and
-    assumes OAuth continues to be available to third-party apps. Not
-    recommended as a priority.
-- Where NOT to look for fixes:
-  - Snapshot encryption, different file layouts, more atomic writes — all
-    orthogonal to the token-lifetime problem.
-  - `claude setup-token` produces a 1-year token but is a different auth
-    mode (automation/headless). Switchy cannot transparently upgrade a
-    captured subscription OAuth to a setup-token; the user would need to
-    re-auth via that flow explicitly.
-
-## 2026-04-18 (evening) — NSIS PREINSTALL hook does NOT force-kill the running app
-
-- Decision:
-  - `src-tauri/nsis/installer-hooks.nsh` runs `taskkill /F /IM switchy.exe /T` in `NSIS_HOOK_PREUNINSTALL` only. The `NSIS_HOOK_PREINSTALL` hook is deliberately a no-op (no taskkill).
-- Why:
-  - The first implementation of BACKLOG #4 put the taskkill in both PREINSTALL and PREUNINSTALL. Tauri's generated `installer.nsi` runs PREINSTALL *before* its built-in `CheckIfAppIsRunning` macro — so killing in PREINSTALL meant the macro found nothing running and the "Switchy is running, close it?" prompt never fired on upgrade. the user flagged this as regressing UX: silent auto-kill on upgrade is surprising and worse than the old prompt-then-maybe-fail behavior.
-  - Uninstall is different: the user has already clicked "uninstall", the decision is already made, and a prompt at that point just adds friction. Force-killing on PREUNINSTALL is fine.
-  - The residual BACKLOG #4 failure mode (install silently skips `switchy.exe` replacement when the user dismisses the prompt without actually closing the app) is accepted — fixing it properly needs a hook *between* `CheckIfAppIsRunning` and `File "${MAINBINARYSRCPATH}"`, which the Tauri template doesn't expose. Options if this re-surfaces: (a) full custom NSIS template, (b) add a post-install verification that retries the file copy.
-- Consequence:
-  - Future sessions touching `installer-hooks.nsh` should not add a PREINSTALL taskkill without understanding this trade-off.
-  - If the silent-skip failure returns, escalate to a full template override rather than re-adding the aggressive kill.
-
-## 2026-04-18 — Drop T-5.2 WSL validation from the multi-account ship
-
-- Decision:
-  - T-5.2 (WSL mirror end-to-end walkthrough) is skipped for this ship. The multi-account feature ships after BACKLOG polish items #4–#7 are addressed; WSL validation is not a precondition.
-- Why:
-  - T-5.1 proved the core capture → swap → `/status` contract works end-to-end on Windows. The WSL mirror code paths are already covered by Rust unit tests in `services::claude_account::tests` (happy-path `AppliedWithMirror`, `PartialMirror:parse`, `PartialMirror:unreachable` — AC-4.1 through AC-4.3).
-  - The polish items surfaced in the T-5.1 run (NSIS installer, per-account quota, zh-leak, tray click) are visible to every user on every install and are higher-impact than WSL-specific validation.
-  - Stacking T-5.2 on top delays ship for a feature-path that only the user's WSL setup exercises; better to ship and let any WSL regression surface as its own bug report.
-- Consequence:
-  - `specs/official-multi-account/tasks.md` T-5.2 is marked SKIPPED with its checklist retained for reference.
-  - If a WSL mirror regression is reported post-ship, it becomes a fresh spec session, not a blocker on 3.13.0.
 
 ## 2026-04-17 - De-fork Switchy: supersede upstream namespace decision
 
@@ -263,4 +205,3 @@
   - Installer/binary/app identifiers are now `Switchy`.
   - Visible branding is mostly `Switchy`.
   - Legacy deep links still function.
-
