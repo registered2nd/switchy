@@ -417,6 +417,11 @@ impl SkillService {
                     return Ok(custom.join("skills"));
                 }
             }
+            AppType::Kimi => {
+                if let Some(custom) = crate::settings::get_kimi_override_dir() {
+                    return Ok(custom.join("skills"));
+                }
+            }
             AppType::Gemini => {
                 if let Some(custom) = crate::settings::get_gemini_override_dir() {
                     return Ok(custom.join("skills"));
@@ -450,6 +455,7 @@ impl SkillService {
             AppType::Claude => home.join(".claude").join("skills"),
             AppType::Codex => home.join(".codex").join("skills"),
             AppType::Gemini => home.join(".gemini").join("skills"),
+            AppType::Kimi => home.join(".kimi-code").join("skills"),
             AppType::OpenCode => home.join(".config").join("opencode").join("skills"),
             AppType::OpenClaw => home.join(".openclaw").join("skills"),
         })

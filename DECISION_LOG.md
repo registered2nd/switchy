@@ -2,6 +2,30 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-12 — Kimi Code is an exclusive-mode app whose provider is the whole `config.toml` plus its login file
+
+- Context: Kimi Code (`~/.kimi-code/`) keeps several providers side by side in one `config.toml` and selects one with `default_model` — structurally closer to OpenCode's additive file than to Codex. Its account login lives separately, in `credentials/kimi-code.json`.
+- Decision: Treat Kimi like Codex, not like OpenCode. A Kimi provider stores `{ "config": <the whole config.toml text>, "credentials": <kimi-code.json, or null> }`. Switching writes both files together (the credentials are rolled back if the config write fails; `null` removes the login file), and the ordinary switch-away backfill reads both back into the provider being left.
+- Why:
+  1. **The login is the point.** In additive mode every provider would share one login file, so switching could never change which Kimi account is signed in — the capability Switchy exists to provide for Claude and Codex.
+  2. **It is Codex's shape** (`{ auth, config }`), so backfill, TOML common config, the form components and deep links all reuse existing paths; Kimi needed no switching logic of its own.
+  3. **`default_model` alone cannot switch.** Each provider brings its own model tables, thinking settings and service blocks; storing the whole file keeps those with the provider that uses them.
+- Consequence:
+  - Kimi's MCP servers live in `mcp.json`, outside the provider, and are synced by the MCP service — switching never drops them. Kimi common config is everything except `default_model`, `[providers.*]` and `[models.*]`.
+  - Kimi publishes no usage figures, so Kimi cards carry no usage badges.
+  - The Kimi switch-away backfill has no account guard: a `kimi login` as a different account while a provider is current is filed under that provider. The 2026-09-12 Codex rules below are not applied to Kimi.
+- Files: `src-tauri/src/kimi_config.rs`; the Kimi arms of `services/provider/live.rs` and `services/provider/mod.rs`; `brief_archive/kimi_frontend_checklist.md` (the frontend contract).
+
+## 2026-09-12 — Codex login ownership is read from the login itself; the 2026-08-16 switch-away rules apply to Codex through it
+
+- Context: The 2026-08-16 entry made Claude's live-credential ownership *recorded, not inferred*, because Claude's credentials blob carries no account identifier. Codex's `auth.json` does: its `tokens` block holds `account_id` and an id token naming the account, and the file records `last_refresh`.
+- Decision: For Codex, the switch-away backfill and the WSL reconciler identify the account from the login's own claims (`tokens.account_id`, then the id token's `chatgpt_account_id`, then its email) and order freshness by `last_refresh`. There is no ownership marker. The rules are Claude's: a blank or logged-out live login never replaces a stored one; an older login never replaces a newer one; a different account's login is refused for the provider being left and moved to the provider that already holds that account, when that provider's copy is older.
+- Why: A recorded marker answers "whose tokens are these?" when the tokens cannot. Codex's tokens can, and reading the answer from them stays right even for a login Switchy never wrote (a manual `codex login`), which a marker cannot cover. Keeping the rules identical to Claude's leaves one model across both tools.
+- Consequence:
+  - An `auth.json` with no `tokens` (an API-key provider, or a fresh Official preset) has nothing to protect and is always backfilled. The reconciler never touches an install that is on an API key.
+  - The Codex mirror directory is auto-detected from the default WSL distro like Claude's, and is suppressed under `SWITCHY_TEST_HOME` for the 2026-08-16 reason.
+- Files: `src-tauri/src/services/codex_account.rs`; the Codex backfill in `services/provider/mod.rs`; `reconcile_codex` in `services/credential_mirror.rs`; `write_codex_mirror` in `services/provider/live.rs`.
+
 ## 2026-08-16 — One resolver owns `.claude.json`; account state travels as a bounded allowlist; live-credential ownership is recorded, not inferred
 
 - Decision: Four related rules for the Claude account swap, shipped as **1.0.8**.

@@ -54,6 +54,28 @@ impl ScopedHome {
         fs::create_dir_all(&p).unwrap();
         p
     }
+
+    /// The file Claude Code reads: sibling of the config dir, not inside it.
+    fn live_config(&self) -> PathBuf {
+        self.path().join(".claude.json")
+    }
+
+    fn live_credentials(&self) -> PathBuf {
+        self.claude_dir().join(".credentials.json")
+    }
+}
+
+/// A credentials blob shaped like the real one: both tokens present, with an
+/// access-token expiry the freshness rules can order.
+fn credentials_blob(token: &str, expires_at: i64) -> Value {
+    json!({
+        "claudeAiOauth": {
+            "accessToken": format!("access-{token}"),
+            "refreshToken": format!("refresh-{token}"),
+            "expiresAt": expires_at,
+            "subscriptionType": "max",
+        }
+    })
 }
 
 impl Drop for ScopedHome {
@@ -80,8 +102,7 @@ fn clear_mirror_setting() {
 }
 
 fn set_mirror(dir: &Path) {
-    crate::settings::set_claude_mirror_config_dir(Some(dir.to_path_buf()))
-        .expect("set mirror dir");
+    crate::settings::set_claude_mirror_config_dir(Some(dir.to_path_buf())).expect("set mirror dir");
 }
 
 fn make_state() -> AppState {
@@ -107,14 +128,17 @@ fn official_provider(id: &str) -> Provider {
 }
 
 fn write_live_files(home: &ScopedHome, account_uuid: &str, email: &str) {
-    let claude_dir = home.claude_dir();
+    write_live_files_at(home, account_uuid, email, 1_000);
+}
+
+fn write_live_files_at(home: &ScopedHome, account_uuid: &str, email: &str, expires_at: i64) {
     fs::write(
-        claude_dir.join(".credentials.json"),
-        json!({ "oauth": { "token": "t" } }).to_string(),
+        home.live_credentials(),
+        credentials_blob(account_uuid, expires_at).to_string(),
     )
     .unwrap();
     fs::write(
-        claude_dir.join(".claude.json"),
+        home.live_config(),
         json!({
             "oauthAccount": {
                 "accountUuid": account_uuid,
@@ -122,7 +146,8 @@ fn write_live_files(home: &ScopedHome, account_uuid: &str, email: &str) {
                 "organizationName": "Acme",
             },
             "projects": { "p1": {} },
-            "userID": "sibling-preserved"
+            "machineID": "machine-stays-put",
+            "userID": format!("user-{account_uuid}"),
         })
         .to_string(),
     )
@@ -156,7 +181,11 @@ fn capture_happy_path_writes_snapshots_and_meta() {
     assert!(paths::snapshot_credentials_path("p1").exists());
     assert!(paths::snapshot_oauth_account_path("p1").exists());
 
-    let reloaded = state.db.get_provider_by_id("p1", "claude").unwrap().unwrap();
+    let reloaded = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
     let captured = reloaded
         .meta
         .expect("meta")
@@ -173,9 +202,8 @@ fn capture_fails_when_credentials_missing() {
     let state = make_state();
     seed_provider(&state, &official_provider("p1"));
     // Only write the claude config, no credentials file.
-    let claude_dir = home.claude_dir();
     fs::write(
-        claude_dir.join(".claude.json"),
+        home.live_config(),
         json!({ "oauthAccount": { "accountUuid": "u", "emailAddress": "e@x" } }).to_string(),
     )
     .unwrap();
@@ -196,13 +224,8 @@ fn capture_fails_when_oauth_account_missing() {
     let home = ScopedHome::new();
     let state = make_state();
     seed_provider(&state, &official_provider("p1"));
-    let claude_dir = home.claude_dir();
-    fs::write(claude_dir.join(".credentials.json"), "{}").unwrap();
-    fs::write(
-        claude_dir.join(".claude.json"),
-        json!({ "projects": {} }).to_string(),
-    )
-    .unwrap();
+    fs::write(home.live_credentials(), "{}").unwrap();
+    fs::write(home.live_config(), json!({ "projects": {} }).to_string()).unwrap();
 
     let err = capture(&state, "p1", false).unwrap_err();
     match err {
@@ -219,10 +242,9 @@ fn capture_fails_when_account_uuid_empty() {
     let home = ScopedHome::new();
     let state = make_state();
     seed_provider(&state, &official_provider("p1"));
-    let claude_dir = home.claude_dir();
-    fs::write(claude_dir.join(".credentials.json"), "{}").unwrap();
+    fs::write(home.live_credentials(), "{}").unwrap();
     fs::write(
-        claude_dir.join(".claude.json"),
+        home.live_config(),
         json!({ "oauthAccount": { "accountUuid": "", "emailAddress": "e@x" } }).to_string(),
     )
     .unwrap();
@@ -285,7 +307,11 @@ fn capture_with_different_uuid_needs_confirmation_without_force() {
     // No files written.
     assert!(!paths::snapshot_credentials_path("p1").exists());
     // Meta unchanged.
-    let reloaded = state.db.get_provider_by_id("p1", "claude").unwrap().unwrap();
+    let reloaded = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
     assert_eq!(
         reloaded
             .meta
@@ -319,7 +345,11 @@ fn capture_with_different_uuid_overwrites_when_forced() {
         CaptureOutcome::Captured { identity } => assert_eq!(identity.account_uuid, "uuid-B"),
         other => panic!("expected Captured, got {other:?}"),
     }
-    let reloaded = state.db.get_provider_by_id("p1", "claude").unwrap().unwrap();
+    let reloaded = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
     assert_eq!(
         reloaded
             .meta
@@ -346,7 +376,11 @@ fn clear_removes_files_and_meta_and_is_idempotent() {
     clear(&state, "p1").unwrap();
     assert!(!paths::snapshot_dir("p1").exists());
 
-    let reloaded = state.db.get_provider_by_id("p1", "claude").unwrap().unwrap();
+    let reloaded = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
     assert!(reloaded
         .meta
         .and_then(|m| m.captured_claude_account)
@@ -414,40 +448,107 @@ fn swap_applied_writes_both_files_preserving_siblings() {
     capture(&state, "p1", false).unwrap();
 
     // Rewrite live to look like account B — the swap should restore A.
-    let claude_dir = home.claude_dir();
     fs::write(
-        claude_dir.join(".credentials.json"),
-        json!({ "oauth": { "token": "B" } }).to_string(),
+        home.live_credentials(),
+        credentials_blob("uuid-B", 2_000).to_string(),
     )
     .unwrap();
     fs::write(
-        claude_dir.join(".claude.json"),
+        home.live_config(),
         json!({
             "oauthAccount": { "accountUuid": "uuid-B", "emailAddress": "bob@x" },
             "projects": { "p1": { "keep": true } },
-            "userID": "sibling-B"
+            "machineID": "machine-stays-put",
+            "userID": "user-uuid-B",
+            "hasAvailableSubscription": true,
         })
         .to_string(),
     )
     .unwrap();
 
-    let provider = state.db.get_provider_by_id("p1", "claude").unwrap().unwrap();
+    let provider = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
     let outcome = swap_if_captured(&state, &provider).unwrap();
     assert!(matches!(outcome, SwapOutcome::Applied));
 
-    let config: Value = serde_json::from_slice(
-        &fs::read(claude_dir.join(".claude.json")).unwrap(),
-    )
-    .unwrap();
+    let config: Value = serde_json::from_slice(&fs::read(home.live_config()).unwrap()).unwrap();
     assert_eq!(
-        config.get("oauthAccount").and_then(|v| v.get("accountUuid")).and_then(|v| v.as_str()),
+        config
+            .get("oauthAccount")
+            .and_then(|v| v.get("accountUuid"))
+            .and_then(|v| v.as_str()),
         Some("uuid-A")
     );
-    // Siblings preserved.
+    // Machine state survives the swap.
     assert!(config.get("projects").is_some());
     assert_eq!(
+        config.get("machineID").and_then(|v| v.as_str()),
+        Some("machine-stays-put")
+    );
+    // Account state travels with the account, rather than being left behind.
+    assert!(
+        config.get("hasAvailableSubscription").is_none(),
+        "B's entitlement must not linger once A is restored"
+    );
+    // userID belongs to this install, not to whichever account is signed in.
+    assert_eq!(
         config.get("userID").and_then(|v| v.as_str()),
-        Some("sibling-B")
+        Some("user-uuid-B")
+    );
+}
+
+/// The regression that froze `/status`: a `.claude.json` inside the config
+/// directory must not absorb the swap, leaving the file the CLI reads stale.
+#[test]
+#[serial]
+fn swap_writes_the_config_the_cli_reads_not_a_decoy_inside_the_config_dir() {
+    let home = ScopedHome::new();
+    let state = make_state();
+    seed_provider(&state, &official_provider("p1"));
+    write_live_files(&home, "uuid-A", "alice@example.com");
+    capture(&state, "p1", false).unwrap();
+
+    // A second, unrelated config sitting inside ~/.claude.
+    let decoy = home.claude_dir().join(".claude.json");
+    fs::write(
+        &decoy,
+        json!({ "oauthAccount": { "accountUuid": "uuid-DECOY", "emailAddress": "d@x" } })
+            .to_string(),
+    )
+    .unwrap();
+    // Live identity moves to B.
+    fs::write(
+        home.live_config(),
+        json!({ "oauthAccount": { "accountUuid": "uuid-B", "emailAddress": "bob@x" } }).to_string(),
+    )
+    .unwrap();
+
+    let provider = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
+    swap_if_captured(&state, &provider).unwrap();
+
+    let real: Value = serde_json::from_slice(&fs::read(home.live_config()).unwrap()).unwrap();
+    assert_eq!(
+        real.get("oauthAccount")
+            .and_then(|v| v.get("accountUuid"))
+            .and_then(|v| v.as_str()),
+        Some("uuid-A"),
+        "the swap must land in the file Claude Code reads"
+    );
+    let untouched: Value = serde_json::from_slice(&fs::read(&decoy).unwrap()).unwrap();
+    assert_eq!(
+        untouched
+            .get("oauthAccount")
+            .and_then(|v| v.get("accountUuid"))
+            .and_then(|v| v.as_str()),
+        Some("uuid-DECOY"),
+        "the decoy is someone else's config and stays untouched"
     );
 }
 
@@ -467,11 +568,18 @@ fn swap_aborts_when_snapshot_parse_fails() {
     let before_cred = fs::read(paths::live_credentials_path()).unwrap();
     let before_config = fs::read(paths::live_claude_config_path()).unwrap();
 
-    let provider = state.db.get_provider_by_id("p1", "claude").unwrap().unwrap();
+    let provider = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
     let err = swap_if_captured(&state, &provider).unwrap_err();
     assert!(err.to_string().contains("corrupt"));
 
-    assert_eq!(fs::read(paths::live_credentials_path()).unwrap(), before_cred);
+    assert_eq!(
+        fs::read(paths::live_credentials_path()).unwrap(),
+        before_cred
+    );
     assert_eq!(
         fs::read(paths::live_claude_config_path()).unwrap(),
         before_config
@@ -490,7 +598,11 @@ fn swap_errors_when_snapshot_files_missing() {
     // Remove the snapshot dir behind Switchy's back but leave meta in place.
     fs::remove_dir_all(paths::snapshot_dir("p1")).unwrap();
 
-    let provider = state.db.get_provider_by_id("p1", "claude").unwrap().unwrap();
+    let provider = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
     let err = swap_if_captured(&state, &provider).unwrap_err();
     assert!(err.to_string().contains("No captured snapshot"));
 }
@@ -504,10 +616,14 @@ fn swap_applied_with_mirror_when_mirror_configured_and_healthy() {
     write_live_files(&home, "uuid-A", "alice@example.com");
     capture(&state, "p1", false).unwrap();
 
-    let mirror = home.path().join("mirror");
+    // A mirror models the other install's ~/.claude dir; its .claude.json is
+    // the sibling of that dir, exactly as on the local side.
+    let mirror_home = home.path().join("wsl-home");
+    let mirror = mirror_home.join(".claude");
     fs::create_dir_all(&mirror).unwrap();
+    let mirror_config_path = mirror_home.join(".claude.json");
     fs::write(
-        mirror.join(".claude.json"),
+        &mirror_config_path,
         json!({
             "oauthAccount": { "accountUuid": "uuid-OLD", "emailAddress": "old@x" },
             "statusLine": { "keep": true }
@@ -517,12 +633,16 @@ fn swap_applied_with_mirror_when_mirror_configured_and_healthy() {
     .unwrap();
     set_mirror(&mirror);
 
-    let provider = state.db.get_provider_by_id("p1", "claude").unwrap().unwrap();
+    let provider = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
     let outcome = swap_if_captured(&state, &provider).unwrap();
     assert!(matches!(outcome, SwapOutcome::AppliedWithMirror));
 
     let mirror_config: Value =
-        serde_json::from_slice(&fs::read(mirror.join(".claude.json")).unwrap()).unwrap();
+        serde_json::from_slice(&fs::read(&mirror_config_path).unwrap()).unwrap();
     assert_eq!(
         mirror_config
             .get("oauthAccount")
@@ -545,12 +665,17 @@ fn swap_partial_mirror_when_mirror_config_unparseable() {
     write_live_files(&home, "uuid-A", "alice@example.com");
     capture(&state, "p1", false).unwrap();
 
-    let mirror = home.path().join("mirror");
+    let mirror_home = home.path().join("wsl-home");
+    let mirror = mirror_home.join(".claude");
     fs::create_dir_all(&mirror).unwrap();
-    fs::write(mirror.join(".claude.json"), "not json").unwrap();
+    fs::write(mirror_home.join(".claude.json"), "not json").unwrap();
     set_mirror(&mirror);
 
-    let provider = state.db.get_provider_by_id("p1", "claude").unwrap().unwrap();
+    let provider = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
     let outcome = swap_if_captured(&state, &provider).unwrap();
     match outcome {
         SwapOutcome::PartialMirror(warnings) => {
@@ -559,12 +684,13 @@ fn swap_partial_mirror_when_mirror_config_unparseable() {
         other => panic!("expected PartialMirror, got {other:?}"),
     }
     // Windows target still updated.
-    let config: Value = serde_json::from_slice(
-        &fs::read(paths::live_claude_config_path()).unwrap(),
-    )
-    .unwrap();
+    let config: Value =
+        serde_json::from_slice(&fs::read(paths::live_claude_config_path()).unwrap()).unwrap();
     assert_eq!(
-        config.get("oauthAccount").and_then(|v| v.get("accountUuid")).and_then(|v| v.as_str()),
+        config
+            .get("oauthAccount")
+            .and_then(|v| v.get("accountUuid"))
+            .and_then(|v| v.as_str()),
         Some("uuid-A")
     );
     // Mirror .credentials.json still written.
@@ -588,22 +714,29 @@ fn swap_partial_mirror_when_mirror_unreachable() {
     };
     set_mirror(&unreachable);
 
-    let provider = state.db.get_provider_by_id("p1", "claude").unwrap().unwrap();
+    let provider = state
+        .db
+        .get_provider_by_id("p1", "claude")
+        .unwrap()
+        .unwrap();
     let outcome = swap_if_captured(&state, &provider).unwrap();
     match outcome {
         SwapOutcome::PartialMirror(warnings) => {
             assert!(!warnings.is_empty());
-            assert!(warnings.iter().all(|w| w.contains(":unreachable") || w.contains(":locked") || w.contains(":parse")));
+            assert!(warnings.iter().all(|w| w.contains(":unreachable")
+                || w.contains(":locked")
+                || w.contains(":parse")));
         }
         other => panic!("expected PartialMirror, got {other:?}"),
     }
     // Windows side still applied.
-    let config: Value = serde_json::from_slice(
-        &fs::read(paths::live_claude_config_path()).unwrap(),
-    )
-    .unwrap();
+    let config: Value =
+        serde_json::from_slice(&fs::read(paths::live_claude_config_path()).unwrap()).unwrap();
     assert_eq!(
-        config.get("oauthAccount").and_then(|v| v.get("accountUuid")).and_then(|v| v.as_str()),
+        config
+            .get("oauthAccount")
+            .and_then(|v| v.get("accountUuid"))
+            .and_then(|v| v.as_str()),
         Some("uuid-A")
     );
 }
@@ -625,15 +758,19 @@ fn swap_syncs_outgoing_snapshot_before_overwriting_live() {
     write_live_files(&home, "uuid-B", "bob@example.com");
     capture(&state, "b", false).unwrap();
 
-    // Simulate Claude Code background-refreshing A's tokens while A is live.
-    let claude_dir = home.claude_dir();
+    // Switch to A so Switchy records that A owns the live credentials.
+    let provider_a = state.db.get_provider_by_id("a", "claude").unwrap().unwrap();
+    swap_if_captured(&state, &provider_a).unwrap();
+
+    // Simulate Claude Code background-refreshing A's tokens while A is live:
+    // a rotated bundle with a later access-token expiry.
     fs::write(
-        claude_dir.join(".credentials.json"),
-        json!({ "oauth": { "token": "A-refreshed", "expiresAt": 999 } }).to_string(),
+        home.live_credentials(),
+        credentials_blob("A-refreshed", 9_000).to_string(),
     )
     .unwrap();
     fs::write(
-        claude_dir.join(".claude.json"),
+        home.live_config(),
         json!({
             "oauthAccount": {
                 "accountUuid": "uuid-A",
@@ -658,14 +795,18 @@ fn swap_syncs_outgoing_snapshot_before_overwriting_live() {
     // A's credential snapshot now reflects the refreshed live creds.
     let after_cred =
         fs::read(paths::snapshot_credentials_path("a")).expect("A cred snapshot still exists");
-    assert_ne!(before_cred, after_cred, "A's snapshot should have been synced");
+    assert_ne!(
+        before_cred, after_cred,
+        "A's snapshot should have been synced"
+    );
     let after_val: Value = serde_json::from_slice(&after_cred).unwrap();
     assert_eq!(
         after_val
-            .get("oauth")
-            .and_then(|v| v.get("token"))
+            .get("claudeAiOauth")
+            .and_then(|v| v.get("refreshToken"))
             .and_then(|v| v.as_str()),
-        Some("A-refreshed")
+        Some("refresh-A-refreshed"),
+        "the rotated refresh token is the only usable one and must be kept"
     );
 
     // A's oauthAccount snapshot updated too.
@@ -678,10 +819,8 @@ fn swap_syncs_outgoing_snapshot_before_overwriting_live() {
     );
 
     // Live now carries B's snapshot.
-    let live_config: Value = serde_json::from_slice(
-        &fs::read(paths::live_claude_config_path()).unwrap(),
-    )
-    .unwrap();
+    let live_config: Value =
+        serde_json::from_slice(&fs::read(paths::live_claude_config_path()).unwrap()).unwrap();
     assert_eq!(
         live_config
             .get("oauthAccount")
@@ -715,6 +854,143 @@ fn swap_sync_noop_when_live_uuid_has_no_matching_captured_provider() {
     assert_eq!(
         oauth_snap.get("accountUuid").and_then(|v| v.as_str()),
         Some("uuid-B")
+    );
+}
+
+// ---------- switch-away sync: the three refusal rules ----------
+
+/// Sets up two captured providers with A live and recorded as the owner.
+fn seed_two_and_make_a_live(home: &ScopedHome, state: &AppState) {
+    seed_provider(state, &official_provider("a"));
+    seed_provider(state, &official_provider("b"));
+    write_live_files(home, "uuid-A", "alice@example.com");
+    capture(state, "a", false).unwrap();
+    write_live_files(home, "uuid-B", "bob@example.com");
+    capture(state, "b", false).unwrap();
+    let provider_a = state.db.get_provider_by_id("a", "claude").unwrap().unwrap();
+    swap_if_captured(state, &provider_a).unwrap();
+}
+
+fn switch_to_b(state: &AppState) {
+    let provider_b = state.db.get_provider_by_id("b", "claude").unwrap().unwrap();
+    swap_if_captured(state, &provider_b).unwrap();
+}
+
+/// A manual `claude /login` between switches replaces the live tokens with a
+/// third account's. Filing those under A would destroy A's stored login.
+#[test]
+#[serial]
+fn sync_out_refuses_when_live_login_is_not_the_recorded_owner() {
+    let home = ScopedHome::new();
+    let state = make_state();
+    seed_two_and_make_a_live(&home, &state);
+
+    let before = fs::read(paths::snapshot_credentials_path("a")).unwrap();
+    // Someone logs in as an entirely different account.
+    write_live_files_at(&home, "uuid-STRANGER", "stranger@example.com", 9_000);
+
+    switch_to_b(&state);
+
+    assert_eq!(
+        fs::read(paths::snapshot_credentials_path("a")).unwrap(),
+        before,
+        "A's snapshot must not absorb another account's tokens"
+    );
+}
+
+/// A blanked bundle is what *losing* a refresh-token rotation leaves behind.
+/// Storing it would replace a recoverable snapshot with a husk.
+#[test]
+#[serial]
+fn sync_out_refuses_to_store_an_unusable_bundle() {
+    let home = ScopedHome::new();
+    let state = make_state();
+    seed_two_and_make_a_live(&home, &state);
+
+    let before = fs::read(paths::snapshot_credentials_path("a")).unwrap();
+    fs::write(
+        home.live_credentials(),
+        json!({
+            "claudeAiOauth": {
+                "accessToken": "access-A",
+                "refreshToken": "",
+                "expiresAt": 9_000,
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    switch_to_b(&state);
+
+    assert_eq!(
+        fs::read(paths::snapshot_credentials_path("a")).unwrap(),
+        before,
+        "a blanked refresh token must never overwrite a good snapshot"
+    );
+}
+
+/// Freshness is one-directional: a live bundle older than the stored one is
+/// stale state, not a refresh, and must not win.
+#[test]
+#[serial]
+fn sync_out_refuses_to_overwrite_a_newer_snapshot_with_an_older_bundle() {
+    let home = ScopedHome::new();
+    let state = make_state();
+    seed_two_and_make_a_live(&home, &state);
+
+    // Store a freshly refreshed bundle for A, then let live go backwards.
+    fs::write(
+        paths::snapshot_credentials_path("a"),
+        credentials_blob("A-newest", 50_000).to_string(),
+    )
+    .unwrap();
+    let before = fs::read(paths::snapshot_credentials_path("a")).unwrap();
+    fs::write(
+        home.live_credentials(),
+        credentials_blob("A-older", 20_000).to_string(),
+    )
+    .unwrap();
+
+    switch_to_b(&state);
+
+    assert_eq!(
+        fs::read(paths::snapshot_credentials_path("a")).unwrap(),
+        before,
+        "the older live bundle must not clobber the newer snapshot"
+    );
+}
+
+/// The account-scoped keys beside `oauthAccount` are captured too, so a
+/// restored account reports its own plan rather than the previous one's.
+#[test]
+#[serial]
+fn capture_records_account_state_beside_the_identity() {
+    let home = ScopedHome::new();
+    let state = make_state();
+    seed_provider(&state, &official_provider("p1"));
+    write_live_files(&home, "uuid-A", "alice@example.com");
+    let mut root: Value = serde_json::from_slice(&fs::read(home.live_config()).unwrap()).unwrap();
+    root["hasAvailableSubscription"] = json!(true);
+    root["cachedUsageUtilization"] = json!({ "utilization": 42 });
+    fs::write(home.live_config(), root.to_string()).unwrap();
+
+    capture(&state, "p1", false).unwrap();
+
+    let stored: Value =
+        serde_json::from_slice(&fs::read(paths::snapshot_account_state_path("p1")).unwrap())
+            .unwrap();
+    assert_eq!(
+        stored.get("hasAvailableSubscription").unwrap(),
+        &json!(true)
+    );
+    assert_eq!(
+        stored.get("cachedUsageUtilization").unwrap(),
+        &json!({ "utilization": 42 })
+    );
+    assert!(
+        stored.get("machineID").is_none(),
+        "machine state is not part of the account"
     );
 }
 

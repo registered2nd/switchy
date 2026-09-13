@@ -4,6 +4,38 @@ Transferable heuristics captured from past sessions on this project. These are r
 
 ---
 
+## Decide another tool's auth mode from the data you need, not from its mode field
+
+Codex CLI stopped writing `auth_mode` into `~/.codex/auth.json`. Switchy's usage reader required `auth_mode == "chatgpt"` before it would touch the `tokens` block, so on every up-to-date install it concluded "no login" and hid the usage badges. There was no error and no log line: the feature quietly stopped existing, while the tokens it needed sat in the same file.
+
+**Rule:** When reading another program's credential or config file, decide what you have from the data you are about to use — is there a `tokens` block with an access token? — and let an explicit mode field act only as a veto when it names a *different* mode. Optional discriminators get dropped between releases, and a strict equality check on one turns that into a silent outage. The same test applies to Claude's `.credentials.json`, Gemini's `oauth_creds.json` and Kimi's `credentials/kimi-code.json`.
+
+---
+
+## A test that reaches a machine-global path escapes `SWITCHY_TEST_HOME` and writes to real user data
+
+The test home redirect sandboxes anything derived from `get_home_dir()`. It does not sandbox a path the app *discovers* — and `get_claude_mirror_override_dir()` falls back to `build_default_claude_mirror_dir()`, which probes for a WSL distro and returns a real `\\wsl$\...\home\<user>\.claude`. On any developer machine with WSL, every swap test therefore wrote credentials and identity into the actual WSL home. We hit this 2026-08-16: test fixtures (`uuid-B` / `bob@example.com` / `Acme`) ended up in `/home/agentcode/.claude.json`, and the blanked test credentials file was then healed by the running reconciler using the *Windows* login — silently moving that install to a different account. The tests all passed while doing it; three unrelated assertions had also been failing for months for the same reason, because "no mirror configured" tests were quietly running as mirror tests.
+
+**Rule:** Any config value that is *auto-detected* rather than *derived from home* is a global side-channel and must be suppressed under the test-home env var, exactly like the macOS Keychain. Before trusting a hermetic-looking suite, grep the settings layer for fallbacks that probe the machine (`build_default_*`, `detect_*`, `which`, registry reads) and confirm each is gated. A cheap tell that you have this bug: tests that pass on CI but fail locally, or a suite whose outcome depends on whether a peer system happens to be installed. See [[DECISION_LOG]] 2026-08-16.
+
+---
+
+## `userID` in `.claude.json` identifies the *install*, not the account — despite looking like account state
+
+`~/.claude.json` carries both machine state and account state as flat sibling keys, and they are not distinguishable by name. `userID` sits right next to `oauthAccount` and reads like an account attribute, but the **same account signed in on two machines carries a different `userID` on each** (registered2nd@gmail.com is `7aa2038f…` on Windows and `bb56a5f0…` in WSL). It behaves like `machineID`, not like `emailAddress`. Carrying it across an account swap stamps one install with another install's identity.
+
+**Rule:** When splitting a flat config into "moves with the account" and "stays with the machine," do not classify by name or by plausibility — verify each candidate field against **the same account on two different installs**. Fields that differ there are install-scoped no matter what they are called. Fields already keyed by account or org UUID (`groveConfigCache`, `passesEligibilityCache`) are self-partitioning and need no classification at all; leaving them is safer than moving them.
+
+---
+
+## `CLAUDE_CONFIG_DIR` relocates Claude Code's whole global state, creating a second config root on one machine
+
+Unset, Claude Code keeps `.claude.json` at the home root and everything else under `~/.claude/`. Set, it moves the lot — `.claude.json`, `.credentials.json`, `projects/`, `todos/`, `shell-snapshots/` — *inside* the named directory. Point it at `~/.claude` (the default directory, which looks like a no-op) and you get a **second, independent config root** at `~/.claude/.claude.json`, with its own login identity, alongside the default one. Both roots still share the credentials file and the backups folder, so it is not the account isolation it appears to be; the variable is undocumented and the issue asking what it does was closed with no answer. A tell that two roots exist: `~/.claude/backups/` holding `.claude.json.backup.*` files at two distinct sizes.
+
+**Rule:** Any tool that reads or writes Claude Code's config must resolve the file by rule (`CLAUDE_CONFIG_DIR` if set, else home root), never by checking which candidate exists — a stale second root will win the probe forever. When two accounts must be genuinely separate, give each a separate home directory; `CLAUDE_CONFIG_DIR` splits too little to work.
+
+---
+
 ## Claude Code stores its OAuth credentials in the macOS **Keychain**, not `~/.claude/.credentials.json`
 
 On macOS, Claude Code keeps its login blob as a login-Keychain generic-password item (service `Claude Code-credentials`), **not** in the `~/.claude/.credentials.json` file it uses on Windows and Linux. A file-only code path silently no-ops on macOS: reads find nothing ("No login found" even when logged in), and writes land in a file Claude Code never reads (a swap that *looks* like it succeeded but doesn't take). Only the token blob moves to the Keychain — the `oauthAccount` block in `~/.claude/.claude.json` stays file-based on every platform.

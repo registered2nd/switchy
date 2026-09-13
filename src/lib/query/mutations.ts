@@ -220,7 +220,10 @@ export const useSwitchProviderMutation = (appId: AppId) => {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["providers", appId] });
-      await queryClient.invalidateQueries({ queryKey: ["subscription", "quota"] });
+      await queryClient.invalidateQueries({ queryKey: ["codexAccount"] });
+      await queryClient.invalidateQueries({
+        queryKey: ["subscription", "quota"],
+      });
 
       // OpenCode/OpenClaw: also invalidate live provider IDs cache to update button state
       if (appId === "opencode") {

@@ -255,6 +255,13 @@ impl StreamCheckService {
                 )
                 .await
             }
+            AppType::Kimi => {
+                return Err(AppError::localized(
+                    "kimi_no_stream_check",
+                    "Kimi 暂不支持健康检查",
+                    "Stream check is not supported for Kimi yet",
+                ));
+            }
             AppType::OpenCode => {
                 // OpenCode doesn't support stream check yet
                 return Err(AppError::localized(
@@ -662,6 +669,7 @@ impl StreamCheckService {
             }
             AppType::Gemini => Self::extract_env_model(provider, "GEMINI_MODEL")
                 .unwrap_or_else(|| config.gemini_model.clone()),
+            AppType::Kimi => Self::extract_kimi_model(provider).unwrap_or_else(|| "k3".to_string()),
             AppType::OpenCode => {
                 // OpenCode uses models map in settings_config
                 // Try to extract first model from the models object
@@ -708,6 +716,17 @@ impl StreamCheckService {
             .and_then(|value| value.as_str())
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
+    }
+
+    /// `default_model = "<provider>/<model>"` in Kimi's config.toml.
+    fn extract_kimi_model(provider: &Provider) -> Option<String> {
+        let config_text = provider.settings_config.get("config")?.as_str()?;
+        let re = Regex::new(r#"(?m)^default_model\s*=\s*["']([^"']+)["']"#).ok()?;
+        let alias = re.captures(config_text)?.get(1)?.as_str();
+        alias
+            .split_once('/')
+            .map(|(_, m)| m.to_string())
+            .filter(|m| !m.is_empty())
     }
 
     fn extract_codex_model(provider: &Provider) -> Option<String> {

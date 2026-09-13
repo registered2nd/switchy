@@ -145,6 +145,7 @@ pub(crate) fn build_provider_from_request(
         AppType::Claude => build_claude_settings(request),
         AppType::Codex => build_codex_settings(request),
         AppType::Gemini => build_gemini_settings(request),
+        AppType::Kimi => build_kimi_settings(request),
         AppType::OpenCode => build_opencode_settings(request),
         AppType::OpenClaw => build_openclaw_settings(request),
     };
@@ -346,6 +347,55 @@ requires_openai_auth = true
             "OPENAI_API_KEY": request.api_key,
         },
         "config": config_toml
+    })
+}
+
+/// Build Kimi settings: an OpenAI-compatible `[providers.<id>]` plus one model
+/// alias, selected by `default_model`. No managed login (`credentials: null`).
+fn build_kimi_settings(request: &DeepLinkImportRequest) -> serde_json::Value {
+    let provider_id = {
+        let raw: String = request
+            .name
+            .clone()
+            .unwrap_or_else(|| "custom".to_string())
+            .to_lowercase()
+            .chars()
+            .map(|c| match c {
+                'a'..='z' | '0'..='9' | '_' | '-' => c,
+                _ => '_',
+            })
+            .collect();
+        let trimmed = raw.trim_matches(|c| c == '_' || c == '-').to_string();
+        if trimmed.is_empty() {
+            "custom".to_string()
+        } else {
+            trimmed
+        }
+    };
+    let model_name = request.model.as_deref().unwrap_or("gpt-4o").to_string();
+    let endpoint = get_primary_endpoint(request)
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
+    let api_key = request.api_key.clone().unwrap_or_default();
+
+    let config_toml = format!(
+        r#"default_model = "{provider_id}/{model_name}"
+
+[providers.{provider_id}]
+type = "openai"
+api_key = "{api_key}"
+base_url = "{endpoint}"
+
+[models."{provider_id}/{model_name}"]
+provider = "{provider_id}"
+model = "{model_name}"
+"#
+    );
+
+    json!({
+        "config": config_toml,
+        "credentials": serde_json::Value::Null
     })
 }
 

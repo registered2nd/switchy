@@ -771,7 +771,10 @@ mod tests {
         let captured = round_tripped
             .captured_claude_account
             .expect("captured preserved");
-        assert_eq!(captured.account_uuid, "11111111-2222-3333-4444-555555555555");
+        assert_eq!(
+            captured.account_uuid,
+            "11111111-2222-3333-4444-555555555555"
+        );
         assert_eq!(captured.email_address, "alice@example.com");
         assert_eq!(captured.captured_at, 1_760_000_000);
     }

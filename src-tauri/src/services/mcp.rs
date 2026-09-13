@@ -116,6 +116,9 @@ impl McpService {
             AppType::Gemini => {
                 mcp::sync_single_server_to_gemini(&Default::default(), &server.id, &server.server)?;
             }
+            AppType::Kimi => {
+                mcp::sync_single_server_to_kimi(&Default::default(), &server.id, &server.server)?;
+            }
             AppType::OpenCode => {
                 mcp::sync_single_server_to_opencode(
                     &Default::default(),
@@ -150,6 +153,7 @@ impl McpService {
             AppType::Claude => mcp::remove_server_from_claude(id)?,
             AppType::Codex => mcp::remove_server_from_codex(id)?,
             AppType::Gemini => mcp::remove_server_from_gemini(id)?,
+            AppType::Kimi => mcp::remove_server_from_kimi(id)?,
             AppType::OpenCode => {
                 mcp::remove_server_from_opencode(id)?;
             }
@@ -336,6 +340,36 @@ impl McpService {
                     existing.insert(to_save.id.clone(), to_save.clone());
 
                     // 同步到对应应用 live 配置
+                    Self::sync_server_to_apps(state, &to_save)?;
+                }
+            }
+        }
+
+        Ok(new_count)
+    }
+
+    /// 从 Kimi 导入 MCP（~/.kimi-code/mcp.json）
+    pub fn import_from_kimi(state: &AppState) -> Result<usize, AppError> {
+        let mut temp_config = crate::app_config::MultiAppConfig::default();
+        let count = crate::mcp::import_from_kimi(&mut temp_config)?;
+
+        let mut new_count = 0;
+        if count > 0 {
+            if let Some(servers) = &temp_config.mcp.servers {
+                let mut existing = state.db.get_all_mcp_servers()?;
+                for server in servers.values() {
+                    // 已存在：仅启用 Kimi，不覆盖其他字段
+                    let to_save = if let Some(existing_server) = existing.get(&server.id) {
+                        let mut merged = existing_server.clone();
+                        merged.apps.kimi = true;
+                        merged
+                    } else {
+                        new_count += 1;
+                        server.clone()
+                    };
+
+                    state.db.save_mcp_server(&to_save)?;
+                    existing.insert(to_save.id.clone(), to_save.clone());
                     Self::sync_server_to_apps(state, &to_save)?;
                 }
             }

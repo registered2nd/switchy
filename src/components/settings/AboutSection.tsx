@@ -335,9 +335,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <img src={appIcon} alt="Switchy" className="h-5 w-5" />
-              <h4 className="text-lg font-semibold text-foreground">
-                Switchy
-              </h4>
+              <h4 className="text-lg font-semibold text-foreground">Switchy</h4>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="gap-1.5 bg-background/80">

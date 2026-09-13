@@ -208,8 +208,8 @@ export function SessionRecoveryPanel() {
       )}
 
       <p className="text-[11px] text-muted-foreground italic">
-        Quit Claude Code for a session before repairing it. Backups are saved
-        as <code>&lt;name&gt;.bak.jsonl</code>; restore by copying back.
+        Quit Claude Code for a session before repairing it. Backups are saved as{" "}
+        <code>&lt;name&gt;.bak.jsonl</code>; restore by copying back.
       </p>
     </section>
   );

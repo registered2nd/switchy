@@ -383,6 +383,8 @@ describe("useSettings hook", () => {
       undefined, // codexConfigDir
       undefined, // geminiConfigDir
       undefined, // opencodeConfigDir
+      undefined, // codexMirrorConfigDir
+      undefined, // kimiConfigDir
     );
     expect(metadataMock.setRequiresRestart).toHaveBeenCalledWith(false);
   });

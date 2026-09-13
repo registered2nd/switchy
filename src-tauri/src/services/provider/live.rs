@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use toml_edit::{DocumentMut, Item, TableLike};
 
 use crate::app_config::AppType;
-use crate::codex_config::{get_codex_auth_path, get_codex_config_path};
+use crate::codex_config::{get_codex_auth_path, get_codex_config_dir, get_codex_config_path};
 use crate::config::{delete_file, get_claude_settings_path, read_json_file, write_json_file};
 use crate::database::Database;
 use crate::error::AppError;
@@ -85,6 +85,48 @@ fn merge_claude_provider_fields_into_target(target: &Value, source: &Value) -> V
     }
 
     merged
+}
+
+/// Keys of `config.toml` a provider owns outright. They are cleared from the
+/// mirror before the live text is merged over it, so a previous provider's
+/// `[model_providers.x]` table cannot linger beside the new one. Everything
+/// else the mirror holds (`[mcp_servers]`, per-machine paths) stays.
+const CODEX_PROVIDER_OWNED_KEYS: [&str; 3] = ["model_provider", "model", "model_providers"];
+
+/// Writes the Codex login and provider config into a second `~/.codex`.
+/// `auth.json` is copied whole (it holds nothing machine-specific);
+/// `config.toml` is merged key-by-key over the mirror's own file.
+fn write_codex_mirror(
+    mirror_dir: &std::path::Path,
+    auth: &Value,
+    config_text: &str,
+) -> Result<(), AppError> {
+    std::fs::create_dir_all(mirror_dir).map_err(|e| AppError::io(mirror_dir, e))?;
+    write_json_file(&mirror_dir.join("auth.json"), auth)?;
+
+    let config_path = mirror_dir.join("config.toml");
+    let mut target_doc = match std::fs::read_to_string(&config_path) {
+        Ok(text) if !text.trim().is_empty() => match text.parse::<DocumentMut>() {
+            Ok(doc) => doc,
+            Err(e) => {
+                log::warn!(
+                    "Codex mirror config '{}' is not valid TOML ({e}); leaving it untouched",
+                    config_path.display()
+                );
+                return Ok(());
+            }
+        },
+        _ => DocumentMut::new(),
+    };
+    let source_doc = config_text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
+
+    for key in CODEX_PROVIDER_OWNED_KEYS {
+        target_doc.remove(key);
+    }
+    merge_toml_table_like(target_doc.as_table_mut(), source_doc.as_table());
+    crate::config::write_text_file(&config_path, &target_doc.to_string())
 }
 
 fn build_claude_mirror_settings(source: &Value) -> Value {
@@ -391,7 +433,7 @@ fn settings_contain_common_config(app_type: &AppType, settings: &Value, snippet:
             Ok(source) if source.is_object() => json_is_subset(settings, &source),
             _ => false,
         },
-        AppType::Codex => {
+        AppType::Codex | AppType::Kimi => {
             let config_toml = settings.get("config").and_then(Value::as_str).unwrap_or("");
             if config_toml.trim().is_empty() {
                 return false;
@@ -460,7 +502,7 @@ pub(crate) fn remove_common_config_from_settings(
             json_deep_remove(&mut result, &source);
             Ok(result)
         }
-        AppType::Codex => {
+        AppType::Codex | AppType::Kimi => {
             let mut result = settings.clone();
             let config_toml = settings.get("config").and_then(Value::as_str).unwrap_or("");
             let mut target_doc = if config_toml.trim().is_empty() {
@@ -513,7 +555,7 @@ fn apply_common_config_to_settings(
             json_deep_merge(&mut result, &source);
             Ok(result)
         }
-        AppType::Codex => {
+        AppType::Codex | AppType::Kimi => {
             let mut result = settings.clone();
             let config_toml = settings.get("config").and_then(Value::as_str).unwrap_or("");
             let mut target_doc = if config_toml.trim().is_empty() {
@@ -792,10 +834,33 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             write_json_file(&auth_path, auth)?;
             let config_path = get_codex_config_path();
             std::fs::write(&config_path, config_str).map_err(|e| AppError::io(&config_path, e))?;
+
+            // Second install (typically WSL): same login, provider fields of
+            // config.toml merged over whatever that machine keeps for itself.
+            if let Some(mirror_dir) = crate::settings::get_codex_mirror_override_dir() {
+                if mirror_dir != get_codex_config_dir() {
+                    if let Err(err) = write_codex_mirror(&mirror_dir, auth, config_str) {
+                        log::warn!(
+                            "Failed to write Codex mirror '{}': {err}. Live config was written; mirror left as-is.",
+                            mirror_dir.display()
+                        );
+                    }
+                }
+            }
         }
         AppType::Gemini => {
             // Delegate to write_gemini_live which handles env file writing correctly
             write_gemini_live(provider)?;
+        }
+        AppType::Kimi => {
+            let obj = provider
+                .settings_config
+                .as_object()
+                .ok_or_else(|| AppError::Config("Kimi 供应商配置必须是 JSON 对象".to_string()))?;
+            let config_str = obj.get("config").and_then(Value::as_str).ok_or_else(|| {
+                AppError::Config("Kimi 供应商配置缺少 'config' 字段或不是字符串".to_string())
+            })?;
+            crate::kimi_config::write_kimi_live_atomic(obj.get("credentials"), config_str)?;
         }
         AppType::OpenCode => {
             // OpenCode uses additive mode - write provider to config
@@ -1029,6 +1094,17 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             }
             read_json_file(&path)
         }
+        AppType::Kimi => {
+            let config_path = crate::kimi_config::get_kimi_config_path();
+            if !config_path.exists() {
+                return Err(AppError::localized(
+                    "kimi.config.missing",
+                    "Kimi 配置文件不存在：缺少 config.toml",
+                    "Kimi configuration missing: config.toml not found",
+                ));
+            }
+            crate::kimi_config::read_kimi_live()
+        }
         AppType::Gemini => {
             use crate::gemini_config::{
                 env_to_json, get_gemini_env_path, get_gemini_settings_path, read_gemini_env,
@@ -1139,6 +1215,16 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
             let mut v = read_json_file::<Value>(&settings_path)?;
             let _ = normalize_claude_models_in_value(&mut v);
             v
+        }
+        AppType::Kimi => {
+            if !crate::kimi_config::get_kimi_config_path().exists() {
+                return Err(AppError::localized(
+                    "kimi.live.missing",
+                    "Kimi 配置文件不存在",
+                    "Kimi configuration file is missing",
+                ));
+            }
+            crate::kimi_config::read_kimi_live()?
         }
         AppType::Gemini => {
             use crate::gemini_config::{

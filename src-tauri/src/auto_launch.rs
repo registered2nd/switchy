@@ -91,9 +91,7 @@ mod tests {
         let result = get_macos_app_bundle_path(exe_path);
         assert_eq!(
             result,
-            Some(std::path::PathBuf::from(
-                "/Users/test/My Apps/Switchy.app"
-            ))
+            Some(std::path::PathBuf::from("/Users/test/My Apps/Switchy.app"))
         );
     }
 

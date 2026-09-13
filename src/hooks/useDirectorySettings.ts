@@ -5,13 +5,20 @@ import { homeDir, join } from "@tauri-apps/api/path";
 import { settingsApi, type AppId } from "@/lib/api";
 import type { SettingsFormState } from "./useSettingsForm";
 
-type DirectoryKey = "appConfig" | "claude" | "codex" | "gemini" | "opencode";
+type DirectoryKey =
+  | "appConfig"
+  | "claude"
+  | "codex"
+  | "gemini"
+  | "kimi"
+  | "opencode";
 
 export interface ResolvedDirectories {
   appConfig: string;
   claude: string;
   codex: string;
   gemini: string;
+  kimi: string;
   opencode: string;
 }
 
@@ -46,7 +53,9 @@ const computeDefaultConfigDir = async (
           ? ".codex"
           : app === "gemini"
             ? ".gemini"
-            : ".config/opencode";
+            : app === "kimi"
+              ? ".kimi-code"
+              : ".config/opencode";
     return await join(home, folder);
   } catch (error) {
     console.error(
@@ -68,14 +77,18 @@ export interface UseDirectorySettingsResult {
   isLoading: boolean;
   initialAppConfigDir?: string;
   claudeMirrorDir?: string;
+  codexMirrorDir?: string;
   updateDirectory: (app: AppId, value?: string) => void;
   updateClaudeMirrorDir: (value?: string) => void;
+  updateCodexMirrorDir: (value?: string) => void;
   updateAppConfigDir: (value?: string) => void;
   browseDirectory: (app: AppId) => Promise<void>;
   browseClaudeMirrorDir: () => Promise<void>;
+  browseCodexMirrorDir: () => Promise<void>;
   browseAppConfigDir: () => Promise<void>;
   resetDirectory: (app: AppId) => Promise<void>;
   resetClaudeMirrorDir: () => Promise<void>;
+  resetCodexMirrorDir: () => Promise<void>;
   resetAppConfigDir: () => Promise<void>;
   resetAllDirectories: (
     claudeDir?: string,
@@ -83,6 +96,8 @@ export interface UseDirectorySettingsResult {
     codexDir?: string,
     geminiDir?: string,
     opencodeDir?: string,
+    codexMirrorDir?: string,
+    kimiDir?: string,
   ) => void;
 }
 
@@ -110,11 +125,18 @@ export function useDirectorySettings({
   const [defaultClaudeMirrorDir, setDefaultClaudeMirrorDir] = useState<
     string | undefined
   >(undefined);
+  const [codexMirrorDir, setCodexMirrorDir] = useState<string | undefined>(
+    undefined,
+  );
+  const [defaultCodexMirrorDir, setDefaultCodexMirrorDir] = useState<
+    string | undefined
+  >(undefined);
   const [resolvedDirs, setResolvedDirs] = useState<ResolvedDirectories>({
     appConfig: "",
     claude: "",
     codex: "",
     gemini: "",
+    kimi: "",
     opencode: "",
   });
   const [isLoading, setIsLoading] = useState(true);
@@ -124,10 +146,12 @@ export function useDirectorySettings({
     claude: "",
     codex: "",
     gemini: "",
+    kimi: "",
     opencode: "",
   });
   const initialAppConfigDirRef = useRef<string | undefined>(undefined);
   const mirrorSeededRef = useRef(false);
+  const codexMirrorSeededRef = useRef(false);
 
   // 加载目录信息
   useEffect(() => {
@@ -148,6 +172,9 @@ export function useDirectorySettings({
           defaultCodexDir,
           defaultGeminiDir,
           defaultOpencodeDir,
+          defaultCodexMirrorDir,
+          kimiDir,
+          defaultKimiDir,
         ] = await Promise.all([
           settingsApi.getAppConfigDirOverride(),
           settingsApi.getConfigDir("claude"),
@@ -160,13 +187,21 @@ export function useDirectorySettings({
           computeDefaultConfigDir("codex"),
           computeDefaultConfigDir("gemini"),
           computeDefaultConfigDir("opencode"),
+          settingsApi.getDefaultCodexMirrorDir(),
+          settingsApi.getConfigDir("kimi"),
+          computeDefaultConfigDir("kimi"),
         ]);
 
         if (!active) return;
 
         const normalizedOverride = sanitizeDir(overrideRaw ?? undefined);
         const normalizedClaudeMirror = sanitizeDir(
-          settings?.claudeMirrorConfigDir ?? defaultClaudeMirrorDir ?? undefined,
+          settings?.claudeMirrorConfigDir ??
+            defaultClaudeMirrorDir ??
+            undefined,
+        );
+        const normalizedCodexMirror = sanitizeDir(
+          settings?.codexMirrorConfigDir ?? defaultCodexMirrorDir ?? undefined,
         );
 
         defaultsRef.current = {
@@ -174,12 +209,19 @@ export function useDirectorySettings({
           claude: defaultClaudeDir ?? "",
           codex: defaultCodexDir ?? "",
           gemini: defaultGeminiDir ?? "",
+          kimi: defaultKimiDir ?? "",
           opencode: defaultOpencodeDir ?? "",
         };
 
         setAppConfigDir(normalizedOverride);
-        setDefaultClaudeMirrorDir(sanitizeDir(defaultClaudeMirrorDir ?? undefined));
+        setDefaultClaudeMirrorDir(
+          sanitizeDir(defaultClaudeMirrorDir ?? undefined),
+        );
         setClaudeMirrorDir(normalizedClaudeMirror);
+        setDefaultCodexMirrorDir(
+          sanitizeDir(defaultCodexMirrorDir ?? undefined),
+        );
+        setCodexMirrorDir(normalizedCodexMirror);
         initialAppConfigDirRef.current = normalizedOverride;
 
         setResolvedDirs({
@@ -187,6 +229,7 @@ export function useDirectorySettings({
           claude: claudeDir || defaultsRef.current.claude,
           codex: codexDir || defaultsRef.current.codex,
           gemini: geminiDir || defaultsRef.current.gemini,
+          kimi: kimiDir || defaultsRef.current.kimi,
           opencode: opencodeDir || defaultsRef.current.opencode,
         });
       } catch (error) {
@@ -221,12 +264,23 @@ export function useDirectorySettings({
       onUpdateSettings({ claudeMirrorConfigDir: defaultClaudeMirrorDir });
       mirrorSeededRef.current = true;
     }
-  }, [
-    claudeMirrorDir,
-    defaultClaudeMirrorDir,
-    onUpdateSettings,
-    settings,
-  ]);
+  }, [claudeMirrorDir, defaultClaudeMirrorDir, onUpdateSettings, settings]);
+
+  useEffect(() => {
+    if (!settings) return;
+    const explicitMirror = sanitizeDir(settings.codexMirrorConfigDir);
+    if (explicitMirror) {
+      setCodexMirrorDir(explicitMirror);
+      codexMirrorSeededRef.current = true;
+      return;
+    }
+
+    if (!codexMirrorSeededRef.current && defaultCodexMirrorDir) {
+      setCodexMirrorDir(defaultCodexMirrorDir);
+      onUpdateSettings({ codexMirrorConfigDir: defaultCodexMirrorDir });
+      codexMirrorSeededRef.current = true;
+    }
+  }, [codexMirrorDir, defaultCodexMirrorDir, onUpdateSettings, settings]);
 
   const updateDirectoryState = useCallback(
     (key: DirectoryKey, value?: string) => {
@@ -241,7 +295,9 @@ export function useDirectorySettings({
               ? { codexConfigDir: sanitized }
               : key === "gemini"
                 ? { geminiConfigDir: sanitized }
-                : { opencodeConfigDir: sanitized },
+                : key === "kimi"
+                  ? { kimiConfigDir: sanitized }
+                  : { opencodeConfigDir: sanitized },
         );
       }
 
@@ -269,6 +325,15 @@ export function useDirectorySettings({
     [onUpdateSettings],
   );
 
+  const updateCodexMirrorDir = useCallback(
+    (value?: string) => {
+      const sanitized = sanitizeDir(value);
+      setCodexMirrorDir(sanitized);
+      onUpdateSettings({ codexMirrorConfigDir: sanitized });
+    },
+    [onUpdateSettings],
+  );
+
   const updateDirectory = useCallback(
     (app: AppId, value?: string) => {
       updateDirectoryState(
@@ -278,7 +343,9 @@ export function useDirectorySettings({
             ? "codex"
             : app === "gemini"
               ? "gemini"
-              : "opencode",
+              : app === "kimi"
+                ? "kimi"
+                : "opencode",
         value,
       );
     },
@@ -294,7 +361,9 @@ export function useDirectorySettings({
             ? "codex"
             : app === "gemini"
               ? "gemini"
-              : "opencode";
+              : app === "kimi"
+                ? "kimi"
+                : "opencode";
       const currentValue =
         key === "claude"
           ? (settings?.claudeConfigDir ?? resolvedDirs.claude)
@@ -302,7 +371,9 @@ export function useDirectorySettings({
             ? (settings?.codexConfigDir ?? resolvedDirs.codex)
             : key === "gemini"
               ? (settings?.geminiConfigDir ?? resolvedDirs.gemini)
-              : (settings?.opencodeConfigDir ?? resolvedDirs.opencode);
+              : key === "kimi"
+                ? (settings?.kimiConfigDir ?? resolvedDirs.kimi)
+                : (settings?.opencodeConfigDir ?? resolvedDirs.opencode);
 
       try {
         const picked = await settingsApi.selectConfigDirectory(currentValue);
@@ -342,7 +413,8 @@ export function useDirectorySettings({
   }, [appConfigDir, resolvedDirs.appConfig, t, updateDirectoryState]);
 
   const browseClaudeMirrorDir = useCallback(async () => {
-    const currentValue = settings?.claudeMirrorConfigDir ?? claudeMirrorDir ?? "";
+    const currentValue =
+      settings?.claudeMirrorConfigDir ?? claudeMirrorDir ?? "";
     try {
       const picked = await settingsApi.selectConfigDirectory(currentValue);
       const sanitized = sanitizeDir(picked ?? undefined);
@@ -359,7 +431,32 @@ export function useDirectorySettings({
         }),
       );
     }
-  }, [claudeMirrorDir, settings?.claudeMirrorConfigDir, t, updateClaudeMirrorDir]);
+  }, [
+    claudeMirrorDir,
+    settings?.claudeMirrorConfigDir,
+    t,
+    updateClaudeMirrorDir,
+  ]);
+
+  const browseCodexMirrorDir = useCallback(async () => {
+    const currentValue = settings?.codexMirrorConfigDir ?? codexMirrorDir ?? "";
+    try {
+      const picked = await settingsApi.selectConfigDirectory(currentValue);
+      const sanitized = sanitizeDir(picked ?? undefined);
+      if (!sanitized) return;
+      updateCodexMirrorDir(sanitized);
+    } catch (error) {
+      console.error(
+        "[useDirectorySettings] Failed to pick Codex mirror directory",
+        error,
+      );
+      toast.error(
+        t("settings.selectFileFailed", {
+          defaultValue: "选择目录失败",
+        }),
+      );
+    }
+  }, [codexMirrorDir, settings?.codexMirrorConfigDir, t, updateCodexMirrorDir]);
 
   const resetDirectory = useCallback(
     async (app: AppId) => {
@@ -370,7 +467,9 @@ export function useDirectorySettings({
             ? "codex"
             : app === "gemini"
               ? "gemini"
-              : "opencode";
+              : app === "kimi"
+                ? "kimi"
+                : "opencode";
       if (!defaultsRef.current[key]) {
         const fallback = await computeDefaultConfigDir(app);
         if (fallback) {
@@ -402,6 +501,10 @@ export function useDirectorySettings({
     updateClaudeMirrorDir(undefined);
   }, [updateClaudeMirrorDir]);
 
+  const resetCodexMirrorDir = useCallback(async () => {
+    updateCodexMirrorDir(undefined);
+  }, [updateCodexMirrorDir]);
+
   const resetAllDirectories = useCallback(
     (
       claudeDir?: string,
@@ -409,15 +512,19 @@ export function useDirectorySettings({
       codexDir?: string,
       geminiDir?: string,
       opencodeDir?: string,
+      codexMirrorDirValue?: string,
+      kimiDir?: string,
     ) => {
       setAppConfigDir(initialAppConfigDirRef.current);
       setClaudeMirrorDir(claudeMirrorDirValue);
+      setCodexMirrorDir(codexMirrorDirValue);
       setResolvedDirs({
         appConfig:
           initialAppConfigDirRef.current ?? defaultsRef.current.appConfig,
         claude: claudeDir ?? defaultsRef.current.claude,
         codex: codexDir ?? defaultsRef.current.codex,
         gemini: geminiDir ?? defaultsRef.current.gemini,
+        kimi: kimiDir ?? defaultsRef.current.kimi,
         opencode: opencodeDir ?? defaultsRef.current.opencode,
       });
     },
@@ -430,14 +537,18 @@ export function useDirectorySettings({
     isLoading,
     initialAppConfigDir: initialAppConfigDirRef.current,
     claudeMirrorDir,
+    codexMirrorDir,
     updateDirectory,
     updateClaudeMirrorDir,
+    updateCodexMirrorDir,
     updateAppConfigDir,
     browseDirectory,
     browseClaudeMirrorDir,
+    browseCodexMirrorDir,
     browseAppConfigDir,
     resetDirectory,
     resetClaudeMirrorDir,
+    resetCodexMirrorDir,
     resetAppConfigDir,
     resetAllDirectories,
   };

@@ -88,6 +88,7 @@ impl ConfigService {
         Self::sync_current_provider_for_app(config, &AppType::Claude)?;
         Self::sync_current_provider_for_app(config, &AppType::Codex)?;
         Self::sync_current_provider_for_app(config, &AppType::Gemini)?;
+        Self::sync_current_provider_for_app(config, &AppType::Kimi)?;
         Ok(())
     }
 
@@ -122,6 +123,7 @@ impl ConfigService {
             AppType::Codex => Self::sync_codex_live(config, &current_id, &provider)?,
             AppType::Claude => Self::sync_claude_live(config, &current_id, &provider)?,
             AppType::Gemini => Self::sync_gemini_live(config, &current_id, &provider)?,
+            AppType::Kimi => Self::sync_kimi_live(&current_id, &provider)?,
             AppType::OpenCode => {
                 // OpenCode uses additive mode, no live sync needed
                 // OpenCode providers are managed directly in the config file
@@ -171,6 +173,17 @@ impl ConfigService {
         }
 
         Ok(())
+    }
+
+    fn sync_kimi_live(provider_id: &str, provider: &Provider) -> Result<(), AppError> {
+        let settings = provider.settings_config.as_object().ok_or_else(|| {
+            AppError::Config(format!("供应商 {provider_id} 的 Kimi 配置必须是对象"))
+        })?;
+        let cfg_text = settings
+            .get("config")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        crate::kimi_config::write_kimi_live_atomic(settings.get("credentials"), cfg_text)
     }
 
     fn sync_claude_live(

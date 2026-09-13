@@ -45,6 +45,13 @@ import {
   type OpenClawProviderPreset,
   type OpenClawSuggestedDefaults,
 } from "@/config/openclawProviderPresets";
+import {
+  kimiProviderPresets,
+  type KimiProviderPreset,
+} from "@/config/kimiProviderPresets";
+import { getKimiCustomTemplate } from "@/config/kimiTemplates";
+import KimiConfigEditor from "./KimiConfigEditor";
+import { KimiFormFields } from "./KimiFormFields";
 import { OpenCodeFormFields } from "./OpenCodeFormFields";
 import { OpenClawFormFields } from "./OpenClawFormFields";
 import type { UniversalProviderPreset } from "@/config/universalProviderPresets";
@@ -89,10 +96,13 @@ import {
   useOmoDraftState,
   useOpenclawFormState,
   useCopilotAuth,
+  useKimiConfigState,
+  useKimiCommonConfig,
 } from "./hooks";
 import {
   CLAUDE_DEFAULT_CONFIG,
   CODEX_DEFAULT_CONFIG,
+  KIMI_DEFAULT_CONFIG,
   GEMINI_DEFAULT_CONFIG,
   OPENCODE_DEFAULT_CONFIG,
   OPENCLAW_DEFAULT_CONFIG,
@@ -108,7 +118,8 @@ type PresetEntry = {
     | CodexProviderPreset
     | GeminiProviderPreset
     | OpenCodeProviderPreset
-    | OpenClawProviderPreset;
+    | OpenClawProviderPreset
+    | KimiProviderPreset;
 };
 
 interface ProviderFormProps {
@@ -161,6 +172,7 @@ export function ProviderForm({
   const [isEndpointModalOpen, setIsEndpointModalOpen] = useState(false);
   const [isCodexEndpointModalOpen, setIsCodexEndpointModalOpen] =
     useState(false);
+  const [isKimiEndpointModalOpen, setIsKimiEndpointModalOpen] = useState(false);
 
   const [draftCustomEndpoints, setDraftCustomEndpoints] = useState<string[]>(
     () => {
@@ -253,13 +265,15 @@ export function ProviderForm({
         ? JSON.stringify(initialData.settingsConfig, null, 2)
         : appId === "codex"
           ? CODEX_DEFAULT_CONFIG
-          : appId === "gemini"
-            ? GEMINI_DEFAULT_CONFIG
-            : appId === "opencode"
-              ? OPENCODE_DEFAULT_CONFIG
-              : appId === "openclaw"
-                ? OPENCLAW_DEFAULT_CONFIG
-                : CLAUDE_DEFAULT_CONFIG,
+          : appId === "kimi"
+            ? KIMI_DEFAULT_CONFIG
+            : appId === "gemini"
+              ? GEMINI_DEFAULT_CONFIG
+              : appId === "opencode"
+                ? OPENCODE_DEFAULT_CONFIG
+                : appId === "openclaw"
+                  ? OPENCLAW_DEFAULT_CONFIG
+                  : CLAUDE_DEFAULT_CONFIG,
       icon: initialData?.icon ?? "",
       iconColor: initialData?.iconColor ?? "",
     }),
@@ -404,6 +418,45 @@ export function ProviderForm({
     }
   }, [appId, initialData, selectedPresetId, resetCodexConfig]);
 
+  // ── Kimi: credentials JSON + config.toml ──────────────────────────
+  const {
+    kimiCredentials,
+    kimiConfig,
+    kimiApiKey,
+    kimiBaseUrl,
+    kimiModelName,
+    kimiCredentialsError,
+    setKimiCredentials,
+    parseKimiCredentials,
+    handleKimiApiKeyChange,
+    handleKimiBaseUrlChange,
+    handleKimiModelNameChange,
+    handleKimiConfigChange: originalHandleKimiConfigChange,
+    resetKimiConfig,
+  } = useKimiConfigState({
+    initialData: appId === "kimi" ? initialData : undefined,
+  });
+
+  const {
+    configError: kimiConfigError,
+    debouncedValidate: debouncedValidateKimi,
+  } = useCodexTomlValidation();
+
+  const handleKimiConfigChange = useCallback(
+    (value: string) => {
+      originalHandleKimiConfigChange(value);
+      debouncedValidateKimi(value);
+    },
+    [originalHandleKimiConfigChange, debouncedValidateKimi],
+  );
+
+  useEffect(() => {
+    if (appId === "kimi" && !initialData && selectedPresetId === "custom") {
+      const template = getKimiCustomTemplate();
+      resetKimiConfig(template.credentials, template.config);
+    }
+  }, [appId, initialData, selectedPresetId, resetKimiConfig]);
+
   useEffect(() => {
     form.reset(defaultValues);
   }, [defaultValues, form]);
@@ -446,6 +499,11 @@ export function ProviderForm({
     } else if (appId === "openclaw") {
       return openclawProviderPresets.map<PresetEntry>((preset, index) => ({
         id: `openclaw-${index}`,
+        preset,
+      }));
+    } else if (appId === "kimi") {
+      return kimiProviderPresets.map<PresetEntry>((preset, index) => ({
+        id: `kimi-${index}`,
         preset,
       }));
     }
@@ -504,6 +562,25 @@ export function ProviderForm({
     initialEnabled:
       appId === "codex" ? initialData?.meta?.commonConfigEnabled : undefined,
     selectedPresetId: selectedPresetId ?? undefined,
+  });
+
+  const {
+    useCommonConfig: useKimiCommonConfigFlag,
+    commonConfigSnippet: kimiCommonConfigSnippet,
+    commonConfigError: kimiCommonConfigError,
+    handleCommonConfigToggle: handleKimiCommonConfigToggle,
+    handleCommonConfigSnippetChange: handleKimiCommonConfigSnippetChange,
+    isExtracting: isKimiExtracting,
+    handleExtract: handleKimiExtract,
+    clearCommonConfigError: clearKimiCommonConfigError,
+  } = useKimiCommonConfig({
+    kimiConfig,
+    onConfigChange: handleKimiConfigChange,
+    initialData: appId === "kimi" ? initialData : undefined,
+    initialEnabled:
+      appId === "kimi" ? initialData?.meta?.commonConfigEnabled : undefined,
+    selectedPresetId: selectedPresetId ?? undefined,
+    enabled: appId === "kimi",
   });
 
   const {
@@ -864,6 +941,15 @@ export function ProviderForm({
           );
           return;
         }
+      } else if (appId === "kimi") {
+        if (!kimiApiKey.trim()) {
+          toast.error(
+            t("providerForm.apiKeyRequired", {
+              defaultValue: "非官方供应商请填写 API Key",
+            }),
+          );
+          return;
+        }
       }
     }
 
@@ -880,6 +966,15 @@ export function ProviderForm({
       } catch (err) {
         settingsConfig = values.settingsConfig.trim();
       }
+    } else if (appId === "kimi") {
+      if (kimiCredentialsError) {
+        toast.error(kimiCredentialsError);
+        return;
+      }
+      settingsConfig = JSON.stringify({
+        config: kimiConfig ?? "",
+        credentials: parseKimiCredentials(kimiCredentials),
+      });
     } else if (appId === "gemini") {
       try {
         const envObj = envStringToObj(geminiEnv);
@@ -1031,9 +1126,11 @@ export function ProviderForm({
           ? useCommonConfig
           : appId === "codex"
             ? useCodexCommonConfigFlag
-            : appId === "gemini"
-              ? useGeminiCommonConfigFlag
-              : undefined,
+            : appId === "kimi"
+              ? useKimiCommonConfigFlag
+              : appId === "gemini"
+                ? useGeminiCommonConfigFlag
+                : undefined,
       endpointAutoSelect,
       // 保存 providerType（用于识别 Copilot 等特殊供应商）
       providerType,
@@ -1150,6 +1247,19 @@ export function ProviderForm({
     formWebsiteUrl: form.watch("websiteUrl") || "",
   });
 
+  const {
+    shouldShowApiKeyLink: shouldShowKimiApiKeyLink,
+    websiteUrl: kimiWebsiteUrl,
+    isPartner: isKimiPartner,
+    partnerPromotionKey: kimiPartnerPromotionKey,
+  } = useApiKeyLink({
+    appId: "kimi",
+    category,
+    selectedPresetId,
+    presetEntries,
+    formWebsiteUrl: form.watch("websiteUrl") || "",
+  });
+
   // 使用 API Key 链接 hook (OpenClaw)
   const {
     shouldShowApiKeyLink: shouldShowOpenclawApiKeyLink,
@@ -1171,6 +1281,7 @@ export function ProviderForm({
     presetEntries,
     baseUrl,
     codexBaseUrl,
+    kimiBaseUrl,
     initialData,
   });
 
@@ -1183,6 +1294,10 @@ export function ProviderForm({
       if (appId === "codex") {
         const template = getCodexCustomTemplate();
         resetCodexConfig(template.auth, template.config);
+      }
+      if (appId === "kimi") {
+        const template = getKimiCustomTemplate();
+        resetKimiConfig(template.credentials, template.config);
       }
       if (appId === "gemini") {
         resetGeminiConfig({}, {});
@@ -1221,6 +1336,23 @@ export function ProviderForm({
         name: preset.nameKey ? t(preset.nameKey) : preset.name,
         websiteUrl: preset.websiteUrl ?? "",
         settingsConfig: JSON.stringify({ auth, config }, null, 2),
+        icon: preset.icon ?? "",
+        iconColor: preset.iconColor ?? "",
+      });
+      return;
+    }
+
+    if (appId === "kimi") {
+      const preset = entry.preset as KimiProviderPreset;
+      const config = preset.config ?? "";
+      const credentials = preset.credentials ?? null;
+
+      resetKimiConfig(credentials, config);
+
+      form.reset({
+        name: preset.nameKey ? t(preset.nameKey) : preset.name,
+        websiteUrl: preset.websiteUrl ?? "",
+        settingsConfig: JSON.stringify({ config, credentials }, null, 2),
         icon: preset.icon ?? "",
         iconColor: preset.iconColor ?? "",
       });
@@ -1583,6 +1715,33 @@ export function ProviderForm({
           />
         )}
 
+        {appId === "kimi" && (
+          <KimiFormFields
+            providerId={providerId}
+            kimiApiKey={kimiApiKey}
+            onApiKeyChange={handleKimiApiKeyChange}
+            category={category}
+            shouldShowApiKeyLink={shouldShowKimiApiKeyLink}
+            websiteUrl={kimiWebsiteUrl}
+            isPartner={isKimiPartner}
+            partnerPromotionKey={kimiPartnerPromotionKey}
+            shouldShowSpeedTest={shouldShowSpeedTest}
+            kimiBaseUrl={kimiBaseUrl}
+            onBaseUrlChange={handleKimiBaseUrlChange}
+            isEndpointModalOpen={isKimiEndpointModalOpen}
+            onEndpointModalToggle={setIsKimiEndpointModalOpen}
+            onCustomEndpointsChange={
+              isEditMode ? undefined : setDraftCustomEndpoints
+            }
+            autoSelect={endpointAutoSelect}
+            onAutoSelectChange={setEndpointAutoSelect}
+            shouldShowModelField={category !== "official"}
+            modelName={kimiModelName}
+            onModelNameChange={handleKimiModelNameChange}
+            speedTestEndpoints={speedTestEndpoints}
+          />
+        )}
+
         {appId === "gemini" && (
           <GeminiFormFields
             providerId={providerId}
@@ -1691,6 +1850,26 @@ export function ProviderForm({
               configError={codexConfigError}
               onExtract={handleCodexExtract}
               isExtracting={isCodexExtracting}
+            />
+            {settingsConfigErrorField}
+          </>
+        ) : appId === "kimi" ? (
+          <>
+            <KimiConfigEditor
+              credentialsValue={kimiCredentials}
+              configValue={kimiConfig}
+              onCredentialsChange={setKimiCredentials}
+              onConfigChange={handleKimiConfigChange}
+              useCommonConfig={useKimiCommonConfigFlag}
+              onCommonConfigToggle={handleKimiCommonConfigToggle}
+              commonConfigSnippet={kimiCommonConfigSnippet}
+              onCommonConfigSnippetChange={handleKimiCommonConfigSnippetChange}
+              onCommonConfigErrorClear={clearKimiCommonConfigError}
+              commonConfigError={kimiCommonConfigError}
+              credentialsError={kimiCredentialsError}
+              configError={kimiConfigError}
+              onExtract={handleKimiExtract}
+              isExtracting={isKimiExtracting}
             />
             {settingsConfigErrorField}
           </>

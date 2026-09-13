@@ -17,17 +17,19 @@ export function useSubscriptionQuota(appId: AppId, enabled: boolean) {
 }
 
 /**
- * Per-provider Claude subscription quota, keyed on provider id so each
- * captured Official card shows its own account's usage. See BACKLOG #5.
+ * Per-provider subscription quota, keyed on provider id so each Official
+ * card shows its own account's usage: Claude reads the captured snapshot,
+ * Codex the login stored in the provider itself.
  */
 export function useSubscriptionQuotaForProvider(
+  appId: AppId,
   providerId: string,
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: ["subscription", "quota", "provider", providerId],
-    queryFn: () => subscriptionApi.getQuotaForProvider(providerId),
-    enabled: enabled && !!providerId,
+    queryKey: ["subscription", "quota", "provider", appId, providerId],
+    queryFn: () => subscriptionApi.getQuotaForProvider(appId, providerId),
+    enabled: enabled && !!providerId && ["claude", "codex"].includes(appId),
     refetchInterval: REFETCH_INTERVAL,
     refetchOnWindowFocus: true,
     staleTime: REFETCH_INTERVAL,

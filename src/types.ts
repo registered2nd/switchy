@@ -198,6 +198,7 @@ export interface VisibleApps {
   claude: boolean;
   codex: boolean;
   gemini: boolean;
+  kimi: boolean;
   opencode: boolean;
   openclaw: boolean;
 }
@@ -283,8 +284,12 @@ export interface Settings {
   claudeMirrorConfigDir?: string;
   // 覆盖 Codex 配置目录（可选）
   codexConfigDir?: string;
+  // 可选的 Codex 镜像配置目录（例如 WSL）
+  codexMirrorConfigDir?: string;
   // 覆盖 Gemini 配置目录（可选）
   geminiConfigDir?: string;
+  // 覆盖 Kimi Code 配置目录（可选）
+  kimiConfigDir?: string;
   // 覆盖 OpenCode 配置目录（可选）
   opencodeConfigDir?: string;
   // 覆盖 OpenClaw 配置目录（可选）
@@ -297,6 +302,8 @@ export interface Settings {
   currentProviderCodex?: string;
   // 当前 Gemini 供应商 ID（优先于数据库 is_current）
   currentProviderGemini?: string;
+  // 当前 Kimi 供应商 ID（优先于数据库 is_current）
+  currentProviderKimi?: string;
 
   // ===== Skill 同步设置 =====
   // Skill 同步方式：auto（默认，优先 symlink）、symlink、copy
@@ -358,6 +365,7 @@ export interface McpApps {
   claude: boolean;
   codex: boolean;
   gemini: boolean;
+  kimi: boolean;
   opencode: boolean;
   openclaw: boolean;
 }

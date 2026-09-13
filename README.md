@@ -2,7 +2,7 @@
 
 # Switchy
 
-### The All-in-One Manager for Claude Code, Codex, Gemini CLI, OpenCode & OpenClaw
+### The All-in-One Manager for Claude Code, Codex, Gemini CLI, Kimi Code, OpenCode & OpenClaw
 
 [![Version](https://img.shields.io/github/v/release/registered2nd/switchy?color=blue&label=version)](https://github.com/registered2nd/switchy/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/registered2nd/switchy/releases)
@@ -16,11 +16,11 @@ English | [中文](README_ZH.md) | [日本語](README_JA.md) | [Changelog](CHANG
 
 ## Why Switchy?
 
-Modern AI-powered coding relies on CLI tools like Claude Code, Codex, Gemini CLI, OpenCode, and OpenClaw — but each has its own configuration format. Switching API providers means manually editing JSON, TOML, or `.env` files, and there is no unified way to manage MCP and Skills across multiple tools.
+Modern AI-powered coding relies on CLI tools like Claude Code, Codex, Gemini CLI, Kimi Code, OpenCode, and OpenClaw — but each has its own configuration format. Switching API providers means manually editing JSON, TOML, or `.env` files, and there is no unified way to manage MCP and Skills across multiple tools.
 
 **Switchy** gives you a single desktop app to manage all five CLI tools. Instead of editing config files by hand, you get a visual interface to import providers with one click, switch between them instantly, with 50+ built-in provider presets, unified MCP and Skills management, and system tray quick switching — all backed by a reliable SQLite database with atomic writes that protect your configs from corruption.
 
-- **One App, Five CLI Tools** — Manage Claude Code, Codex, Gemini CLI, OpenCode, and OpenClaw from a single interface
+- **One App, Six CLI Tools** — Manage Claude Code, Codex, Gemini CLI, Kimi Code, OpenCode, and OpenClaw from a single interface
 
 ## Fork Notes
 
@@ -44,7 +44,7 @@ This fork contains a Windows + WSL Claude mirror feature that is not part of ups
 
 ### Provider Management
 
-- **5 CLI tools, 50+ presets** — Claude Code, Codex, Gemini CLI, OpenCode, OpenClaw; copy your key and import with one click
+- **6 CLI tools, 50+ presets** — Claude Code, Codex, Gemini CLI, Kimi Code, OpenCode, OpenClaw; copy your key and import with one click
 - **Universal providers** — One config syncs to multiple apps (OpenCode, OpenClaw)
 - One-click switching, system tray quick access, drag-and-drop sorting, import/export
 
@@ -79,7 +79,7 @@ This fork contains a Windows + WSL Claude mirror feature that is not part of ups
 <details>
 <summary><strong>Which AI CLI tools does Switchy support?</strong></summary>
 
-Switchy supports five tools: **Claude Code**, **Codex**, **Gemini CLI**, **OpenCode**, and **OpenClaw**. Each tool has dedicated provider presets and configuration management.
+Switchy supports six tools: **Claude Code**, **Codex**, **Gemini CLI**, **Kimi Code**, **OpenCode**, and **OpenClaw** (OpenClaw's tab is off by default; enable it under Settings → App visibility). Each tool has dedicated provider presets and configuration management.
 
 </details>
 
@@ -114,7 +114,7 @@ Switchy follows a "minimal intrusion" design principle — even if you uninstall
 <details>
 <summary><strong>How do I switch back to official login?</strong></summary>
 
-Add an official provider from the preset list. After switching to it, run the Log out / Log in flow, and then you can freely switch between the official provider and third-party providers. Codex supports switching between different official providers, making it easy to switch between multiple Plus or Team accounts.
+Add an official provider from the preset list. After switching to it, run the Log out / Log in flow, and then you can freely switch between the official provider and third-party providers. Codex supports switching between different official providers, making it easy to switch between multiple Plus or Team accounts: each official Codex provider keeps the ChatGPT login you signed in with while it was active, and its card shows that account's email, plan and usage.
 
 </details>
 
@@ -383,11 +383,25 @@ pnpm test:unit --coverage
 
 ## Known Limitations
 
-### Multi-account switching window is short
+### Claude accounts need a browser re-login every few weeks
 
-Switchy can capture an "Official" Claude provider's OAuth state and swap between multiple accounts on demand. In practice this works best for **same-day switching** — swapping between two accounts you're both using today. It is **not** a reliable way to park an account for a week and come back.
+Switchy can capture an "Official" Claude provider's OAuth state and swap between multiple accounts on demand, including accounts you have not touched for days.
 
-Why: Anthropic's Claude Code OAuth tokens have a short effective lifetime — access tokens expire in ~8–12 hours, and refresh tokens appear to have a ~24-hour practical ceiling (subscription users [see daily re-login requirements](https://github.com/anthropics/claude-code/issues/42904) regardless of tooling). Switch back to a captured account after the refresh window has closed and you'll be prompted to re-login through Claude Code. This is a platform constraint, not a Switchy bug; no amount of local state management extends an expired refresh_token.
+Two deadlines govern how long a captured account stays usable. The access token expires in about 8 hours and is renewed automatically. The refresh token behind it has its own expiry, typically one to several weeks out, and that deadline is anchored to when you originally signed in through the browser — renewing does not push it back. Once it passes, that account needs `claude /login` again; no local state management extends it.
+
+### One login, two installs
+
+Claude Code and Codex both rotate the refresh token on every renewal, and the server accepts each one only once. Two installs holding the same login — most commonly Windows and WSL — will therefore race, and the one that renews second is rejected and left signed out.
+
+Switchy reconciles the two sides in the background, moving the surviving login to whichever side lost, so this heals on its own. It needs the mirror directory configured and reachable (one per tool, under Settings → Directories); while WSL is shut down, a rotation that happens on the Windows side cannot be propagated until it comes back. For Codex, an install that is on an API key rather than a ChatGPT login is left alone.
+
+### What a Gemini or Kimi card can show
+
+Usage badges and account switching both come from signing a tool in with an account. Claude Code, Codex and Kimi Code keep that login in a file Switchy stores with each provider, so switching providers switches accounts.
+
+Gemini CLI is different. A Gemini provider holds the API key and endpoint, not the Google sign-in, so switching Gemini providers never changes which Google account is signed in. Gemini usage badges appear only while Gemini CLI is signed in with Google (`/auth` → Login with Google); on an API key there is nothing to show.
+
+Kimi Code publishes no usage figures at all, so Kimi cards never show badges.
 
 ## Contributing
 

@@ -17,7 +17,11 @@ import { UniversalProviderPanel } from "@/components/universal";
 import { providerPresets } from "@/config/claudeProviderPresets";
 import { codexProviderPresets } from "@/config/codexProviderPresets";
 import { geminiProviderPresets } from "@/config/geminiProviderPresets";
-import { extractCodexBaseUrl } from "@/utils/providerConfigUtils";
+import {
+  extractCodexBaseUrl,
+  extractKimiBaseUrl,
+} from "@/utils/providerConfigUtils";
+import { kimiProviderPresets } from "@/config/kimiProviderPresets";
 import type { OpenClawSuggestedDefaults } from "@/config/openclawProviderPresets";
 import type { UniversalProviderPreset } from "@/config/universalProviderPresets";
 
@@ -170,6 +174,19 @@ export function AddProviderDialog({
                 preset.endpointCandidates.forEach(addUrl);
               }
             }
+          } else if (appId === "kimi") {
+            const presets = kimiProviderPresets;
+            const presetIndex = parseInt(values.presetId.replace("kimi-", ""));
+            if (
+              !isNaN(presetIndex) &&
+              presetIndex >= 0 &&
+              presetIndex < presets.length
+            ) {
+              const preset = presets[presetIndex];
+              if (Array.isArray(preset.endpointCandidates)) {
+                preset.endpointCandidates.forEach(addUrl);
+              }
+            }
           }
         }
 
@@ -190,6 +207,14 @@ export function AddProviderDialog({
           const env = parsedConfig.env as Record<string, any> | undefined;
           if (env?.GOOGLE_GEMINI_BASE_URL) {
             addUrl(env.GOOGLE_GEMINI_BASE_URL);
+          }
+        } else if (appId === "kimi") {
+          const config = parsedConfig.config as string | undefined;
+          if (config) {
+            const extractedBaseUrl = extractKimiBaseUrl(config);
+            if (extractedBaseUrl) {
+              addUrl(extractedBaseUrl);
+            }
           }
         } else if (appId === "opencode") {
           const options = parsedConfig.options as

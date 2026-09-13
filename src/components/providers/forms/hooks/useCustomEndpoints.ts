@@ -3,10 +3,11 @@ import type { AppId } from "@/lib/api";
 import type { CustomEndpoint } from "@/types";
 import type { ProviderPreset } from "@/config/claudeProviderPresets";
 import type { CodexProviderPreset } from "@/config/codexProviderPresets";
+import type { KimiProviderPreset } from "@/config/kimiProviderPresets";
 
 type PresetEntry = {
   id: string;
-  preset: ProviderPreset | CodexProviderPreset;
+  preset: ProviderPreset | CodexProviderPreset | KimiProviderPreset;
 };
 
 interface UseCustomEndpointsProps {
@@ -16,6 +17,7 @@ interface UseCustomEndpointsProps {
   draftCustomEndpoints: string[];
   baseUrl: string;
   codexBaseUrl: string;
+  kimiBaseUrl?: string;
 }
 
 /**
@@ -33,6 +35,7 @@ export function useCustomEndpoints({
   draftCustomEndpoints,
   baseUrl,
   codexBaseUrl,
+  kimiBaseUrl = "",
 }: UseCustomEndpointsProps) {
   const customEndpointsMap = useMemo(() => {
     const urlSet = new Set<string>();
@@ -60,6 +63,8 @@ export function useCustomEndpoints({
     // 3. 当前 Base URL
     if (appId === "codex") {
       push(codexBaseUrl);
+    } else if (appId === "kimi") {
+      push(kimiBaseUrl);
     } else {
       push(baseUrl);
     }
@@ -86,6 +91,7 @@ export function useCustomEndpoints({
     draftCustomEndpoints,
     baseUrl,
     codexBaseUrl,
+    kimiBaseUrl,
   ]);
 
   return customEndpointsMap;

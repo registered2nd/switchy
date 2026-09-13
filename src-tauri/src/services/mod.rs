@@ -1,4 +1,5 @@
 pub mod claude_account;
+pub mod codex_account;
 pub mod coding_plan;
 pub mod config;
 pub mod credential_mirror;

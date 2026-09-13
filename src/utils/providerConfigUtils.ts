@@ -916,3 +916,371 @@ export const removeCodexTopLevelField = (
   }
   return finalizeTomlText(lines);
 };
+
+// ========== Kimi (kimi-code) config.toml utils ==========
+//
+// Kimi 的 config.toml 结构：
+//   default_model = "<providerId>/<model>"
+//   [providers.<id>]  type / api_key / base_url
+//   [models."<alias>"] provider / model
+// API Key、请求地址、模型名都在这里，没有单独的 auth 文件。
+
+const TOML_DEFAULT_MODEL_PATTERN =
+  /^\s*default_model\s*=\s*(["'])([^"'\r\n]+)\1\s*(?:#.*)?$/;
+const TOML_API_KEY_PATTERN =
+  /^\s*api_key\s*=\s*(["'])([^"'\r\n]*)\1\s*(?:#.*)?$/;
+const TOML_PROVIDER_REF_PATTERN =
+  /^\s*provider\s*=\s*(["'])([^"'\r\n]+)\1\s*(?:#.*)?$/;
+const TOML_TYPE_PATTERN = /^\s*type\s*=\s*(["'])([^"'\r\n]+)\1\s*(?:#.*)?$/;
+const KIMI_TOML_BARE_KEY = /^[A-Za-z0-9_-]+$/;
+
+/** 拆分 TOML 表头名（尊重引号，`models."a/b.c"` → ["models", "a/b.c"]） */
+const splitTomlHeaderName = (name: string): string[] => {
+  const segments: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (const ch of name) {
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === ".") {
+      segments.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  segments.push(current.trim());
+  return segments;
+};
+
+const tomlSegmentsEqual = (a: string[], b: string[]): boolean =>
+  a.length === b.length && a.every((segment, index) => segment === b[index]);
+
+const quoteTomlSegment = (segment: string): string =>
+  KIMI_TOML_BARE_KEY.test(segment) ? segment : `"${segment}"`;
+
+const findKimiSectionRange = (
+  lines: string[],
+  segments: string[],
+): TomlSectionRange | undefined => {
+  let headerLineIndex = -1;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(TOML_SECTION_HEADER_PATTERN);
+    if (!match) {
+      continue;
+    }
+
+    if (headerLineIndex === -1) {
+      if (tomlSegmentsEqual(splitTomlHeaderName(match[1]), segments)) {
+        headerLineIndex = index;
+      }
+      continue;
+    }
+
+    return {
+      bodyStartIndex: headerLineIndex + 1,
+      bodyEndIndex: index,
+    };
+  }
+
+  if (headerLineIndex === -1) {
+    return undefined;
+  }
+
+  return {
+    bodyStartIndex: headerLineIndex + 1,
+    bodyEndIndex: lines.length,
+  };
+};
+
+const extractKimiDefaultModel = (lines: string[]): string | undefined =>
+  findTomlAssignmentInRange(
+    lines,
+    TOML_DEFAULT_MODEL_PATTERN,
+    0,
+    getTopLevelEndIndex(lines),
+  )?.value;
+
+const firstKimiProviderId = (lines: string[]): string | undefined => {
+  for (const line of lines) {
+    const match = line.match(TOML_SECTION_HEADER_PATTERN);
+    if (!match) continue;
+    const segments = splitTomlHeaderName(match[1]);
+    if (segments.length === 2 && segments[0] === "providers") {
+      return segments[1];
+    }
+  }
+  return undefined;
+};
+
+const kimiLines = (configText: string | undefined | null): string[] => {
+  const text = normalizeTomlText(
+    typeof configText === "string" ? configText : "",
+  );
+  return text ? text.split("\n") : [];
+};
+
+/** 当前生效的供应商 id：default_model 别名 → 模型表的 provider → 别名前缀 → 第一个 [providers.X] */
+export const getKimiProviderId = (
+  configText: string | undefined | null,
+): string | undefined => {
+  try {
+    const lines = kimiLines(configText);
+    if (lines.length === 0) return undefined;
+
+    const alias = extractKimiDefaultModel(lines);
+    if (alias) {
+      const range = findKimiSectionRange(lines, ["models", alias]);
+      if (range) {
+        const ref = findTomlAssignmentInRange(
+          lines,
+          TOML_PROVIDER_REF_PATTERN,
+          range.bodyStartIndex,
+          range.bodyEndIndex,
+        );
+        if (ref?.value) return ref.value;
+      }
+      const slash = alias.indexOf("/");
+      if (slash > 0) return alias.slice(0, slash);
+    }
+
+    return firstKimiProviderId(lines);
+  } catch {
+    return undefined;
+  }
+};
+
+const findKimiProviderField = (
+  lines: string[],
+  pattern: RegExp,
+): TomlAssignmentMatch | undefined => {
+  const providerId = getKimiProviderId(lines.join("\n"));
+  if (!providerId) return undefined;
+  const range = findKimiSectionRange(lines, ["providers", providerId]);
+  if (!range) return undefined;
+  return findTomlAssignmentInRange(
+    lines,
+    pattern,
+    range.bodyStartIndex,
+    range.bodyEndIndex,
+    `providers.${providerId}`,
+  );
+};
+
+/** 在当前供应商表里写入/替换/删除一行；表不存在且需要写入时新建 `[providers.<id>]` */
+const setKimiProviderField = (
+  configText: string,
+  pattern: RegExp,
+  replacementLine: string | null,
+): string => {
+  const lines = kimiLines(configText);
+  const providerId = getKimiProviderId(lines.join("\n")) ?? "custom";
+  const range = findKimiSectionRange(lines, ["providers", providerId]);
+  const existing = range
+    ? findTomlAssignmentInRange(
+        lines,
+        pattern,
+        range.bodyStartIndex,
+        range.bodyEndIndex,
+      )
+    : undefined;
+
+  if (replacementLine === null) {
+    if (existing) {
+      lines.splice(existing.index, 1);
+    }
+    return finalizeTomlText(lines);
+  }
+
+  if (existing) {
+    lines[existing.index] = replacementLine;
+    return finalizeTomlText(lines);
+  }
+
+  if (range) {
+    lines.splice(getTomlSectionInsertIndex(lines, range), 0, replacementLine);
+    return finalizeTomlText(lines);
+  }
+
+  if (lines.length > 0 && lines[lines.length - 1].trim() !== "") {
+    lines.push("");
+  }
+  lines.push(
+    `[providers.${quoteTomlSegment(providerId)}]`,
+    'type = "openai"',
+    replacementLine,
+  );
+  return finalizeTomlText(lines);
+};
+
+export const extractKimiApiKey = (
+  configText: string | undefined | null,
+): string | undefined => {
+  try {
+    const lines = kimiLines(configText);
+    if (lines.length === 0) return undefined;
+    return findKimiProviderField(lines, TOML_API_KEY_PATTERN)?.value;
+  } catch {
+    return undefined;
+  }
+};
+
+export const setKimiApiKey = (configText: string, apiKey: string): string => {
+  const trimmed = apiKey.trim();
+  if (!trimmed) {
+    // 保留已有的 api_key 行（置空），没有的话不新增
+    const lines = kimiLines(configText);
+    const existing = findKimiProviderField(lines, TOML_API_KEY_PATTERN);
+    if (!existing) return finalizeTomlText(lines);
+    lines[existing.index] = 'api_key = ""';
+    return finalizeTomlText(lines);
+  }
+  return setKimiProviderField(
+    configText,
+    TOML_API_KEY_PATTERN,
+    `api_key = "${trimmed}"`,
+  );
+};
+
+export const extractKimiBaseUrl = (
+  configText: string | undefined | null,
+): string | undefined => {
+  try {
+    const lines = kimiLines(configText);
+    if (lines.length === 0) return undefined;
+    return findKimiProviderField(lines, TOML_BASE_URL_PATTERN)?.value;
+  } catch {
+    return undefined;
+  }
+};
+
+export const setKimiBaseUrl = (configText: string, baseUrl: string): string => {
+  const trimmed = baseUrl.trim().replace(/\s+/g, "");
+  return setKimiProviderField(
+    configText,
+    TOML_BASE_URL_PATTERN,
+    trimmed ? `base_url = "${trimmed}"` : null,
+  );
+};
+
+/** 当前 default_model 指向的模型名（模型表的 model 字段，回退到别名的 `/` 之后） */
+export const extractKimiModelName = (
+  configText: string | undefined | null,
+): string | undefined => {
+  try {
+    const lines = kimiLines(configText);
+    if (lines.length === 0) return undefined;
+    const alias = extractKimiDefaultModel(lines);
+    if (!alias) return undefined;
+
+    const range = findKimiSectionRange(lines, ["models", alias]);
+    if (range) {
+      const match = findTomlAssignmentInRange(
+        lines,
+        TOML_MODEL_PATTERN,
+        range.bodyStartIndex,
+        range.bodyEndIndex,
+      );
+      if (match?.value) return match.value;
+    }
+
+    const slash = alias.indexOf("/");
+    return slash >= 0 ? alias.slice(slash + 1) : alias;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * 切换模型：把 default_model 指到 `<providerId>/<model>`，并保证对应的模型别名表存在。
+ * 已有的其他模型表保留不动。传空串不做修改。
+ */
+export const setKimiModelName = (
+  configText: string,
+  modelName: string,
+): string => {
+  const model = modelName.trim();
+  const lines = kimiLines(configText);
+  if (!model) return finalizeTomlText(lines);
+
+  const providerId = getKimiProviderId(lines.join("\n")) ?? "custom";
+  const alias = `${providerId}/${model}`;
+  const defaultLine = `default_model = "${alias}"`;
+
+  const topLevelEnd = getTopLevelEndIndex(lines);
+  const existingDefault = findTomlAssignmentInRange(
+    lines,
+    TOML_DEFAULT_MODEL_PATTERN,
+    0,
+    topLevelEnd,
+  );
+  if (existingDefault) {
+    lines[existingDefault.index] = defaultLine;
+  } else {
+    lines.splice(0, 0, defaultLine);
+  }
+
+  const range = findKimiSectionRange(lines, ["models", alias]);
+  if (range) {
+    const existingModel = findTomlAssignmentInRange(
+      lines,
+      TOML_MODEL_PATTERN,
+      range.bodyStartIndex,
+      range.bodyEndIndex,
+    );
+    const modelLine = `model = "${model}"`;
+    if (existingModel) {
+      lines[existingModel.index] = modelLine;
+    } else {
+      lines.splice(getTomlSectionInsertIndex(lines, range), 0, modelLine);
+    }
+    return finalizeTomlText(lines);
+  }
+
+  if (lines.length > 0 && lines[lines.length - 1].trim() !== "") {
+    lines.push("");
+  }
+  lines.push(
+    `[models."${alias}"]`,
+    `provider = "${providerId}"`,
+    `model = "${model}"`,
+  );
+  return finalizeTomlText(lines);
+};
+
+/** 官方（托管登录）配置：供应商 type 为 kimi，或 default_model 走 kimi-code/ 别名 */
+export const isKimiOfficialConfig = (
+  configText: string | undefined | null,
+): boolean => {
+  try {
+    const lines = kimiLines(configText);
+    if (lines.length === 0) return false;
+    const alias = extractKimiDefaultModel(lines);
+    if (alias?.startsWith("kimi-code/")) return true;
+    const providerId = getKimiProviderId(lines.join("\n"));
+    if (!providerId) return false;
+    if (providerId.startsWith("managed:")) return true;
+    const range = findKimiSectionRange(lines, ["providers", providerId]);
+    if (!range) return false;
+    const type = findTomlAssignmentInRange(
+      lines,
+      TOML_TYPE_PATTERN,
+      range.bodyStartIndex,
+      range.bodyEndIndex,
+    )?.value;
+    return type === "kimi";
+  } catch {
+    return false;
+  }
+};

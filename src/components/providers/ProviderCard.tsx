@@ -14,8 +14,13 @@ import UsageFooter from "@/components/UsageFooter";
 import SubscriptionQuotaFooter from "@/components/SubscriptionQuotaFooter";
 import { ProviderHealthBadge } from "@/components/providers/ProviderHealthBadge";
 import { FailoverPriorityBadge } from "@/components/providers/FailoverPriorityBadge";
-import { extractCodexBaseUrl } from "@/utils/providerConfigUtils";
+import {
+  extractCodexBaseUrl,
+  extractKimiBaseUrl,
+  isKimiOfficialConfig,
+} from "@/utils/providerConfigUtils";
 import { truncateEmail } from "@/utils/truncateEmail";
+import { useCodexAccountIdentity } from "@/lib/query/codexAccount";
 import { useProviderHealth } from "@/lib/query/failover";
 import { useUsageQuery } from "@/lib/query/queries";
 
@@ -69,6 +74,10 @@ function isOfficialProvider(provider: Provider, appId: AppId): boolean {
     const apiKey = config?.auth?.OPENAI_API_KEY;
     return !apiKey || (typeof apiKey === "string" && apiKey.trim() === "");
   }
+  if (appId === "kimi") {
+    // default_model 走 kimi-code/ 托管登录（kimi login）→ 官方
+    return isKimiOfficialConfig(config?.config);
+  }
   if (appId === "gemini") {
     // 无 GEMINI_API_KEY 且无 GOOGLE_GEMINI_BASE_URL → Google OAuth 官方模式
     const apiKey = config?.env?.GEMINI_API_KEY;
@@ -103,7 +112,10 @@ const extractApiUrl = (provider: Provider, fallbackText: string) => {
     const baseUrl = (config as Record<string, any>)?.config;
 
     if (typeof baseUrl === "string" && baseUrl.includes("base_url")) {
-      const extractedBaseUrl = extractCodexBaseUrl(baseUrl);
+      const extractedBaseUrl =
+        "credentials" in (config as Record<string, any>)
+          ? extractKimiBaseUrl(baseUrl)
+          : extractCodexBaseUrl(baseUrl);
       if (extractedBaseUrl) {
         return extractedBaseUrl;
       }
@@ -173,6 +185,18 @@ export function ProviderCard({
 
   const usageEnabled = provider.meta?.usage_script?.enabled ?? false;
   const isOfficial = isOfficialProvider(provider, appId);
+  const { data: codexAccount } = useCodexAccountIdentity(
+    provider.id,
+    appId === "codex" && isOfficial,
+  );
+  // Non-current Official cards read their own login rather than the live one.
+  const quotaProviderId = isCurrent
+    ? undefined
+    : appId === "claude" && provider.meta?.capturedClaudeAccount
+      ? provider.id
+      : appId === "codex" && codexAccount
+        ? provider.id
+        : undefined;
 
   // 获取用量数据以判断是否有多套餐
   // 累加模式应用（OpenCode/OpenClaw）：使用 isInConfig 代替 isCurrent
@@ -340,6 +364,19 @@ export function ProviderCard({
                 </span>
               )}
 
+            {appId === "codex" && codexAccount && (
+              <span
+                className="text-xs text-muted-foreground block"
+                title={[codexAccount.accountId, codexAccount.planType]
+                  .filter(Boolean)
+                  .join(" · ")}
+              >
+                {truncateEmail(
+                  codexAccount.email ?? codexAccount.accountId ?? "",
+                )}
+              </span>
+            )}
+
             {displayUrl && (
               <button
                 type="button"
@@ -399,11 +436,7 @@ export function ProviderCard({
               {isOfficial ? (
                 <SubscriptionQuotaFooter
                   appId={appId}
-                  providerId={
-                    provider.meta?.capturedClaudeAccount && !isCurrent
-                      ? provider.id
-                      : undefined
-                  }
+                  providerId={quotaProviderId}
                   inline={true}
                 />
               ) : hasMultiplePlans ? (
@@ -448,7 +481,6 @@ export function ProviderCard({
               )}
             </div>
           </div>
-
         </div>
       </div>
 

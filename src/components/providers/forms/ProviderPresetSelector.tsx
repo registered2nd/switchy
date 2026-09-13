@@ -5,6 +5,7 @@ import { Zap, Star, Layers, Settings2 } from "lucide-react";
 import type { ProviderPreset } from "@/config/claudeProviderPresets";
 import type { CodexProviderPreset } from "@/config/codexProviderPresets";
 import type { GeminiProviderPreset } from "@/config/geminiProviderPresets";
+import type { KimiProviderPreset } from "@/config/kimiProviderPresets";
 import type { ProviderCategory } from "@/types";
 import {
   universalProviderPresets,
@@ -14,7 +15,11 @@ import { ProviderIcon } from "@/components/ProviderIcon";
 
 type PresetEntry = {
   id: string;
-  preset: ProviderPreset | CodexProviderPreset | GeminiProviderPreset;
+  preset:
+    | ProviderPreset
+    | CodexProviderPreset
+    | GeminiProviderPreset
+    | KimiProviderPreset;
 };
 
 interface ProviderPresetSelectorProps {
@@ -75,7 +80,11 @@ export function ProviderPresetSelector({
   };
 
   const renderPresetIcon = (
-    preset: ProviderPreset | CodexProviderPreset | GeminiProviderPreset,
+    preset:
+      | ProviderPreset
+      | CodexProviderPreset
+      | GeminiProviderPreset
+      | KimiProviderPreset,
   ) => {
     const iconType = preset.theme?.icon;
     if (!iconType) return null;
@@ -87,6 +96,15 @@ export function ProviderPresetSelector({
         return <CodexIcon size={14} />;
       case "gemini":
         return <GeminiIcon size={14} />;
+      case "kimi":
+        return (
+          <ProviderIcon
+            icon="kimi"
+            name="Kimi"
+            size={14}
+            showFallback={false}
+          />
+        );
       case "generic":
         return <Zap size={14} />;
       default:
@@ -96,7 +114,11 @@ export function ProviderPresetSelector({
 
   const getPresetButtonClass = (
     isSelected: boolean,
-    preset: ProviderPreset | CodexProviderPreset | GeminiProviderPreset,
+    preset:
+      | ProviderPreset
+      | CodexProviderPreset
+      | GeminiProviderPreset
+      | KimiProviderPreset,
   ) => {
     const baseClass =
       "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors";
@@ -113,7 +135,11 @@ export function ProviderPresetSelector({
 
   const getPresetButtonStyle = (
     isSelected: boolean,
-    preset: ProviderPreset | CodexProviderPreset | GeminiProviderPreset,
+    preset:
+      | ProviderPreset
+      | CodexProviderPreset
+      | GeminiProviderPreset
+      | KimiProviderPreset,
   ) => {
     if (!isSelected || !preset.theme?.backgroundColor) {
       return undefined;

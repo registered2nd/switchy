@@ -58,8 +58,36 @@ pub fn start() {
         });
 }
 
+/// Same reconciler for Codex's ChatGPT login (`tokens` in `~/.codex/auth.json`),
+/// which rotates its refresh token the same way. No-op while no Codex mirror
+/// dir is configured.
+pub fn start_codex() {
+    let _ = std::thread::Builder::new()
+        .name("codex-cred-mirror".to_string())
+        .spawn(|| {
+            if let Err(e) = run_watch(
+                crate::codex_config::get_codex_auth_path(),
+                reconcile_codex,
+                "credential_mirror/codex",
+            ) {
+                log::warn!("[credential_mirror/codex] watcher exited: {e}");
+            }
+        });
+}
+
 fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let live = paths::live_credentials_path();
+    run_watch(
+        paths::live_credentials_path(),
+        reconcile,
+        "credential_mirror",
+    )
+}
+
+fn run_watch(
+    live: std::path::PathBuf,
+    reconcile: fn(),
+    tag: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let watch_dir = match live.parent() {
         Some(p) => p.to_path_buf(),
         None => return Ok(()),
@@ -67,7 +95,7 @@ fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     if !watch_dir.exists() {
         log::info!(
-            "[credential_mirror] watch dir missing, skipping: {}",
+            "[{tag}] watch dir missing, skipping: {}",
             watch_dir.display()
         );
         return Ok(());
@@ -81,7 +109,7 @@ fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     watcher.watch(&watch_dir, RecursiveMode::NonRecursive)?;
 
     log::info!(
-        "[credential_mirror] bidirectional reconcile active on {} (poll {}s)",
+        "[{tag}] bidirectional reconcile active on {} (poll {}s)",
         watch_dir.display(),
         POLL_INTERVAL.as_secs()
     );
@@ -100,7 +128,7 @@ fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 reconcile();
             }
             Ok(Err(e)) => {
-                log::warn!("[credential_mirror] watch error: {e}");
+                log::warn!("[{tag}] watch error: {e}");
             }
             // Periodic tick: the only way to notice a refresh the mirror side
             // performed on its own (notify cannot watch `\\wsl$\`).
@@ -198,7 +226,8 @@ fn propagate(oauth: &Value, to_path: &Path) -> Result<(), AppError> {
         .expect("root is object")
         .insert("claudeAiOauth".to_string(), oauth.clone());
 
-    let bytes = serde_json::to_vec_pretty(&root).map_err(|e| AppError::JsonSerialize { source: e })?;
+    let bytes =
+        serde_json::to_vec_pretty(&root).map_err(|e| AppError::JsonSerialize { source: e })?;
     store::write_snapshot_atomic(to_path, &bytes)
 }
 
@@ -209,6 +238,115 @@ fn read_account_uuid(path: &Path) -> Option<String> {
         .get("accountUuid")?
         .as_str()
         .map(str::to_string)
+}
+
+// =====================================================================
+//  Codex — the same decision over `tokens` in `auth.json`
+// =====================================================================
+
+/// A Codex side: the shared verdict inputs, plus whether that install is
+/// deliberately on an API key rather than a ChatGPT login.
+#[derive(Debug, Default, Clone)]
+struct CodexSide {
+    state: SideState,
+    root: Option<Value>,
+    api_key: bool,
+}
+
+fn load_codex_side(path: &Path) -> CodexSide {
+    let Ok(bytes) = fs::read(path) else {
+        return CodexSide::default();
+    };
+    let Ok(root) = serde_json::from_slice::<Value>(&bytes) else {
+        return CodexSide::default();
+    };
+    codex_side_from_root(root)
+}
+
+fn codex_side_from_root(root: Value) -> CodexSide {
+    let api_key = root
+        .get("OPENAI_API_KEY")
+        .and_then(Value::as_str)
+        .map(|s| !s.is_empty())
+        .unwrap_or(false);
+    let login = crate::services::codex_account::inspect(&root);
+    let state = SideState {
+        oauth: root.get("tokens").cloned(),
+        alive: login.as_ref().map(|l| l.alive).unwrap_or(false),
+        expires_at: login.as_ref().map(|l| l.last_refresh).unwrap_or(0),
+        account: login
+            .as_ref()
+            .and_then(|l| l.account_key().map(str::to_string)),
+    };
+    CodexSide {
+        state,
+        root: Some(root),
+        api_key,
+    }
+}
+
+fn reconcile_codex() {
+    let Some(mirror_dir) = crate::settings::get_codex_mirror_override_dir() else {
+        return;
+    };
+    if !mirror_dir.exists() {
+        return;
+    }
+
+    let live_path = crate::codex_config::get_codex_auth_path();
+    let mirror_path = mirror_dir.join("auth.json");
+
+    let live = load_codex_side(&live_path);
+    let mirror = load_codex_side(&mirror_path);
+
+    // An install on an API key is not on a ChatGPT login at all; healing it
+    // with the other side's tokens would change what it authenticates as.
+    if live.api_key || mirror.api_key {
+        return;
+    }
+
+    let copy = |from: &CodexSide, to: &Path, why: &str, direction: &str| {
+        let Some(root) = from.root.as_ref() else {
+            return;
+        };
+        match propagate_codex(root, to) {
+            Ok(()) => log::info!(
+                "[credential_mirror/codex] synced {direction} ({why}, lastRefresh={})",
+                from.state.expires_at
+            ),
+            Err(e) => log::warn!("[credential_mirror/codex] {direction} failed: {e}"),
+        }
+    };
+
+    match decide(&live.state, &mirror.state) {
+        Action::Noop => {}
+        Action::Propagate(Side::Live) => {
+            let why = if mirror.state.alive {
+                "fresher"
+            } else {
+                "heal"
+            };
+            copy(&live, &mirror_path, why, "live -> mirror");
+        }
+        Action::Propagate(Side::Mirror) => {
+            let why = if live.state.alive { "fresher" } else { "heal" };
+            copy(&mirror, &live_path, why, "mirror -> live");
+        }
+    }
+}
+
+/// Replace `tokens` + `last_refresh` in the target `auth.json` with the
+/// source's, keeping every other key the target has.
+fn propagate_codex(source_root: &Value, to_path: &Path) -> Result<(), AppError> {
+    let target_root = match fs::read(to_path) {
+        Ok(b) => serde_json::from_slice::<Value>(&b)
+            .unwrap_or_else(|_| Value::Object(serde_json::Map::new())),
+        Err(_) => Value::Object(serde_json::Map::new()),
+    };
+    let merged = crate::services::codex_account::transplant_login(&target_root, source_root);
+    let bytes =
+        serde_json::to_vec_pretty(&merged).map_err(|e| AppError::JsonSerialize { source: e })?;
+    store::write_snapshot_atomic(to_path, &bytes)
 }
 
 // =====================================================================
@@ -271,6 +409,16 @@ fn side_state_from_root(root: &Value) -> SideState {
         expires_at,
         account: None,
     }
+}
+
+/// The reconciler's two verdicts on a credentials blob, exposed so the
+/// per-provider snapshot store can be held to the same rules: `(alive,
+/// access-token expiry in ms)`. Alive means both tokens are present and
+/// non-empty; the expiry orders two bundles of the same account, later being
+/// the more recently refreshed one.
+pub(crate) fn credential_health(root: &Value) -> (bool, i64) {
+    let state = side_state_from_root(root);
+    (state.alive, state.expires_at)
 }
 
 fn nonempty(obj: &Value, key: &str) -> bool {

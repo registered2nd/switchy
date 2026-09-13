@@ -445,7 +445,7 @@ impl ProxyService {
             AppType::Claude => self.read_claude_live()?,
             AppType::Codex => self.read_codex_live()?,
             AppType::Gemini => self.read_gemini_live()?,
-            AppType::OpenCode => {
+            AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features
                 return Err("OpenCode 不支持代理功能".to_string());
             }
@@ -666,7 +666,7 @@ impl ProxyService {
                     }
                 }
             }
-            AppType::OpenCode => {
+            AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features, skip silently
             }
             AppType::OpenClaw => {
@@ -850,7 +850,7 @@ impl ProxyService {
             AppType::Claude => ("claude", self.read_claude_live()?),
             AppType::Codex => ("codex", self.read_codex_live()?),
             AppType::Gemini => ("gemini", self.read_gemini_live()?),
-            AppType::OpenCode => {
+            AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features
                 return Err("OpenCode 不支持代理功能".to_string());
             }
@@ -998,7 +998,7 @@ impl ProxyService {
                 self.write_gemini_live(&live_config)?;
                 log::info!("Gemini Live 配置已接管，代理地址: {proxy_url}");
             }
-            AppType::OpenCode => {
+            AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features
                 return Err("OpenCode 不支持代理功能".to_string());
             }
@@ -1055,7 +1055,7 @@ impl ProxyService {
                     let _ = self.write_gemini_live(&live_config);
                 }
             }
-            AppType::OpenCode => {
+            AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features, skip silently
             }
             AppType::OpenClaw => {
@@ -1098,7 +1098,7 @@ impl ProxyService {
                     log::info!("Gemini Live 配置已恢复");
                 }
             }
-            AppType::OpenCode => {
+            AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features, skip silently
             }
             AppType::OpenClaw => {
@@ -1192,7 +1192,7 @@ impl ProxyService {
             AppType::Claude => self.write_claude_live(config),
             AppType::Codex => self.write_codex_live(config),
             AppType::Gemini => self.write_gemini_live(config),
-            AppType::OpenCode => {
+            AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features
                 Err("OpenCode 不支持代理功能".to_string())
             }
@@ -1217,7 +1217,7 @@ impl ProxyService {
                 Ok(config) => Self::is_gemini_live_taken_over(&config),
                 Err(_) => false,
             },
-            AppType::OpenCode => {
+            AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy takeover
                 false
             }
@@ -1264,7 +1264,7 @@ impl ProxyService {
             AppType::Claude => self.cleanup_claude_takeover_placeholders_in_live(),
             AppType::Codex => self.cleanup_codex_takeover_placeholders_in_live(),
             AppType::Gemini => self.cleanup_gemini_takeover_placeholders_in_live(),
-            AppType::OpenCode => {
+            AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features
                 Ok(())
             }
@@ -1519,7 +1519,7 @@ impl ProxyService {
                 serde_json::to_string(&env_backup)
                     .map_err(|e| format!("序列化 Gemini 配置失败: {e}"))?
             }
-            AppType::OpenCode | AppType::OpenClaw => {
+            AppType::OpenCode | AppType::OpenClaw | AppType::Kimi => {
                 return Err(format!("未知的应用类型: {app_type}"));
             }
         };

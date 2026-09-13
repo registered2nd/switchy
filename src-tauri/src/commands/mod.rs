@@ -2,6 +2,7 @@
 
 mod auth;
 mod claude_account;
+mod codex_account;
 mod coding_plan;
 pub(crate) mod config;
 mod copilot;
@@ -33,6 +34,7 @@ mod workspace;
 
 pub use auth::*;
 pub use claude_account::*;
+pub use codex_account::*;
 pub use coding_plan::*;
 pub use config::*;
 pub use copilot::*;

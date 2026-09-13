@@ -525,13 +525,18 @@
     "claudeMirrorConfigDirDescription": "WSL の ~/.claude など、同期対象にしたい 2 つ目の Claude 設定ディレクトリを指定します。",
     "codexConfigDir": "Codex 設定ディレクトリ",
     "codexConfigDirDescription": "Codex の設定ディレクトリを上書きします。",
+    "codexMirrorConfigDir": "Codex ミラー設定ディレクトリ",
+    "codexMirrorConfigDirDescription": "WSL の ~/.codex など、同期対象にしたい 2 つ目の Codex 設定ディレクトリを指定します。切り替えごとに ChatGPT ログインとプロバイダー設定を同期します。",
     "geminiConfigDir": "Gemini 設定ディレクトリ",
     "geminiConfigDirDescription": "Gemini の設定ディレクトリ（.env）を上書きします。",
+    "kimiConfigDir": "Kimi Code 設定ディレクトリ",
+    "kimiConfigDirDescription": "Kimi Code の設定ディレクトリ（config.toml、credentials/）を上書きします。",
     "opencodeConfigDir": "OpenCode 設定ディレクトリ",
     "opencodeConfigDirDescription": "OpenCode の設定ディレクトリ（opencode.json）を上書きします。",
     "browsePlaceholderClaude": "例: /home/<your-username>/.claude",
     "browsePlaceholderCodex": "例: /home/<your-username>/.codex",
     "browsePlaceholderGemini": "例: /home/<your-username>/.gemini",
+    "browsePlaceholderKimi": "例: /home/<your-username>/.kimi-code",
     "browsePlaceholderOpencode": "例: /home/<your-username>/.config/opencode",
     "browseDirectory": "ディレクトリを選択",
     "resetDefault": "デフォルトに戻す（保存後に反映）",
@@ -615,6 +620,7 @@
     "claude": "Claude",
     "codex": "Codex",
     "gemini": "Gemini",
+    "kimi": "Kimi",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw"
   },
@@ -814,7 +820,11 @@
     "fetchModelsAuthFailed": "API Key が無効か、権限がありません",
     "fetchModelsNotSupported": "このプロバイダーはモデル一覧の取得に対応していません",
     "fetchModelsTimeout": "リクエストがタイムアウトしました。ネットワーク接続を確認してください",
-    "providerKeyStatusLoading": "プロバイダー識別子ステータスを読み込み中です。しばらくお待ちください。"
+    "providerKeyStatusLoading": "プロバイダー識別子ステータスを読み込み中です。しばらくお待ちください。",
+    "kimiOfficialNoApiKey": "公式プロバイダーは kimi login でサインインします。API キーは不要です",
+    "kimiApiKeyAutoFill": "API キーを入力すると config.toml に書き込まれます",
+    "kimiApiEndpointPlaceholder": "例: https://api.example.com/v1",
+    "kimiApiHint": "config.toml の現在のプロバイダーの base_url に書き込みます"
   },
   "copilot": {
     "authSection": "GitHub Copilot 認証",
@@ -921,6 +931,26 @@
     "autoCompactLimit": "自動圧縮しきい値",
     "autoCompactLimitHint": "コンテキストトークン数がこのしきい値に達すると履歴を自動圧縮",
     "noCommonConfigToApply": "共通設定スニペットが空、または書き込むコンテンツがありません。"
+  },
+  "kimiConfig": {
+    "credentialsJson": "認証情報 (kimi-code.json)",
+    "credentialsJsonPlaceholder": "null",
+    "credentialsJsonHint": "kimi login が書き込む OAuth 認証情報。null は未ログインまたは API キー利用",
+    "configToml": "config.toml (TOML)",
+    "configTomlHint": "Kimi Code の config.toml 内容：default_model、[providers.*]、[models.*]",
+    "writeCommonConfig": "共通設定を書き込む",
+    "editCommonConfig": "共通設定を編集",
+    "editCommonConfigTitle": "Kimi 共通設定スニペットを編集",
+    "commonConfigHint": "「共通設定を書き込む」をオンにすると、このスニペットが config.toml にマージされます（例: [thinking]、default_permission_mode）",
+    "apiUrlLabel": "API リクエスト URL",
+    "extractFromCurrent": "エディタから抽出",
+    "extractNoCommonConfig": "エディタに抽出できる共通設定がありません",
+    "extractFailed": "抽出に失敗しました: {{error}}",
+    "saveFailed": "保存に失敗しました: {{error}}",
+    "modelName": "モデル名",
+    "modelNamePlaceholder": "例: gpt-4o",
+    "modelNameHint": "config.toml の default_model とモデルエイリアスに書き込みます",
+    "noCommonConfigToApply": "共通設定スニペットが空か、適用できる内容がありません"
   },
   "geminiConfig": {
     "envFile": "環境変数 (.env)",
@@ -1201,6 +1231,7 @@
         "claude": "Claude",
         "codex": "Codex",
         "gemini": "Gemini",
+        "kimi": "Kimi",
         "opencode": "OpenCode",
         "openclaw": "OpenClaw"
       }
@@ -1685,6 +1716,7 @@
       "claude": "Claude",
       "codex": "Codex",
       "gemini": "Gemini",
+      "kimi": "Kimi",
       "opencode": "OpenCode",
       "openclaw": "OpenClaw"
     },
@@ -2338,6 +2370,12 @@
         "locked": "部分的に適用: {{path}} はロック中です。Claude Code を閉じてから再試行してください。",
         "mirror_skipped": "WSL ミラーをスキップ —— {{reason}}"
       }
+    }
+  },
+  "codexAccount": {
+    "warning": {
+      "account_mismatch": "ライブの Codex ログインは「{{id}}」が保持するアカウントとは別のものだったため、「{{id}}」は保存済みのログインを維持しました。",
+      "rehomed": "そのログインは、そのアカウントを保持するプロバイダー「{{id}}」に保存しました。"
     }
   }
 }

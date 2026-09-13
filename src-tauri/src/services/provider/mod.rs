@@ -1483,7 +1483,8 @@ impl ProviderService {
                 if !app_type.is_additive_mode() {
                     // Only backfill when switching to a different provider
                     if let Ok(live_config) = read_live_settings(app_type.clone()) {
-                        if let Some(mut current_provider) = providers.get(&current_id).cloned() {
+                        if let Some(stored_provider) = providers.get(&current_id) {
+                            let mut current_provider = stored_provider.clone();
                             current_provider.settings_config =
                                 strip_common_config_from_live_settings(
                                     state.db.as_ref(),
@@ -1491,6 +1492,28 @@ impl ProviderService {
                                     &current_provider,
                                     live_config,
                                 );
+                            // A Codex provider carries its ChatGPT login inside
+                            // `auth`; a blanked, older, or foreign live login must
+                            // not replace the one it holds.
+                            if matches!(app_type, AppType::Codex) {
+                                let outcome = crate::services::codex_account::reconcile_switch_away(
+                                    stored_provider,
+                                    &mut current_provider,
+                                    providers,
+                                );
+                                result.warnings.extend(outcome.warnings);
+                                if let Some(rehomed) = outcome.rehomed {
+                                    if let Err(e) =
+                                        state.db.save_provider(app_type.as_str(), &rehomed)
+                                    {
+                                        log::warn!("Re-home of Codex login failed: {e}");
+                                    } else {
+                                        result
+                                            .warnings
+                                            .push(format!("backfill_rehomed:{}", rehomed.id));
+                                    }
+                                }
+                            }
                             if let Err(e) =
                                 state.db.save_provider(app_type.as_str(), &current_provider)
                             {
@@ -1560,10 +1583,7 @@ impl ProviderService {
                 Ok(SwapOutcome::PartialMirror(warnings)) => result.warnings.extend(warnings),
                 Ok(_) => {}
                 Err(e) => {
-                    log::warn!(
-                        "Claude account swap failed for '{}': {e}",
-                        provider.id
-                    );
+                    log::warn!("Claude account swap failed for '{}': {e}", provider.id);
                     result
                         .warnings
                         .push(format!("credential_swap_failed:{}", provider.id));
@@ -1725,6 +1745,7 @@ impl ProviderService {
             AppType::Claude => Self::extract_claude_common_config(&provider.settings_config),
             AppType::Codex => Self::extract_codex_common_config(&provider.settings_config),
             AppType::Gemini => Self::extract_gemini_common_config(&provider.settings_config),
+            AppType::Kimi => Self::extract_kimi_common_config(&provider.settings_config),
             AppType::OpenCode => Self::extract_opencode_common_config(&provider.settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(&provider.settings_config),
         }
@@ -1739,6 +1760,7 @@ impl ProviderService {
             AppType::Claude => Self::extract_claude_common_config(settings_config),
             AppType::Codex => Self::extract_codex_common_config(settings_config),
             AppType::Gemini => Self::extract_gemini_common_config(settings_config),
+            AppType::Kimi => Self::extract_kimi_common_config(settings_config),
             AppType::OpenCode => Self::extract_opencode_common_config(settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(settings_config),
         }
@@ -1839,6 +1861,41 @@ impl ProviderService {
             cleaned.push('\n');
         }
 
+        Ok(cleaned.trim().to_string())
+    }
+
+    /// Extract common config for Kimi: everything in `config.toml` except the
+    /// provider-owned `default_model`, `[providers.*]` and `[models.*]`.
+    fn extract_kimi_common_config(settings: &Value) -> Result<String, AppError> {
+        let config_toml = settings
+            .get("config")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if config_toml.is_empty() {
+            return Ok(String::new());
+        }
+        let mut doc = config_toml
+            .parse::<toml_edit::DocumentMut>()
+            .map_err(|e| AppError::Message(format!("TOML parse error: {e}")))?;
+        let root = doc.as_table_mut();
+        root.remove("default_model");
+        root.remove("providers");
+        root.remove("models");
+
+        let mut cleaned = String::new();
+        let mut blank_run = 0usize;
+        for line in doc.to_string().lines() {
+            if line.trim().is_empty() {
+                blank_run += 1;
+                if blank_run <= 1 {
+                    cleaned.push('\n');
+                }
+                continue;
+            }
+            blank_run = 0;
+            cleaned.push_str(line);
+            cleaned.push('\n');
+        }
         Ok(cleaned.trim().to_string())
     }
 
@@ -2040,6 +2097,27 @@ impl ProviderService {
                     ));
                 }
             }
+            AppType::Kimi => {
+                let settings = provider.settings_config.as_object().ok_or_else(|| {
+                    AppError::localized(
+                        "provider.kimi.settings.not_object",
+                        "Kimi 配置必须是 JSON 对象",
+                        "Kimi configuration must be a JSON object",
+                    )
+                })?;
+                let config_text =
+                    settings
+                        .get("config")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            AppError::localized(
+                                "provider.kimi.config.missing",
+                                format!("供应商 {} 缺少 config 配置", provider.id),
+                                format!("Provider {} is missing the config field", provider.id),
+                            )
+                        })?;
+                crate::kimi_config::validate_config_toml(config_text)?;
+            }
             AppType::Codex => {
                 let settings = provider.settings_config.as_object().ok_or_else(|| {
                     AppError::localized(
@@ -2162,6 +2240,58 @@ impl ProviderService {
                     })?
                     .to_string();
 
+                Ok((api_key, base_url))
+            }
+            AppType::Kimi => {
+                let config_text = provider
+                    .settings_config
+                    .get("config")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let doc = config_text
+                    .parse::<toml_edit::DocumentMut>()
+                    .map_err(|e| AppError::Message(format!("TOML parse error: {e}")))?;
+                let provider_id = crate::kimi_config::default_provider_id(config_text)
+                    .or_else(|| {
+                        doc.get("providers")
+                            .and_then(|p| p.as_table())
+                            .and_then(|t| t.iter().next().map(|(k, _)| k.to_string()))
+                    })
+                    .ok_or_else(|| {
+                        AppError::localized(
+                            "provider.kimi.provider.missing",
+                            "配置格式错误: 缺少 [providers.*]",
+                            "Invalid configuration: no [providers.*] table",
+                        )
+                    })?;
+                let table = doc
+                    .get("providers")
+                    .and_then(|p| p.get(&provider_id))
+                    .and_then(|t| t.as_table_like())
+                    .ok_or_else(|| {
+                        AppError::localized(
+                            "provider.kimi.provider.missing",
+                            format!("配置格式错误: 缺少 [providers.{provider_id}]"),
+                            format!("Invalid configuration: missing [providers.{provider_id}]"),
+                        )
+                    })?;
+                let api_key = table
+                    .get("api_key")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| {
+                        AppError::localized(
+                            "provider.kimi.api_key.missing",
+                            "缺少 API Key",
+                            "API key is missing",
+                        )
+                    })?
+                    .to_string();
+                let base_url = table
+                    .get("base_url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("https://api.openai.com/v1")
+                    .to_string();
                 Ok((api_key, base_url))
             }
             AppType::Codex => {

@@ -33,8 +33,11 @@ pub struct VisibleApps {
     #[serde(default = "default_true")]
     pub gemini: bool,
     #[serde(default = "default_true")]
-    pub opencode: bool,
+    pub kimi: bool,
     #[serde(default = "default_true")]
+    pub opencode: bool,
+    /// Hidden by default: OpenClaw is a gateway, not a CLI worth a tab.
+    #[serde(default)]
     pub openclaw: bool,
 }
 
@@ -44,8 +47,9 @@ impl Default for VisibleApps {
             claude: true,
             codex: true,
             gemini: true,
+            kimi: true,
             opencode: true,
-            openclaw: true,
+            openclaw: false,
         }
     }
 }
@@ -57,6 +61,7 @@ impl VisibleApps {
             AppType::Claude => self.claude,
             AppType::Codex => self.codex,
             AppType::Gemini => self.gemini,
+            AppType::Kimi => self.kimi,
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => self.openclaw,
         }
@@ -220,7 +225,11 @@ pub struct AppSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_mirror_config_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gemini_config_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kimi_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opencode_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -236,6 +245,9 @@ pub struct AppSettings {
     /// 当前 Gemini 供应商 ID（本地存储，优先于数据库 is_current）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_gemini: Option<String>,
+    /// 当前 Kimi 供应商 ID（本地存储，优先于数据库 is_current）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_provider_kimi: Option<String>,
     /// 当前 OpenCode 供应商 ID（本地存储，对 OpenCode 可能无意义，但保持结构一致）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_opencode: Option<String>,
@@ -301,12 +313,15 @@ impl Default for AppSettings {
             claude_config_dir: None,
             claude_mirror_config_dir: None,
             codex_config_dir: None,
+            codex_mirror_config_dir: None,
             gemini_config_dir: None,
+            kimi_config_dir: None,
             opencode_config_dir: None,
             openclaw_config_dir: None,
             current_provider_claude: None,
             current_provider_codex: None,
             current_provider_gemini: None,
+            current_provider_kimi: None,
             current_provider_opencode: None,
             current_provider_openclaw: None,
             skill_sync_method: SyncMethod::default(),
@@ -351,8 +366,22 @@ impl AppSettings {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
 
+        self.codex_mirror_config_dir = self
+            .codex_mirror_config_dir
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
         self.gemini_config_dir = self
             .gemini_config_dir
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
+        self.kimi_config_dir = self
+            .kimi_config_dir
             .as_ref()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
@@ -552,17 +581,51 @@ pub fn get_claude_mirror_override_dir() -> Option<PathBuf> {
         return Some(resolve_override_path(p));
     }
     drop(settings);
+    // The auto-detected WSL default is a machine-global side-channel that the
+    // `SWITCHY_TEST_HOME` redirect cannot sandbox: on a developer machine that
+    // happens to have WSL, every "no mirror configured" test would quietly
+    // become a mirror test and stop checking what it was written to check.
+    // Tests that want a mirror set one explicitly.
+    if std::env::var_os(crate::paths::ENV_TEST_HOME).is_some() {
+        return None;
+    }
     static DEFAULT_MIRROR: OnceLock<Option<String>> = OnceLock::new();
     DEFAULT_MIRROR
-        .get_or_init(|| crate::commands::config::build_default_claude_mirror_dir())
+        .get_or_init(crate::commands::config::build_default_claude_mirror_dir)
         .as_ref()
-        .map(|p| PathBuf::from(p))
+        .map(PathBuf::from)
+}
+
+/// The second `~/.codex` a switch keeps in step (typically WSL). Same
+/// auto-detection and test-sandbox rules as `get_claude_mirror_override_dir`.
+pub fn get_codex_mirror_override_dir() -> Option<PathBuf> {
+    let settings = settings_store().read().ok()?;
+    if let Some(p) = settings.codex_mirror_config_dir.as_ref() {
+        return Some(resolve_override_path(p));
+    }
+    drop(settings);
+    if std::env::var_os(crate::paths::ENV_TEST_HOME).is_some() {
+        return None;
+    }
+    static DEFAULT_MIRROR: OnceLock<Option<String>> = OnceLock::new();
+    DEFAULT_MIRROR
+        .get_or_init(crate::commands::config::build_default_codex_mirror_dir)
+        .as_ref()
+        .map(PathBuf::from)
 }
 
 pub fn get_codex_override_dir() -> Option<PathBuf> {
     let settings = settings_store().read().ok()?;
     settings
         .codex_config_dir
+        .as_ref()
+        .map(|p| resolve_override_path(p))
+}
+
+pub fn get_kimi_override_dir() -> Option<PathBuf> {
+    let settings = settings_store().read().ok()?;
+    settings
+        .kimi_config_dir
         .as_ref()
         .map(|p| resolve_override_path(p))
 }
@@ -603,6 +666,7 @@ pub fn get_current_provider(app_type: &AppType) -> Option<String> {
         AppType::Claude => settings.current_provider_claude.clone(),
         AppType::Codex => settings.current_provider_codex.clone(),
         AppType::Gemini => settings.current_provider_gemini.clone(),
+        AppType::Kimi => settings.current_provider_kimi.clone(),
         AppType::OpenCode => settings.current_provider_opencode.clone(),
         AppType::OpenClaw => settings.current_provider_openclaw.clone(),
     }
@@ -618,6 +682,7 @@ pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(), 
         AppType::Claude => settings.current_provider_claude = id_owned.clone(),
         AppType::Codex => settings.current_provider_codex = id_owned.clone(),
         AppType::Gemini => settings.current_provider_gemini = id_owned.clone(),
+        AppType::Kimi => settings.current_provider_kimi = id_owned.clone(),
         AppType::OpenCode => settings.current_provider_opencode = id_owned.clone(),
         AppType::OpenClaw => settings.current_provider_openclaw = id_owned.clone(),
     })

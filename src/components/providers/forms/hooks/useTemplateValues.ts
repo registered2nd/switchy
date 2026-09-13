@@ -4,6 +4,7 @@ import type {
   TemplateValueConfig,
 } from "@/config/claudeProviderPresets";
 import type { CodexProviderPreset } from "@/config/codexProviderPresets";
+import type { KimiProviderPreset } from "@/config/kimiProviderPresets";
 import { applyTemplateValues } from "@/utils/providerConfigUtils";
 
 type TemplatePath = Array<string | number>;
@@ -11,7 +12,7 @@ type TemplateValueMap = Record<string, TemplateValueConfig>;
 
 interface PresetEntry {
   id: string;
-  preset: ProviderPreset | CodexProviderPreset;
+  preset: ProviderPreset | CodexProviderPreset | KimiProviderPreset;
 }
 
 interface UseTemplateValuesProps {

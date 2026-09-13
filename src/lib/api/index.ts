@@ -13,10 +13,8 @@ export { openclawApi } from "./openclaw";
 export { sessionsApi } from "./sessions";
 export { workspaceApi } from "./workspace";
 export { claudeAccountApi } from "./claudeAccount";
-export type {
-  CapturedIdentity,
-  CaptureOutcome,
-} from "./claudeAccount";
+export { codexAccountApi } from "./codexAccount";
+export type { CapturedIdentity, CaptureOutcome } from "./claudeAccount";
 export * as configApi from "./config";
 export * as authApi from "./auth";
 export * as copilotApi from "./copilot";

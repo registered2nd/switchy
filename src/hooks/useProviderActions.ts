@@ -223,6 +223,24 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
                   { duration: 6000 },
                 );
               }
+            } else if (tag.startsWith("backfill_account_mismatch:")) {
+              const id = tag.slice("backfill_account_mismatch:".length);
+              toast.warning(
+                t("codexAccount.warning.account_mismatch", {
+                  id,
+                  defaultValue: `The Codex login that was live belonged to a different account than "${id}" holds; "${id}" keeps its saved login.`,
+                }),
+                { duration: 6000 },
+              );
+            } else if (tag.startsWith("backfill_rehomed:")) {
+              const id = tag.slice("backfill_rehomed:".length);
+              toast.info(
+                t("codexAccount.warning.rehomed", {
+                  id,
+                  defaultValue: `That login was saved to "${id}", the provider that holds that account.`,
+                }),
+                { duration: 6000 },
+              );
             } else if (
               tag.startsWith("backfill_failed:") &&
               !showedGenericBackfill

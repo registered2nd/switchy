@@ -88,7 +88,9 @@ export function useSettingsForm(): UseSettingsFormResult {
       claudeConfigDir: sanitizeDir(data.claudeConfigDir),
       claudeMirrorConfigDir: sanitizeDir(data.claudeMirrorConfigDir),
       codexConfigDir: sanitizeDir(data.codexConfigDir),
+      codexMirrorConfigDir: sanitizeDir(data.codexMirrorConfigDir),
       geminiConfigDir: sanitizeDir(data.geminiConfigDir),
+      kimiConfigDir: sanitizeDir(data.kimiConfigDir),
       opencodeConfigDir: sanitizeDir(data.opencodeConfigDir),
       language: normalizedLanguage,
     };
@@ -147,7 +149,9 @@ export function useSettingsForm(): UseSettingsFormResult {
         claudeConfigDir: sanitizeDir(serverData.claudeConfigDir),
         claudeMirrorConfigDir: sanitizeDir(serverData.claudeMirrorConfigDir),
         codexConfigDir: sanitizeDir(serverData.codexConfigDir),
+        codexMirrorConfigDir: sanitizeDir(serverData.codexMirrorConfigDir),
         geminiConfigDir: sanitizeDir(serverData.geminiConfigDir),
+        kimiConfigDir: sanitizeDir(serverData.kimiConfigDir),
         opencodeConfigDir: sanitizeDir(serverData.opencodeConfigDir),
         language: normalizedLanguage,
       };

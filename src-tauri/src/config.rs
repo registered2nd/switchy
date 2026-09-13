@@ -20,7 +20,10 @@ use crate::error::AppError;
 /// 显式覆盖 home dir（仅用于测试/调试场景）。兼容性：同时识别旧环境变量
 /// `CC_SWITCH_TEST_HOME`（将在后续版本移除）。
 pub fn get_home_dir() -> PathBuf {
-    for name in [crate::paths::ENV_TEST_HOME, crate::paths::LEGACY_ENV_TEST_HOME] {
+    for name in [
+        crate::paths::ENV_TEST_HOME,
+        crate::paths::LEGACY_ENV_TEST_HOME,
+    ] {
         if let Ok(home) = std::env::var(name) {
             let trimmed = home.trim();
             if !trimmed.is_empty() {
@@ -49,7 +52,12 @@ pub fn get_default_claude_mcp_path() -> PathBuf {
     get_home_dir().join(".claude.json")
 }
 
-fn derive_mcp_path_from_override(dir: &Path) -> Option<PathBuf> {
+/// 由 Claude 配置*目录*推导其 `.claude.json` 路径。
+///
+/// 该文件是配置目录的**同级兄弟**，不是目录内部的文件：`~/.claude` 目录
+/// 对应 `~/.claude.json`。目录内部若也存在一个 `.claude.json`，那是另一套
+/// 独立的配置，不是本机 CLI 正在读写的那个 —— 按存在与否去挑文件会写错对象。
+pub fn claude_config_json_for_dir(dir: &Path) -> Option<PathBuf> {
     let file_name = dir
         .file_name()
         .map(|name| name.to_string_lossy().to_string())?
@@ -62,14 +70,22 @@ fn derive_mcp_path_from_override(dir: &Path) -> Option<PathBuf> {
     Some(parent.join(format!("{file_name}.json")))
 }
 
-/// 获取 Claude MCP 配置文件路径，若设置了目录覆盖则与覆盖目录同级
-pub fn get_claude_mcp_path() -> PathBuf {
+/// 获取 Claude Code 主配置文件 `.claude.json` 的路径。
+///
+/// 所有需要读写 `oauthAccount` / `mcpServers` 等根级字段的调用方都必须走这里，
+/// 否则不同模块会各自挑中不同的文件，互相看不见对方的写入。
+pub fn get_claude_config_json_path() -> PathBuf {
     if let Some(custom_dir) = crate::settings::get_claude_override_dir() {
-        if let Some(path) = derive_mcp_path_from_override(&custom_dir) {
+        if let Some(path) = claude_config_json_for_dir(&custom_dir) {
             return path;
         }
     }
     get_default_claude_mcp_path()
+}
+
+/// 获取 Claude MCP 配置文件路径，若设置了目录覆盖则与覆盖目录同级
+pub fn get_claude_mcp_path() -> PathBuf {
+    get_claude_config_json_path()
 }
 
 /// 获取 Claude Code 主配置文件路径
@@ -221,10 +237,9 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> Result<(), AppError> {
 
     #[cfg(windows)]
     {
-        // Windows 上 rename 目标存在会失败，先移除再重命名（尽量接近原子性）
-        if path.exists() {
-            let _ = fs::remove_file(path);
-        }
+        // std 的 fs::rename 在 Windows 上走 MoveFileExW + MOVEFILE_REPLACE_EXISTING，
+        // 目标存在时会直接替换。不能先 remove_file：那会让文件短暂消失，
+        // 监听该文件的进程（如运行中的 Claude Code）会看到 delete + create 而非一次 modify。
         fs::rename(&tmp, path).map_err(|e| AppError::IoContext {
             context: format!("原子替换失败: {} -> {}", tmp.display(), path.display()),
             source: e,
@@ -246,33 +261,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn derive_mcp_path_from_override_preserves_folder_name() {
+    fn claude_config_json_is_the_sibling_of_a_hidden_config_dir() {
         let override_dir = PathBuf::from("/tmp/profile/.claude");
-        let derived = derive_mcp_path_from_override(&override_dir)
-            .expect("should derive path for nested dir");
+        let derived =
+            claude_config_json_for_dir(&override_dir).expect("should derive path for nested dir");
         assert_eq!(derived, PathBuf::from("/tmp/profile/.claude.json"));
     }
 
     #[test]
-    fn derive_mcp_path_from_override_handles_non_hidden_folder() {
+    fn claude_config_json_is_the_sibling_of_a_plain_config_dir() {
         let override_dir = PathBuf::from("/data/claude-config");
-        let derived = derive_mcp_path_from_override(&override_dir)
-            .expect("should derive path for standard dir");
+        let derived =
+            claude_config_json_for_dir(&override_dir).expect("should derive path for standard dir");
         assert_eq!(derived, PathBuf::from("/data/claude-config.json"));
     }
 
     #[test]
-    fn derive_mcp_path_from_override_supports_relative_rootless_dir() {
+    fn claude_config_json_supports_relative_rootless_dir() {
         let override_dir = PathBuf::from("claude");
-        let derived = derive_mcp_path_from_override(&override_dir)
+        let derived = claude_config_json_for_dir(&override_dir)
             .expect("should derive path for single segment");
         assert_eq!(derived, PathBuf::from("claude.json"));
     }
 
     #[test]
-    fn derive_mcp_path_from_root_like_dir_returns_none() {
+    fn claude_config_json_for_root_like_dir_returns_none() {
         let override_dir = PathBuf::from("/");
-        assert!(derive_mcp_path_from_override(&override_dir).is_none());
+        assert!(claude_config_json_for_dir(&override_dir).is_none());
     }
 }
 

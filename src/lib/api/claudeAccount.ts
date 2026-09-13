@@ -22,8 +22,8 @@ export const claudeAccountApi = {
     await invoke("clear_claude_account", { providerId });
   },
   async getIdentity(providerId: string): Promise<CapturedIdentity | null> {
-    return (await invoke("get_captured_claude_identity", { providerId })) as
-      | CapturedIdentity
-      | null;
+    return (await invoke("get_captured_claude_identity", {
+      providerId,
+    })) as CapturedIdentity | null;
   },
 };

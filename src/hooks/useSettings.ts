@@ -25,17 +25,21 @@ export interface UseSettingsResult {
   isPortable: boolean;
   appConfigDir?: string;
   claudeMirrorDir?: string;
+  codexMirrorDir?: string;
   resolvedDirs: ResolvedDirectories;
   requiresRestart: boolean;
   updateSettings: (updates: Partial<SettingsFormState>) => void;
   updateDirectory: (app: AppId, value?: string) => void;
   updateClaudeMirrorDir: (value?: string) => void;
+  updateCodexMirrorDir: (value?: string) => void;
   updateAppConfigDir: (value?: string) => void;
   browseDirectory: (app: AppId) => Promise<void>;
   browseClaudeMirrorDir: () => Promise<void>;
+  browseCodexMirrorDir: () => Promise<void>;
   browseAppConfigDir: () => Promise<void>;
   resetDirectory: (app: AppId) => Promise<void>;
   resetClaudeMirrorDir: () => Promise<void>;
+  resetCodexMirrorDir: () => Promise<void>;
   resetAppConfigDir: () => Promise<void>;
   saveSettings: (
     overrides?: Partial<SettingsFormState>,
@@ -82,17 +86,21 @@ export function useSettings(): UseSettingsResult {
   const {
     appConfigDir,
     claudeMirrorDir,
+    codexMirrorDir,
     resolvedDirs,
     isLoading: isDirectoryLoading,
     initialAppConfigDir,
     updateDirectory,
     updateClaudeMirrorDir,
+    updateCodexMirrorDir,
     updateAppConfigDir,
     browseDirectory,
     browseClaudeMirrorDir,
+    browseCodexMirrorDir,
     browseAppConfigDir,
     resetDirectory,
     resetClaudeMirrorDir,
+    resetCodexMirrorDir,
     resetAppConfigDir,
     resetAllDirectories,
   } = useDirectorySettings({
@@ -119,6 +127,8 @@ export function useSettings(): UseSettingsResult {
       sanitizeDir(data?.codexConfigDir),
       sanitizeDir(data?.geminiConfigDir),
       sanitizeDir(data?.opencodeConfigDir),
+      sanitizeDir(data?.codexMirrorConfigDir),
+      sanitizeDir(data?.kimiConfigDir),
     );
     setRequiresRestart(false);
   }, [
@@ -143,7 +153,11 @@ export function useSettings(): UseSettingsResult {
           mergedSettings.claudeMirrorConfigDir,
         );
         const sanitizedCodexDir = sanitizeDir(mergedSettings.codexConfigDir);
+        const sanitizedCodexMirrorDir = sanitizeDir(
+          mergedSettings.codexMirrorConfigDir,
+        );
         const sanitizedGeminiDir = sanitizeDir(mergedSettings.geminiConfigDir);
+        const sanitizedKimiDir = sanitizeDir(mergedSettings.kimiConfigDir);
         const sanitizedOpencodeDir = sanitizeDir(
           mergedSettings.opencodeConfigDir,
         );
@@ -155,7 +169,9 @@ export function useSettings(): UseSettingsResult {
           claudeConfigDir: sanitizedClaudeDir,
           claudeMirrorConfigDir: sanitizedClaudeMirrorDir,
           codexConfigDir: sanitizedCodexDir,
+          codexMirrorConfigDir: sanitizedCodexMirrorDir,
           geminiConfigDir: sanitizedGeminiDir,
+          kimiConfigDir: sanitizedKimiDir,
           opencodeConfigDir: sanitizedOpencodeDir,
           language: mergedSettings.language,
         };
@@ -260,15 +276,23 @@ export function useSettings(): UseSettingsResult {
           mergedSettings.claudeMirrorConfigDir,
         );
         const sanitizedCodexDir = sanitizeDir(mergedSettings.codexConfigDir);
+        const sanitizedCodexMirrorDir = sanitizeDir(
+          mergedSettings.codexMirrorConfigDir,
+        );
         const sanitizedGeminiDir = sanitizeDir(mergedSettings.geminiConfigDir);
+        const sanitizedKimiDir = sanitizeDir(mergedSettings.kimiConfigDir);
         const sanitizedOpencodeDir = sanitizeDir(
           mergedSettings.opencodeConfigDir,
         );
         const previousAppDir = initialAppConfigDir;
         const previousClaudeDir = sanitizeDir(data?.claudeConfigDir);
-        const previousClaudeMirrorDir = sanitizeDir(data?.claudeMirrorConfigDir);
+        const previousClaudeMirrorDir = sanitizeDir(
+          data?.claudeMirrorConfigDir,
+        );
         const previousCodexDir = sanitizeDir(data?.codexConfigDir);
+        const previousCodexMirrorDir = sanitizeDir(data?.codexMirrorConfigDir);
         const previousGeminiDir = sanitizeDir(data?.geminiConfigDir);
+        const previousKimiDir = sanitizeDir(data?.kimiConfigDir);
         const previousOpencodeDir = sanitizeDir(data?.opencodeConfigDir);
         const { webdavSync: _ignoredWebdavSync, ...restSettings } =
           mergedSettings;
@@ -278,7 +302,9 @@ export function useSettings(): UseSettingsResult {
           claudeConfigDir: sanitizedClaudeDir,
           claudeMirrorConfigDir: sanitizedClaudeMirrorDir,
           codexConfigDir: sanitizedCodexDir,
+          codexMirrorConfigDir: sanitizedCodexMirrorDir,
           geminiConfigDir: sanitizedGeminiDir,
+          kimiConfigDir: sanitizedKimiDir,
           opencodeConfigDir: sanitizedOpencodeDir,
           language: mergedSettings.language,
         };
@@ -381,13 +407,18 @@ export function useSettings(): UseSettingsResult {
         const claudeMirrorDirChanged =
           sanitizedClaudeMirrorDir !== previousClaudeMirrorDir;
         const codexDirChanged = sanitizedCodexDir !== previousCodexDir;
+        const codexMirrorDirChanged =
+          sanitizedCodexMirrorDir !== previousCodexMirrorDir;
         const geminiDirChanged = sanitizedGeminiDir !== previousGeminiDir;
+        const kimiDirChanged = sanitizedKimiDir !== previousKimiDir;
         const opencodeDirChanged = sanitizedOpencodeDir !== previousOpencodeDir;
         if (
           claudeDirChanged ||
           claudeMirrorDirChanged ||
           codexDirChanged ||
+          codexMirrorDirChanged ||
           geminiDirChanged ||
+          kimiDirChanged ||
           opencodeDirChanged
         ) {
           const syncResult = await syncCurrentProvidersLiveSafe();
@@ -446,17 +477,21 @@ export function useSettings(): UseSettingsResult {
     isPortable,
     appConfigDir,
     claudeMirrorDir,
+    codexMirrorDir,
     resolvedDirs,
     requiresRestart,
     updateSettings,
     updateDirectory,
     updateClaudeMirrorDir,
+    updateCodexMirrorDir,
     updateAppConfigDir,
     browseDirectory,
     browseClaudeMirrorDir,
+    browseCodexMirrorDir,
     browseAppConfigDir,
     resetDirectory,
     resetClaudeMirrorDir,
+    resetCodexMirrorDir,
     resetAppConfigDir,
     saveSettings,
     autoSaveSettings,

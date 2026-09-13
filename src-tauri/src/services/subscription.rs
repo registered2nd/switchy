@@ -60,7 +60,7 @@ pub struct SubscriptionQuota {
 }
 
 impl SubscriptionQuota {
-    fn not_found(tool: &str) -> Self {
+    pub(crate) fn not_found(tool: &str) -> Self {
         Self {
             tool: tool.to_string(),
             credential_status: CredentialStatus::NotFound,
@@ -511,8 +511,14 @@ fn parse_codex_credentials_json(content: &str) -> CodexCredentials {
         }
     };
 
-    // 仅 OAuth 模式有用量数据
-    if auth.auth_mode.as_deref() != Some("chatgpt") {
+    // 仅 OAuth 模式有用量数据。新版 Codex 不再写 `auth_mode`，此时以是否
+    // 存在 `tokens` 判断；仅当显式声明为其他模式时才拒绝。
+    let oauth_mode = match auth.auth_mode.as_deref() {
+        Some("chatgpt") => true,
+        Some(_) => false,
+        None => auth.tokens.is_some(),
+    };
+    if !oauth_mode {
         return (
             None,
             None,
@@ -595,9 +601,120 @@ struct CodexRateLimit {
     secondary_window: Option<CodexRateLimitWindow>,
 }
 
+/// A model-specific limit (e.g. `GPT-5.3-Codex-Spark`) with its own windows.
+#[derive(Deserialize)]
+struct CodexAdditionalRateLimit {
+    limit_name: Option<String>,
+    rate_limit: Option<CodexRateLimit>,
+}
+
 #[derive(Deserialize)]
 struct CodexUsageResponse {
     rate_limit: Option<CodexRateLimit>,
+    additional_rate_limits: Option<Vec<CodexAdditionalRateLimit>>,
+}
+
+/// Badge label for a model-specific limit: the last hyphenated token of the
+/// limit name (`GPT-5.3-Codex-Spark` → `Spark`), so the lane reads like
+/// Claude's per-model lane rather than repeating the family name.
+fn codex_limit_short_name(limit_name: &str) -> String {
+    limit_name
+        .rsplit('-')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or(limit_name)
+        .to_string()
+}
+
+fn window_short_label(secs: i64) -> String {
+    match secs {
+        18000 => "5h".to_string(),
+        604800 => "7d".to_string(),
+        s if s >= 86400 => format!("{}d", s / 86400),
+        s => format!("{}h", s / 3600),
+    }
+}
+
+/// Tiers for one rate limit's windows. `lane` prefixes the tier name for a
+/// model-specific limit; the account-wide limit uses the shared tier names.
+fn codex_rate_limit_tiers(rate_limit: CodexRateLimit, lane: Option<&str>) -> Vec<QuotaTier> {
+    let mut tiers = Vec::new();
+    for window in [rate_limit.primary_window, rate_limit.secondary_window]
+        .into_iter()
+        .flatten()
+    {
+        let Some(used) = window.used_percent else {
+            continue;
+        };
+        let name = match (lane, window.limit_window_seconds) {
+            (Some(lane), Some(secs)) => format!("{lane} {}", window_short_label(secs)),
+            (Some(lane), None) => lane.to_string(),
+            (None, Some(secs)) => window_seconds_to_tier_name(secs),
+            (None, None) => "unknown".to_string(),
+        };
+        tiers.push(QuotaTier {
+            name,
+            utilization: used,
+            resets_at: window.reset_at.and_then(unix_ts_to_iso),
+        });
+    }
+    tiers
+}
+
+#[cfg(test)]
+mod codex_tier_tests {
+    use super::*;
+
+    fn window(secs: i64, used: f64) -> CodexRateLimitWindow {
+        CodexRateLimitWindow {
+            used_percent: Some(used),
+            limit_window_seconds: Some(secs),
+            reset_at: Some(1_789_809_936),
+        }
+    }
+
+    #[test]
+    fn account_limit_uses_shared_tier_names() {
+        let tiers = codex_rate_limit_tiers(
+            CodexRateLimit {
+                primary_window: Some(window(604_800, 12.0)),
+                secondary_window: None,
+            },
+            None,
+        );
+        assert_eq!(tiers.len(), 1);
+        assert_eq!(tiers[0].name, "seven_day");
+        assert!(tiers[0].resets_at.is_some());
+    }
+
+    #[test]
+    fn model_limit_becomes_a_named_lane_per_window() {
+        let tiers = codex_rate_limit_tiers(
+            CodexRateLimit {
+                primary_window: Some(window(18_000, 0.0)),
+                secondary_window: Some(window(604_800, 3.0)),
+            },
+            Some(&codex_limit_short_name("GPT-5.3-Codex-Spark")),
+        );
+        let names: Vec<_> = tiers.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, vec!["Spark 5h", "Spark 7d"]);
+    }
+
+    #[test]
+    fn empty_windows_are_skipped() {
+        let tiers = codex_rate_limit_tiers(
+            CodexRateLimit {
+                primary_window: Some(window(604_800, 9.0)),
+                secondary_window: Some(CodexRateLimitWindow {
+                    used_percent: None,
+                    limit_window_seconds: None,
+                    reset_at: None,
+                }),
+            },
+            None,
+        );
+        assert_eq!(tiers.len(), 1);
+    }
 }
 
 /// 根据窗口秒数映射到 tier 名称（与 Claude 的命名兼容以复用前端 i18n）
@@ -679,21 +796,20 @@ async fn query_codex_quota(access_token: &str, account_id: Option<&str>) -> Subs
     let mut tiers = Vec::new();
 
     if let Some(rate_limit) = body.rate_limit {
-        for window in [rate_limit.primary_window, rate_limit.secondary_window]
-            .into_iter()
-            .flatten()
-        {
-            if let Some(used) = window.used_percent {
-                tiers.push(QuotaTier {
-                    name: window
-                        .limit_window_seconds
-                        .map(window_seconds_to_tier_name)
-                        .unwrap_or_else(|| "unknown".to_string()),
-                    utilization: used,
-                    resets_at: window.reset_at.and_then(unix_ts_to_iso),
-                });
-            }
-        }
+        tiers.extend(codex_rate_limit_tiers(rate_limit, None));
+    }
+    // Model-specific limits carry their own 5h/7d windows — for some accounts
+    // the only 5-hour window there is. Shown as extra lanes, like Claude's.
+    for extra in body.additional_rate_limits.into_iter().flatten() {
+        let Some(rate_limit) = extra.rate_limit else {
+            continue;
+        };
+        let lane = extra
+            .limit_name
+            .as_deref()
+            .map(codex_limit_short_name)
+            .unwrap_or_else(|| "model".to_string());
+        tiers.extend(codex_rate_limit_tiers(rate_limit, Some(&lane)));
     }
 
     SubscriptionQuota {
@@ -1208,36 +1324,7 @@ pub async fn get_subscription_quota(tool: &str) -> Result<SubscriptionQuota, Str
                 }
             }
         }
-        "codex" => {
-            let (token, account_id, status, message) = read_codex_credentials();
-
-            match status {
-                CredentialStatus::NotFound => Ok(SubscriptionQuota::not_found("codex")),
-                CredentialStatus::ParseError => Ok(SubscriptionQuota::error(
-                    "codex",
-                    CredentialStatus::ParseError,
-                    message.unwrap_or_else(|| "Failed to parse credentials".to_string()),
-                )),
-                CredentialStatus::Expired => {
-                    // 即使可能过期也尝试调用 API
-                    if let Some(token) = token {
-                        let result = query_codex_quota(&token, account_id.as_deref()).await;
-                        if result.success {
-                            return Ok(result);
-                        }
-                    }
-                    Ok(SubscriptionQuota::error(
-                        "codex",
-                        CredentialStatus::Expired,
-                        message.unwrap_or_else(|| "Codex OAuth token may be stale".to_string()),
-                    ))
-                }
-                CredentialStatus::Valid => {
-                    let token = token.expect("token must be Some when status is Valid");
-                    Ok(query_codex_quota(&token, account_id.as_deref()).await)
-                }
-            }
-        }
+        "codex" => Ok(codex_quota_from_credentials(read_codex_credentials()).await),
         "gemini" => {
             let (token, refresh_token, status, message) = read_gemini_credentials();
 
@@ -1278,6 +1365,65 @@ pub async fn get_subscription_quota(tool: &str) -> Result<SubscriptionQuota, Str
     }
 }
 
+/// Turns parsed Codex credentials into a quota reading, shared by the live
+/// `~/.codex/auth.json` path and the per-provider stored-`auth` path.
+async fn codex_quota_from_credentials(creds: CodexCredentials) -> SubscriptionQuota {
+    let (token, account_id, status, message) = creds;
+    match status {
+        CredentialStatus::NotFound => SubscriptionQuota::not_found("codex"),
+        CredentialStatus::ParseError => SubscriptionQuota::error(
+            "codex",
+            CredentialStatus::ParseError,
+            message.unwrap_or_else(|| "Failed to parse credentials".to_string()),
+        ),
+        CredentialStatus::Expired => {
+            // 即使可能过期也尝试调用 API
+            if let Some(token) = token {
+                let result = query_codex_quota(&token, account_id.as_deref()).await;
+                if result.success {
+                    return result;
+                }
+            }
+            SubscriptionQuota::error(
+                "codex",
+                CredentialStatus::Expired,
+                message.unwrap_or_else(|| "Codex OAuth token may be stale".to_string()),
+            )
+        }
+        CredentialStatus::Valid => {
+            let token = token.expect("token must be Some when status is Valid");
+            query_codex_quota(&token, account_id.as_deref()).await
+        }
+    }
+}
+
+/// Codex subscription quota for a specific provider's stored login.
+///
+/// A Codex provider carries its whole `auth.json` as `settings_config.auth`,
+/// so a non-current Official Codex card can be read from that instead of the
+/// live file — which belongs to whichever provider is current and would
+/// otherwise show the same number on every card.
+pub async fn get_codex_quota_for_provider(
+    state: &crate::store::AppState,
+    provider_id: &str,
+) -> Result<SubscriptionQuota, String> {
+    let provider = state
+        .db
+        .get_provider_by_id(provider_id, "codex")
+        .map_err(|e| e.to_string())?;
+    let Some(provider) = provider else {
+        return Ok(SubscriptionQuota::not_found("codex"));
+    };
+    let Some(auth) = provider.settings_config.get("auth") else {
+        return Ok(SubscriptionQuota::not_found("codex"));
+    };
+    if auth.get("tokens").is_none() {
+        return Ok(SubscriptionQuota::not_found("codex"));
+    }
+    let content = serde_json::to_string(auth).map_err(|e| e.to_string())?;
+    Ok(codex_quota_from_credentials(parse_codex_credentials_json(&content)).await)
+}
+
 /// Claude subscription quota for a specific provider's captured snapshot.
 ///
 /// Reads `~/.switchy/accounts/{provider_id}/credentials.json` (the snapshot
@@ -1286,9 +1432,7 @@ pub async fn get_subscription_quota(tool: &str) -> Result<SubscriptionQuota, Str
 /// per-account counterpart to `get_subscription_quota("claude")`, which
 /// always reads live `~/.claude/.credentials.json` and therefore shows the
 /// same number on every Official card.
-pub async fn get_claude_quota_for_provider(
-    provider_id: &str,
-) -> Result<SubscriptionQuota, String> {
+pub async fn get_claude_quota_for_provider(provider_id: &str) -> Result<SubscriptionQuota, String> {
     let cred_path = crate::services::claude_account::paths::snapshot_credentials_path(provider_id);
 
     if !cred_path.exists() {

@@ -26,6 +26,5 @@ pub fn get_captured_claude_identity(
     state: State<'_, AppState>,
     #[allow(non_snake_case)] providerId: String,
 ) -> Result<Option<CapturedIdentity>, String> {
-    claude_account::read_captured_identity(state.inner(), &providerId)
-        .map_err(|e| e.to_string())
+    claude_account::read_captured_identity(state.inner(), &providerId).map_err(|e| e.to_string())
 }

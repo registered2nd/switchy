@@ -59,6 +59,7 @@ type ProviderFilter =
   | "all"
   | "codex"
   | "claude"
+  | "kimi"
   | "opencode"
   | "openclaw"
   | "gemini";
@@ -621,6 +622,16 @@ export function SessionManagerPage({ appId }: { appId: string }) {
                                   size={14}
                                 />
                                 <span>Claude Code</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="kimi">
+                              <div className="flex items-center gap-2">
+                                <ProviderIcon
+                                  icon="kimi"
+                                  name="kimi"
+                                  size={14}
+                                />
+                                <span>Kimi Code</span>
                               </div>
                             </SelectItem>
                             <SelectItem value="opencode">

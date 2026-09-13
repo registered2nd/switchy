@@ -102,6 +102,7 @@ const VALID_APPS: AppId[] = [
   "claude",
   "codex",
   "gemini",
+  "kimi",
   "opencode",
   "openclaw",
 ];
@@ -157,24 +158,28 @@ function App() {
     claude: true,
     codex: true,
     gemini: true,
+    kimi: true,
     opencode: true,
-    openclaw: true,
+    openclaw: false,
   };
 
   const getFirstVisibleApp = (): AppId => {
     if (visibleApps.claude) return "claude";
     if (visibleApps.codex) return "codex";
     if (visibleApps.gemini) return "gemini";
+    if (visibleApps.kimi) return "kimi";
     if (visibleApps.opencode) return "opencode";
     if (visibleApps.openclaw) return "openclaw";
     return "claude"; // fallback
   };
 
   useEffect(() => {
-    if (!visibleApps[activeApp]) {
+    // Only enforce visibility once settings have loaded; before that the
+    // fallback would bounce a hidden-by-default tab the user just opened.
+    if (settingsData && !visibleApps[activeApp]) {
       setActiveApp(getFirstVisibleApp());
     }
-  }, [visibleApps, activeApp]);
+  }, [settingsData, visibleApps, activeApp]);
 
   // Fallback from sessions view when switching to an app without session support
   useEffect(() => {
@@ -182,6 +187,7 @@ function App() {
       currentView === "sessions" &&
       activeApp !== "claude" &&
       activeApp !== "codex" &&
+      activeApp !== "kimi" &&
       activeApp !== "opencode" &&
       activeApp !== "openclaw" &&
       activeApp !== "gemini"
@@ -244,6 +250,7 @@ function App() {
   const hasSessionSupport =
     activeApp === "claude" ||
     activeApp === "codex" ||
+    activeApp === "kimi" ||
     activeApp === "opencode" ||
     activeApp === "openclaw" ||
     activeApp === "gemini";

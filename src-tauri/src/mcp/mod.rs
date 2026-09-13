@@ -13,6 +13,7 @@
 mod claude;
 mod codex;
 mod gemini;
+mod kimi;
 mod opencode;
 mod validation;
 
@@ -28,6 +29,7 @@ pub use gemini::{
     import_from_gemini, remove_server_from_gemini, sync_enabled_to_gemini,
     sync_single_server_to_gemini,
 };
+pub use kimi::{import_from_kimi, remove_server_from_kimi, sync_single_server_to_kimi};
 pub use opencode::{
     import_from_opencode, remove_server_from_opencode, sync_single_server_to_opencode,
 };

@@ -19,9 +19,9 @@ pub fn parse_deeplink_url(url_str: &str) -> Result<DeepLinkImportRequest, AppErr
 
     // Validate scheme
     let scheme = url.scheme();
-    if scheme != "switchy" && scheme != "switchy" {
+    if scheme != "switchy" {
         return Err(AppError::InvalidInput(format!(
-            "Invalid scheme: expected 'switchy' or legacy 'switchy', got '{scheme}'"
+            "Invalid scheme: expected 'switchy', got '{scheme}'"
         )));
     }
 

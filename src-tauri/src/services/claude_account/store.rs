@@ -33,10 +33,7 @@ pub fn write_snapshot_atomic(path: &Path, bytes: &[u8]) -> Result<(), AppError> 
 pub fn read_snapshot(path: &Path) -> Result<Value, AppError> {
     let bytes = fs::read(path).map_err(|e| AppError::io(path, e))?;
     serde_json::from_slice(&bytes).map_err(|_e| {
-        AppError::Message(format!(
-            "Captured snapshot is corrupt: {}",
-            path.display()
-        ))
+        AppError::Message(format!("Captured snapshot is corrupt: {}", path.display()))
     })
 }
 
@@ -103,7 +100,6 @@ mod tests {
     #[test]
     #[serial]
     fn write_then_read_round_trips_json() {
-        
         let home = ScopedHome::new();
         let path = home._dir.path().join("snap.json");
         let payload = json!({ "accountUuid": "u", "emailAddress": "a@b" });
@@ -115,7 +111,6 @@ mod tests {
     #[test]
     #[serial]
     fn read_snapshot_reports_corrupt_json() {
-        
         let home = ScopedHome::new();
         let path = home._dir.path().join("corrupt.json");
         write_snapshot_atomic(&path, b"not json").unwrap();
@@ -125,13 +120,15 @@ mod tests {
             msg.contains("corrupt"),
             "expected 'corrupt' in error, got: {msg}"
         );
-        assert!(msg.contains("corrupt.json"), "expected path in error, got: {msg}");
+        assert!(
+            msg.contains("corrupt.json"),
+            "expected path in error, got: {msg}"
+        );
     }
 
     #[test]
     #[serial]
     fn delete_snapshot_dir_is_idempotent_when_missing() {
-        
         let _home = ScopedHome::new();
         delete_snapshot_dir("never-existed").unwrap();
         delete_snapshot_dir("never-existed").unwrap();

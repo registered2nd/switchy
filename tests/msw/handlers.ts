@@ -237,6 +237,10 @@ export const handlers = [
     success(null),
   ),
 
+  http.post(`${TAURI_ENDPOINT}/get_default_codex_mirror_dir`, () =>
+    success(null),
+  ),
+
   http.post(
     `${TAURI_ENDPOINT}/apply_claude_plugin_config`,
     async ({ request }) => {

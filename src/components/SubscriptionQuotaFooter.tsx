@@ -11,10 +11,10 @@ import type { QuotaTier } from "@/types/subscription";
 interface SubscriptionQuotaFooterProps {
   appId: AppId;
   /**
-   * When supplied (Official Claude cards with a captured account), reads the
-   * per-provider snapshot under `~/.switchy/accounts/{providerId}/` instead
-   * of live `~/.claude/` credentials. This makes each captured card show its
-   * own account's quota. See BACKLOG #5.
+   * When supplied, reads that provider's own login instead of the live
+   * credentials — the captured snapshot under `~/.switchy/accounts/{id}/`
+   * for Claude, the stored `auth` for Codex — so each Official card shows its
+   * own account's quota rather than the current one's.
    */
   providerId?: string;
   inline?: boolean;
@@ -94,6 +94,7 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
   const { t } = useTranslation();
   const liveQuery = useSubscriptionQuota(appId, !providerId);
   const providerQuery = useSubscriptionQuotaForProvider(
+    appId,
     providerId ?? "",
     !!providerId,
   );

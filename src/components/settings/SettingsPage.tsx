@@ -73,15 +73,19 @@ export function SettingsPage({
     appConfigDir,
     resolvedDirs,
     claudeMirrorDir,
+    codexMirrorDir,
     updateSettings,
     updateDirectory,
     updateClaudeMirrorDir,
+    updateCodexMirrorDir,
     updateAppConfigDir,
     browseDirectory,
     browseClaudeMirrorDir,
+    browseCodexMirrorDir,
     browseAppConfigDir,
     resetDirectory,
     resetClaudeMirrorDir,
+    resetCodexMirrorDir,
     resetAppConfigDir,
     saveSettings,
     autoSaveSettings,
@@ -328,14 +332,19 @@ export function SettingsPage({
                             claudeDir={settings.claudeConfigDir}
                             claudeMirrorDir={claudeMirrorDir}
                             codexDir={settings.codexConfigDir}
+                            codexMirrorDir={codexMirrorDir}
                             geminiDir={settings.geminiConfigDir}
+                            kimiDir={settings.kimiConfigDir}
                             opencodeDir={settings.opencodeConfigDir}
                             onDirectoryChange={updateDirectory}
                             onClaudeMirrorDirChange={updateClaudeMirrorDir}
+                            onCodexMirrorDirChange={updateCodexMirrorDir}
                             onBrowseDirectory={browseDirectory}
                             onBrowseClaudeMirrorDir={browseClaudeMirrorDir}
+                            onBrowseCodexMirrorDir={browseCodexMirrorDir}
                             onResetDirectory={resetDirectory}
                             onResetClaudeMirrorDir={resetClaudeMirrorDir}
+                            onResetCodexMirrorDir={resetCodexMirrorDir}
                           />
                         </AccordionContent>
                       </AccordionItem>

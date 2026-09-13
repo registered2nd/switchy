@@ -9,6 +9,11 @@ export const CODEX_DEFAULT_CONFIG = JSON.stringify(
   null,
   2,
 );
+export const KIMI_DEFAULT_CONFIG = JSON.stringify(
+  { config: "", credentials: null },
+  null,
+  2,
+);
 export const GEMINI_DEFAULT_CONFIG = JSON.stringify(
   {
     env: {

@@ -525,13 +525,18 @@
     "claudeMirrorConfigDirDescription": "可选的第二个 Claude 配置目录，会与主目录保持同步，例如 WSL 的 ~/.claude 路径。",
     "codexConfigDir": "Codex 配置目录",
     "codexConfigDirDescription": "覆盖 Codex 配置目录。",
+    "codexMirrorConfigDir": "Codex 镜像配置目录",
+    "codexMirrorConfigDirDescription": "可选的第二个 Codex 配置目录，会与主目录保持同步，例如 WSL 的 ~/.codex 路径。每次切换都会同步 ChatGPT 登录与供应商配置。",
     "geminiConfigDir": "Gemini 配置目录",
     "geminiConfigDirDescription": "覆盖 Gemini 配置目录 (.env)。",
+    "kimiConfigDir": "Kimi Code 配置目录",
+    "kimiConfigDirDescription": "覆盖 Kimi Code 配置目录（config.toml、credentials/）。",
     "opencodeConfigDir": "OpenCode 配置目录",
     "opencodeConfigDirDescription": "覆盖 OpenCode 配置目录 (opencode.json)。",
     "browsePlaceholderClaude": "例如：/home/<你的用户名>/.claude",
     "browsePlaceholderCodex": "例如：/home/<你的用户名>/.codex",
     "browsePlaceholderGemini": "例如：/home/<你的用户名>/.gemini",
+    "browsePlaceholderKimi": "例如：/home/<你的用户名>/.kimi-code",
     "browsePlaceholderOpencode": "例如：/home/<你的用户名>/.config/opencode",
     "browseDirectory": "浏览目录",
     "resetDefault": "恢复默认目录（需保存后生效）",
@@ -615,6 +620,7 @@
     "claude": "Claude",
     "codex": "Codex",
     "gemini": "Gemini",
+    "kimi": "Kimi",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw"
   },
@@ -814,7 +820,11 @@
     "fetchModelsAuthFailed": "API Key 无效或无权限",
     "fetchModelsNotSupported": "该供应商不支持获取模型列表",
     "fetchModelsTimeout": "请求超时，请检查网络连接",
-    "providerKeyStatusLoading": "正在加载供应商标识状态，请稍后再试"
+    "providerKeyStatusLoading": "正在加载供应商标识状态，请稍后再试",
+    "kimiOfficialNoApiKey": "官方供应商使用 kimi login 登录，无需 API Key",
+    "kimiApiKeyAutoFill": "输入 API Key，将自动填充到 config.toml",
+    "kimiApiEndpointPlaceholder": "例如: https://api.example.com/v1",
+    "kimiApiHint": "写入 config.toml 中当前供应商的 base_url"
   },
   "copilot": {
     "authSection": "GitHub Copilot 认证",
@@ -920,6 +930,26 @@
     "contextWindow1M": "1M 上下文窗口",
     "autoCompactLimit": "压缩阈值",
     "autoCompactLimitHint": "上下文 token 数达到此阈值时自动压缩历史",
+    "noCommonConfigToApply": "通用配置片段为空或没有可写入的内容"
+  },
+  "kimiConfig": {
+    "credentialsJson": "凭据 (kimi-code.json)",
+    "credentialsJsonPlaceholder": "null",
+    "credentialsJsonHint": "kimi login 写入的 OAuth 凭据；null 表示尚未登录或走 API Key",
+    "configToml": "config.toml (TOML)",
+    "configTomlHint": "Kimi Code config.toml 内容：default_model、[providers.*]、[models.*]",
+    "writeCommonConfig": "写入通用配置",
+    "editCommonConfig": "编辑通用配置",
+    "editCommonConfigTitle": "编辑 Kimi 通用配置片段",
+    "commonConfigHint": "勾选“写入通用配置”后，此片段会合并进 config.toml（例如 [thinking]、default_permission_mode）",
+    "apiUrlLabel": "API 请求地址",
+    "extractFromCurrent": "从编辑内容提取",
+    "extractNoCommonConfig": "编辑内容中没有可提取的通用配置",
+    "extractFailed": "提取失败：{{error}}",
+    "saveFailed": "保存失败：{{error}}",
+    "modelName": "模型名称",
+    "modelNamePlaceholder": "例如: gpt-4o",
+    "modelNameHint": "写入 config.toml 的 default_model 与模型别名",
     "noCommonConfigToApply": "通用配置片段为空或没有可写入的内容"
   },
   "geminiConfig": {
@@ -1201,6 +1231,7 @@
         "claude": "Claude",
         "codex": "Codex",
         "gemini": "Gemini",
+        "kimi": "Kimi",
         "opencode": "OpenCode",
         "openclaw": "OpenClaw"
       }
@@ -1685,6 +1716,7 @@
       "claude": "Claude",
       "codex": "Codex",
       "gemini": "Gemini",
+      "kimi": "Kimi",
       "opencode": "OpenCode",
       "openclaw": "OpenClaw"
     },
@@ -2338,6 +2370,12 @@
         "locked": "部分应用：{{path}} 被占用。请关闭 Claude Code 后重新切换。",
         "mirror_skipped": "WSL 镜像跳过 —— {{reason}}"
       }
+    }
+  },
+  "codexAccount": {
+    "warning": {
+      "account_mismatch": "当前 Codex 登录的账号与“{{id}}”保存的账号不同，“{{id}}”保留了原有登录。",
+      "rehomed": "该登录已保存到持有此账号的供应商“{{id}}”。"
     }
   }
 }

@@ -64,8 +64,8 @@ pub fn scan_broken_sessions() -> Vec<BrokenSessionInfo> {
 }
 
 pub fn repair_session(path: &Path) -> Result<RepairResult, String> {
-    let content = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
 
     let backup_path = backup_path_for(path);
     fs::copy(path, &backup_path).map_err(|e| {
@@ -256,10 +256,7 @@ fn inspect_session(path: &Path) -> Option<BrokenSessionInfo> {
             Err(_) => continue,
         };
         if session_id.is_none() {
-            session_id = v
-                .get("sessionId")
-                .and_then(Value::as_str)
-                .map(String::from);
+            session_id = v.get("sessionId").and_then(Value::as_str).map(String::from);
         }
         if project_dir.is_none() {
             project_dir = v.get("cwd").and_then(Value::as_str).map(String::from);
@@ -293,11 +290,8 @@ fn inspect_session(path: &Path) -> Option<BrokenSessionInfo> {
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
 
-    let session_id = session_id.or_else(|| {
-        path.file_stem()
-            .and_then(|s| s.to_str())
-            .map(String::from)
-    })?;
+    let session_id =
+        session_id.or_else(|| path.file_stem().and_then(|s| s.to_str()).map(String::from))?;
 
     Some(BrokenSessionInfo {
         session_id,
@@ -394,7 +388,9 @@ mod tests {
         let path = tmp.path().join("s.jsonl");
         write_session(
             &path,
-            &[r#"{"uuid":"u1","message":{"role":"assistant","content":[{"type":"thinking","thinking":"x","signature":""},{"type":"text","text":"kept"}]}}"#],
+            &[
+                r#"{"uuid":"u1","message":{"role":"assistant","content":[{"type":"thinking","thinking":"x","signature":""},{"type":"text","text":"kept"}]}}"#,
+            ],
         );
 
         let result = repair_session(&path).expect("repair");
@@ -456,9 +452,6 @@ mod tests {
     fn scan_skips_backup_files() {
         // Smoke: backup_path_for produces the right name
         let p = Path::new("/foo/abc-123.jsonl");
-        assert_eq!(
-            backup_path_for(p),
-            PathBuf::from("/foo/abc-123.bak.jsonl")
-        );
+        assert_eq!(backup_path_for(p), PathBuf::from("/foo/abc-123.bak.jsonl"));
     }
 }

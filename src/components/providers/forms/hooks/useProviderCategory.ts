@@ -5,6 +5,7 @@ import { providerPresets } from "@/config/claudeProviderPresets";
 import { codexProviderPresets } from "@/config/codexProviderPresets";
 import { geminiProviderPresets } from "@/config/geminiProviderPresets";
 import { opencodeProviderPresets } from "@/config/opencodeProviderPresets";
+import { kimiProviderPresets } from "@/config/kimiProviderPresets";
 
 interface UseProviderCategoryProps {
   appId: AppId;
@@ -44,7 +45,7 @@ export function useProviderCategory({
 
     // 从预设 ID 提取索引
     const match = selectedPresetId.match(
-      /^(claude|codex|gemini|opencode)-(\d+)$/,
+      /^(claude|codex|gemini|kimi|opencode)-(\d+)$/,
     );
     if (!match) return;
 
@@ -74,6 +75,13 @@ export function useProviderCategory({
       const preset = opencodeProviderPresets[index];
       if (preset) {
         setCategory(preset.category || undefined);
+      }
+    } else if (type === "kimi" && appId === "kimi") {
+      const preset = kimiProviderPresets[index];
+      if (preset) {
+        setCategory(
+          preset.category || (preset.isOfficial ? "official" : undefined),
+        );
       }
     }
   }, [appId, selectedPresetId, isEditMode, initialCategory]);

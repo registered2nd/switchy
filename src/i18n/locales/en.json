@@ -525,13 +525,18 @@
     "claudeMirrorConfigDirDescription": "Optional second Claude configuration directory to keep in sync, such as a WSL ~/.claude path.",
     "codexConfigDir": "Codex Configuration Directory",
     "codexConfigDirDescription": "Override Codex configuration directory.",
+    "codexMirrorConfigDir": "Codex Mirror Directory",
+    "codexMirrorConfigDirDescription": "Optional second Codex configuration directory to keep in sync, such as a WSL ~/.codex path. The ChatGPT login and provider config follow every switch.",
     "geminiConfigDir": "Gemini Configuration Directory",
     "geminiConfigDirDescription": "Override Gemini configuration directory (.env).",
+    "kimiConfigDir": "Kimi Code Configuration Directory",
+    "kimiConfigDirDescription": "Override Kimi Code configuration directory (config.toml, credentials/).",
     "opencodeConfigDir": "OpenCode Configuration Directory",
     "opencodeConfigDirDescription": "Override OpenCode configuration directory (opencode.json).",
     "browsePlaceholderClaude": "e.g., /home/<your-username>/.claude",
     "browsePlaceholderCodex": "e.g., /home/<your-username>/.codex",
     "browsePlaceholderGemini": "e.g., /home/<your-username>/.gemini",
+    "browsePlaceholderKimi": "e.g., /home/<your-username>/.kimi-code",
     "browsePlaceholderOpencode": "e.g., /home/<your-username>/.config/opencode",
     "browseDirectory": "Browse Directory",
     "resetDefault": "Reset to default directory (takes effect after saving)",
@@ -615,6 +620,7 @@
     "claude": "Claude",
     "codex": "Codex",
     "gemini": "Gemini",
+    "kimi": "Kimi",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw"
   },
@@ -814,7 +820,11 @@
     "fetchModelsAuthFailed": "API Key is invalid or lacks permission",
     "fetchModelsNotSupported": "This provider does not support fetching model list",
     "fetchModelsTimeout": "Request timed out, please check network connection",
-    "providerKeyStatusLoading": "Loading provider identity status, please wait."
+    "providerKeyStatusLoading": "Loading provider identity status, please wait.",
+    "kimiOfficialNoApiKey": "Official provider signs in with `kimi login`; no API Key needed",
+    "kimiApiKeyAutoFill": "Enter API Key; it is written into config.toml",
+    "kimiApiEndpointPlaceholder": "e.g., https://api.example.com/v1",
+    "kimiApiHint": "Written as base_url of the active provider in config.toml"
   },
   "copilot": {
     "authSection": "GitHub Copilot Authentication",
@@ -920,6 +930,26 @@
     "contextWindow1M": "1M Context Window",
     "autoCompactLimit": "Auto Compact Limit",
     "autoCompactLimitHint": "Auto-compacts history when context reaches this token limit",
+    "noCommonConfigToApply": "Common config snippet is empty; nothing to apply."
+  },
+  "kimiConfig": {
+    "credentialsJson": "Credentials (kimi-code.json)",
+    "credentialsJsonPlaceholder": "null",
+    "credentialsJsonHint": "OAuth login written by `kimi login`; null means not logged in or API-key mode",
+    "configToml": "config.toml (TOML)",
+    "configTomlHint": "Kimi Code config.toml content: default_model, [providers.*], [models.*]",
+    "writeCommonConfig": "Write Common Config",
+    "editCommonConfig": "Edit Common Config",
+    "editCommonConfigTitle": "Edit Kimi Common Config Snippet",
+    "commonConfigHint": "This snippet is merged into config.toml when 'Write Common Config' is checked (e.g. [thinking], default_permission_mode)",
+    "apiUrlLabel": "API Request URL",
+    "extractFromCurrent": "Extract from Editor",
+    "extractNoCommonConfig": "No common config available to extract from editor",
+    "extractFailed": "Extract failed: {{error}}",
+    "saveFailed": "Save failed: {{error}}",
+    "modelName": "Model Name",
+    "modelNamePlaceholder": "e.g., gpt-4o",
+    "modelNameHint": "Sets default_model and the model alias in config.toml",
     "noCommonConfigToApply": "Common config snippet is empty; nothing to apply."
   },
   "geminiConfig": {
@@ -1201,6 +1231,7 @@
         "claude": "Claude",
         "codex": "Codex",
         "gemini": "Gemini",
+        "kimi": "Kimi",
         "opencode": "OpenCode",
         "openclaw": "OpenClaw"
       }
@@ -1685,6 +1716,7 @@
       "claude": "Claude",
       "codex": "Codex",
       "gemini": "Gemini",
+      "kimi": "Kimi",
       "opencode": "OpenCode",
       "openclaw": "OpenClaw"
     },
@@ -2338,6 +2370,12 @@
         "locked": "Swap partially applied: {{path}} is locked. Close Claude Code and try the switch again.",
         "mirror_skipped": "WSL mirror skipped — {{reason}}"
       }
+    }
+  },
+  "codexAccount": {
+    "warning": {
+      "account_mismatch": "The Codex login that was live belonged to a different account than “{{id}}” holds, so “{{id}}” keeps its saved login.",
+      "rehomed": "That login was saved to “{{id}}”, the provider that holds that account."
     }
   }
 }

@@ -4,8 +4,11 @@ import type { SubscriptionQuota } from "@/types/subscription";
 export const subscriptionApi = {
   getQuota: (tool: string): Promise<SubscriptionQuota> =>
     invoke("get_subscription_quota", { tool }),
-  getQuotaForProvider: (providerId: string): Promise<SubscriptionQuota> =>
-    invoke("get_subscription_quota_for_provider", { providerId }),
+  getQuotaForProvider: (
+    tool: string,
+    providerId: string,
+  ): Promise<SubscriptionQuota> =>
+    invoke("get_subscription_quota_for_provider", { tool, providerId }),
   getCodingPlanQuota: (
     baseUrl: string,
     apiKey: string,

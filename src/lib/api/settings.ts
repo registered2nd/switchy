@@ -63,6 +63,10 @@ export const settingsApi = {
     return await invoke("get_default_claude_mirror_dir");
   },
 
+  async getDefaultCodexMirrorDir(): Promise<string | null> {
+    return await invoke("get_default_codex_mirror_dir");
+  },
+
   async getAppConfigPath(): Promise<string> {
     return await invoke("get_app_config_path");
   },

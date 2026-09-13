@@ -10,11 +10,12 @@ mod database;
 mod deeplink;
 mod error;
 mod gemini_config;
-mod migrate_paths;
 mod gemini_mcp;
 mod init_status;
+mod kimi_config;
 mod lightweight;
 mod mcp;
+mod migrate_paths;
 mod openclaw_config;
 mod opencode_config;
 mod panic_hook;
@@ -40,6 +41,9 @@ pub use config::{get_claude_mcp_path, get_claude_settings_path, read_json_file};
 pub use database::Database;
 pub use deeplink::{import_provider_from_deeplink, parse_deeplink_url, DeepLinkImportRequest};
 pub use error::AppError;
+pub use kimi_config::{
+    get_kimi_config_path, get_kimi_credentials_path, read_kimi_live, write_kimi_live_atomic,
+};
 pub use mcp::{
     import_from_claude, import_from_codex, import_from_gemini, remove_server_from_claude,
     remove_server_from_codex, remove_server_from_gemini, sync_enabled_to_claude,
@@ -546,6 +550,14 @@ pub fn run() {
                     Err(e) => log::warn!("✗ Failed to import Gemini MCP: {e}"),
                 }
 
+                match crate::services::mcp::McpService::import_from_kimi(&app_state) {
+                    Ok(count) if count > 0 => {
+                        log::info!("✓ Imported {count} MCP server(s) from Kimi");
+                    }
+                    Ok(_) => log::debug!("○ No Kimi MCP servers found to import"),
+                    Err(e) => log::warn!("✗ Failed to import Kimi MCP: {e}"),
+                }
+
                 match crate::services::mcp::McpService::import_from_opencode(&app_state) {
                     Ok(count) if count > 0 => {
                         log::info!("✓ Imported {count} MCP server(s) from OpenCode");
@@ -563,6 +575,7 @@ pub fn run() {
                     crate::app_config::AppType::Claude,
                     crate::app_config::AppType::Codex,
                     crate::app_config::AppType::Gemini,
+                    crate::app_config::AppType::Kimi,
                     crate::app_config::AppType::OpenCode,
                     crate::app_config::AppType::OpenClaw,
                 ] {
@@ -823,6 +836,7 @@ pub fn run() {
             // of the rotating live refresh-token chain so the two sides don't
             // race each other to invalidate the shared refresh_token.
             services::credential_mirror::start();
+            services::credential_mirror::start_codex();
 
             // Linux: 禁用 WebKitGTK 硬件加速，防止 EGL 初始化失败导致白屏
             #[cfg(target_os = "linux")]
@@ -869,6 +883,7 @@ pub fn run() {
             commands::capture_claude_account,
             commands::clear_claude_account,
             commands::get_captured_claude_identity,
+            commands::get_codex_account_identity,
             commands::remove_provider_from_live_config,
             commands::switch_provider,
             commands::import_default_config,
@@ -876,6 +891,7 @@ pub fn run() {
             commands::get_config_status,
             commands::get_claude_code_config_path,
             commands::get_default_claude_mirror_dir,
+            commands::get_default_codex_mirror_dir,
             commands::get_config_dir,
             commands::open_config_folder,
             commands::pick_directory,
@@ -1430,6 +1446,7 @@ fn initialize_common_config_snippets(state: &store::AppState) {
             crate::app_config::AppType::Claude,
             crate::app_config::AppType::Codex,
             crate::app_config::AppType::Gemini,
+            crate::app_config::AppType::Kimi,
         ] {
             if let Err(e) = crate::services::provider::ProviderService::migrate_legacy_common_config_usage_if_needed(
                 state,

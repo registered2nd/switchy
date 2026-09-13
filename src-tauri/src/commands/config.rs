@@ -76,17 +76,35 @@ fn get_wsl_home_dir(distro: &str) -> Option<String> {
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) fn build_default_claude_mirror_dir() -> Option<String> {
+fn build_default_wsl_mirror_dir(folder: &str) -> Option<String> {
     let distro = get_default_wsl_distro()?;
     let home = get_wsl_home_dir(&distro)?;
-    let suffix = home
-        .trim_end_matches('/')
-        .replace('/', "\\");
-    Some(format!(r"\\wsl$\{}\{}\.claude", distro, suffix.trim_start_matches('\\')))
+    let suffix = home.trim_end_matches('/').replace('/', "\\");
+    Some(format!(
+        r"\\wsl$\{}\{}\{}",
+        distro,
+        suffix.trim_start_matches('\\'),
+        folder
+    ))
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn build_default_claude_mirror_dir() -> Option<String> {
+    build_default_wsl_mirror_dir(".claude")
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn build_default_codex_mirror_dir() -> Option<String> {
+    build_default_wsl_mirror_dir(".codex")
 }
 
 #[cfg(not(target_os = "windows"))]
 pub(crate) fn build_default_claude_mirror_dir() -> Option<String> {
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn build_default_codex_mirror_dir() -> Option<String> {
     None
 }
 
@@ -131,7 +149,7 @@ fn validate_common_config_snippet(app_type: &str, snippet: &str) -> Result<(), S
             serde_json::from_str::<serde_json::Value>(snippet)
                 .map_err(invalid_json_format_error)?;
         }
-        "codex" => {
+        "codex" | "kimi" => {
             snippet
                 .parse::<toml_edit::DocumentMut>()
                 .map_err(invalid_toml_format_error)?;
@@ -159,6 +177,14 @@ pub async fn get_config_status(app: String) -> Result<ConfigStatus, String> {
             let env_path = crate::gemini_config::get_gemini_env_path();
             let exists = env_path.exists();
             let path = crate::gemini_config::get_gemini_dir()
+                .to_string_lossy()
+                .to_string();
+
+            Ok(ConfigStatus { exists, path })
+        }
+        AppType::Kimi => {
+            let exists = crate::kimi_config::get_kimi_config_path().exists();
+            let path = crate::kimi_config::get_kimi_dir()
                 .to_string_lossy()
                 .to_string();
 
@@ -196,11 +222,17 @@ pub async fn get_default_claude_mirror_dir() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+pub async fn get_default_codex_mirror_dir() -> Result<Option<String>, String> {
+    Ok(build_default_codex_mirror_dir())
+}
+
+#[tauri::command]
 pub async fn get_config_dir(app: String) -> Result<String, String> {
     let dir = match AppType::from_str(&app).map_err(|e| e.to_string())? {
         AppType::Claude => config::get_claude_config_dir(),
         AppType::Codex => codex_config::get_codex_config_dir(),
         AppType::Gemini => crate::gemini_config::get_gemini_dir(),
+        AppType::Kimi => crate::kimi_config::get_kimi_dir(),
         AppType::OpenCode => crate::opencode_config::get_opencode_dir(),
         AppType::OpenClaw => crate::openclaw_config::get_openclaw_dir(),
     };
@@ -214,6 +246,7 @@ pub async fn open_config_folder(handle: AppHandle, app: String) -> Result<bool, 
         AppType::Claude => config::get_claude_config_dir(),
         AppType::Codex => codex_config::get_codex_config_dir(),
         AppType::Gemini => crate::gemini_config::get_gemini_dir(),
+        AppType::Kimi => crate::kimi_config::get_kimi_dir(),
         AppType::OpenCode => crate::opencode_config::get_opencode_dir(),
         AppType::OpenClaw => crate::openclaw_config::get_openclaw_dir(),
     };

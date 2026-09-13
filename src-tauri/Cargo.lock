@@ -5241,7 +5241,7 @@ dependencies = [
 
 [[package]]
 name = "switchy"
-version = "1.0.7"
+version = "1.0.9"
 dependencies = [
  "anyhow",
  "arboard",

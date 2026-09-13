@@ -137,7 +137,7 @@ impl ProviderType {
                 }
                 ProviderType::Claude
             }
-            AppType::Codex => ProviderType::Codex,
+            AppType::Codex | AppType::Kimi => ProviderType::Codex,
             AppType::Gemini => {
                 // 检测是否为 CLI 模式（OAuth）
                 let adapter = GeminiAdapter::new();
@@ -210,8 +210,8 @@ pub fn get_adapter(app_type: &AppType) -> Box<dyn ProviderAdapter> {
         AppType::Claude => Box::new(ClaudeAdapter::new()),
         AppType::Codex => Box::new(CodexAdapter::new()),
         AppType::Gemini => Box::new(GeminiAdapter::new()),
-        AppType::OpenCode => {
-            // OpenCode doesn't support proxy, fallback to Codex adapter
+        AppType::OpenCode | AppType::Kimi => {
+            // OpenCode and Kimi don't support proxy, fallback to Codex adapter
             Box::new(CodexAdapter::new())
         }
         AppType::OpenClaw => {

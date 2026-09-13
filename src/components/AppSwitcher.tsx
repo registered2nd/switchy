@@ -10,7 +10,15 @@ interface AppSwitcherProps {
   compact?: boolean;
 }
 
-const ALL_APPS: AppId[] = ["claude", "codex", "gemini", "opencode", "openclaw"];
+// OpenClaw is hidden by default (Settings → App visibility can bring it back).
+const ALL_APPS: AppId[] = [
+  "claude",
+  "codex",
+  "gemini",
+  "kimi",
+  "opencode",
+  "openclaw",
+];
 const STORAGE_KEY = "switchy-last-app";
 
 export function AppSwitcher({
@@ -29,6 +37,7 @@ export function AppSwitcher({
     claude: "claude",
     codex: "openai",
     gemini: "gemini",
+    kimi: "kimi",
     opencode: "opencode",
     openclaw: "openclaw",
   };
@@ -36,6 +45,7 @@ export function AppSwitcher({
     claude: "Claude",
     codex: "Codex",
     gemini: "Gemini",
+    kimi: "Kimi",
     opencode: "OpenCode",
     openclaw: "OpenClaw",
   };

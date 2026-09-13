@@ -5,6 +5,7 @@ import type { ProviderPreset } from "@/config/claudeProviderPresets";
 import type { CodexProviderPreset } from "@/config/codexProviderPresets";
 import type { GeminiProviderPreset } from "@/config/geminiProviderPresets";
 import type { OpenCodeProviderPreset } from "@/config/opencodeProviderPresets";
+import type { KimiProviderPreset } from "@/config/kimiProviderPresets";
 
 type PresetEntry = {
   id: string;
@@ -12,7 +13,8 @@ type PresetEntry = {
     | ProviderPreset
     | CodexProviderPreset
     | GeminiProviderPreset
-    | OpenCodeProviderPreset;
+    | OpenCodeProviderPreset
+    | KimiProviderPreset;
 };
 
 interface UseApiKeyLinkProps {
@@ -82,6 +84,7 @@ export function useApiKeyLink({
       appId === "claude" ||
       appId === "codex" ||
       appId === "gemini" ||
+      appId === "kimi" ||
       appId === "opencode"
         ? shouldShowApiKeyLink
         : false,

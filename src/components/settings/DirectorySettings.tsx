@@ -15,14 +15,19 @@ interface DirectorySettingsProps {
   claudeDir?: string;
   claudeMirrorDir?: string;
   codexDir?: string;
+  codexMirrorDir?: string;
   geminiDir?: string;
+  kimiDir?: string;
   opencodeDir?: string;
   onDirectoryChange: (app: AppId, value?: string) => void;
   onClaudeMirrorDirChange: (value?: string) => void;
+  onCodexMirrorDirChange: (value?: string) => void;
   onBrowseDirectory: (app: AppId) => Promise<void>;
   onBrowseClaudeMirrorDir: () => Promise<void>;
+  onBrowseCodexMirrorDir: () => Promise<void>;
   onResetDirectory: (app: AppId) => Promise<void>;
   onResetClaudeMirrorDir: () => Promise<void>;
+  onResetCodexMirrorDir: () => Promise<void>;
 }
 
 export function DirectorySettings({
@@ -34,14 +39,19 @@ export function DirectorySettings({
   claudeDir,
   claudeMirrorDir,
   codexDir,
+  codexMirrorDir,
   geminiDir,
+  kimiDir,
   opencodeDir,
   onDirectoryChange,
   onClaudeMirrorDirChange,
+  onCodexMirrorDirChange,
   onBrowseDirectory,
   onBrowseClaudeMirrorDir,
+  onBrowseCodexMirrorDir,
   onResetDirectory,
   onResetClaudeMirrorDir,
+  onResetCodexMirrorDir,
 }: DirectorySettingsProps) {
   const { t } = useTranslation();
 
@@ -134,6 +144,22 @@ export function DirectorySettings({
         />
 
         <DirectoryInput
+          label={t("settings.codexMirrorConfigDir", {
+            defaultValue: "Codex Mirror Directory",
+          })}
+          description={t("settings.codexMirrorConfigDirDescription", {
+            defaultValue:
+              "Optional second Codex configuration directory to keep in sync, such as WSL ~/.codex.",
+          })}
+          value={codexMirrorDir}
+          resolvedValue=""
+          placeholder={t("settings.browsePlaceholderCodex")}
+          onChange={onCodexMirrorDirChange}
+          onBrowse={onBrowseCodexMirrorDir}
+          onReset={onResetCodexMirrorDir}
+        />
+
+        <DirectoryInput
           label={t("settings.geminiConfigDir")}
           description={undefined}
           value={geminiDir}
@@ -142,6 +168,21 @@ export function DirectorySettings({
           onChange={(val) => onDirectoryChange("gemini", val)}
           onBrowse={() => onBrowseDirectory("gemini")}
           onReset={() => onResetDirectory("gemini")}
+        />
+
+        <DirectoryInput
+          label={t("settings.kimiConfigDir", {
+            defaultValue: "Kimi Code Configuration Directory",
+          })}
+          description={undefined}
+          value={kimiDir}
+          resolvedValue={resolvedDirs.kimi}
+          placeholder={t("settings.browsePlaceholderKimi", {
+            defaultValue: "e.g., /home/<your-username>/.kimi-code",
+          })}
+          onChange={(val) => onDirectoryChange("kimi", val)}
+          onBrowse={() => onBrowseDirectory("kimi")}
+          onReset={() => onResetDirectory("kimi")}
         />
 
         <DirectoryInput

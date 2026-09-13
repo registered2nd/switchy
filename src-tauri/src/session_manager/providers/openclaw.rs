@@ -300,12 +300,9 @@ mod tests {
         )
         .expect("write session");
         let session_path_json = serde_json::to_string(&session_path.to_string_lossy()).unwrap();
-        let other_path_json = serde_json::to_string(
-            &sessions_dir
-                .join("session-456.jsonl")
-                .to_string_lossy(),
-        )
-        .unwrap();
+        let other_path_json =
+            serde_json::to_string(&sessions_dir.join("session-456.jsonl").to_string_lossy())
+                .unwrap();
         std::fs::write(
             sessions_dir.join("sessions.json"),
             format!(

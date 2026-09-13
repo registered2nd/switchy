@@ -85,7 +85,14 @@ const UnifiedSkillsPanel = React.forwardRef<
   const installFromZipMutation = useInstallSkillsFromZip();
 
   const enabledCounts = useMemo(() => {
-    const counts = { claude: 0, codex: 0, gemini: 0, opencode: 0, openclaw: 0 };
+    const counts = {
+      claude: 0,
+      codex: 0,
+      gemini: 0,
+      kimi: 0,
+      opencode: 0,
+      openclaw: 0,
+    };
     if (!skills) return counts;
     skills.forEach((skill) => {
       for (const app of MCP_SKILLS_APP_IDS) {
@@ -569,6 +576,7 @@ const ImportSkillsDialog: React.FC<ImportSkillsDialogProps> = ({
           claude: skill.foundIn.includes("claude"),
           codex: skill.foundIn.includes("codex"),
           gemini: skill.foundIn.includes("gemini"),
+          kimi: skill.foundIn.includes("kimi"),
           opencode: skill.foundIn.includes("opencode"),
           openclaw: false,
         },
@@ -594,6 +602,7 @@ const ImportSkillsDialog: React.FC<ImportSkillsDialogProps> = ({
           claude: false,
           codex: false,
           gemini: false,
+          kimi: false,
           opencode: false,
           openclaw: false,
         },
@@ -636,6 +645,7 @@ const ImportSkillsDialog: React.FC<ImportSkillsDialogProps> = ({
                           claude: false,
                           codex: false,
                           gemini: false,
+                          kimi: false,
                           opencode: false,
                           openclaw: false,
                         }
@@ -648,6 +658,7 @@ const ImportSkillsDialog: React.FC<ImportSkillsDialogProps> = ({
                               claude: false,
                               codex: false,
                               gemini: false,
+                              kimi: false,
                               opencode: false,
                               openclaw: false,
                             }),

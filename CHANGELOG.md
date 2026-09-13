@@ -6,6 +6,117 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.9] — 2026-09-12 — Kimi Code joins the switcher; Official Codex accounts get the same care as Official Claude accounts
+
+A Codex provider carries its whole `auth.json`, ChatGPT login included, so
+switching Codex accounts never needed a separate capture step. What it lacked
+was everything built around that login for Claude since 1.0.6. Those now apply
+to Codex too. And a fifth CLI gets a tab.
+
+### Added
+
+- **Kimi Code CLI is a switchable app.** A Kimi provider is the whole of
+  `~/.kimi-code/config.toml` (providers, models, `default_model`) plus the
+  managed login in `credentials/kimi-code.json`. Switching writes both;
+  switching away reads the refreshed login back into the provider you left,
+  so a Kimi Code account you signed into stays with its provider the way a
+  ChatGPT login stays with its Codex provider. Presets: Kimi Code (official,
+  `kimi login` after the first switch), and OpenAI- or Anthropic-compatible
+  API-key providers. MCP servers sync into `mcp.json`, skills into
+  `~/.kimi-code/skills/`, `AGENTS.md` is the prompt file, sessions appear in
+  the Session Manager, and the tray lists Kimi providers. Kimi's config
+  directory can be overridden under Settings → Directories. Kimi has no usage or quota
+  API, so its cards carry no usage badges.
+
+- **Codex usage now shows every rate-limit window OpenAI reports**, including
+  model-specific ones (for example the `Spark` lane's 5-hour and 7-day
+  windows), as extra badges beside the account-wide window — the same row
+  Claude's per-model lane already had.
+
+- **Each Official Codex card shows which ChatGPT account it holds** — the
+  email read from the login stored in the provider (hover it for the account
+  id and plan) — and **its own usage figures**, not the current account's. A card
+  with no login yet (a fresh preset you haven't run `codex login` on) shows
+  neither.
+
+- **A second Codex directory can be kept in step, such as WSL's `~/.codex`.**
+  Set it under Settings → Directories (it is pre-filled from the default WSL
+  distro on Windows, like the Claude one). Every switch writes the login there
+  and merges the provider's `config.toml` fields over that machine's own file,
+  leaving its `[mcp_servers]` and other per-machine keys alone. In the
+  background the same reconciler that keeps the two Claude logins from racing
+  each other's refresh token now does so for Codex, and leaves an install
+  that is deliberately on an API key untouched.
+
+### Changed
+
+- **OpenClaw no longer has a tab by default.** It stays fully supported
+  underneath; turn it back on under Settings → App visibility.
+
+### Fixed
+
+- **Codex usage never showed.** Current Codex releases no longer write
+  `auth_mode` into `auth.json`; Switchy's reader treated the missing key as
+  "no login" and hid the badges. A `tokens` block now counts as a ChatGPT
+  login.
+
+- **A Codex provider that had never been switched away from showed no
+  account.** The login is only copied into the provider on switch-away, so a
+  single-provider setup never got one. The current provider's card now reads
+  the live login and files it into the provider at the same time.
+
+- **Switching away could file one ChatGPT account's tokens under a different
+  provider's saved login.** If you ran `codex login` as another account while a
+  provider was current, the next switch stored that other account's tokens
+  under it. Switchy now refuses that: the provider keeps the login it already
+  holds, the tokens go to whichever Codex provider actually holds that account
+  (if one does), and a message says what happened. It likewise refuses to
+  save a login whose refresh token has been blanked, and refuses to let an
+  older login overwrite a newer saved one — the same rules the Claude
+  switch-away sync applies.
+
+---
+
+## [1.0.8] — 2026-08-16 — `/status` now reports the Claude account you actually switched to
+
+### Fixed
+
+- **Claude Code's `/status` stuck on one account no matter which one you
+  switched to.** Switching wrote the account identity into a `.claude.json`
+  sitting *inside* `~/.claude`, while Claude Code reads the `.claude.json`
+  beside that directory. Machines with both files ended up with the login
+  swapping correctly — requests really did run on the newly selected account —
+  while the panel kept displaying the previous one indefinitely. Both the
+  account swap and the MCP writer now resolve that file the same way Claude
+  Code does, so they can no longer point at different files. On a WSL mirror the
+  same rule now applies to the other side.
+
+- **Plan, entitlement and usage figures left over from the previous account.**
+  The identity block is only part of what Claude Code records per account: the
+  usage utilization, subscription availability and model-access caches sit
+  beside it. Only the identity was being swapped, so the account line could read
+  correctly while everything around it described the account you had just left.
+  Those fields now travel with the account, and a field the incoming account
+  doesn't have is cleared rather than inherited. Machine-specific state stays
+  with the machine — projects, MCP servers, onboarding, and the two identifiers
+  that name the installation itself rather than the account signed into it.
+
+  Accounts captured by earlier versions carry identity only — capture them once
+  more to pick this up.
+
+- **A switch could file one account's tokens under another account's saved
+  login.** The switch-away sync identified the outgoing account by reading the
+  identity file and assuming it matched the live tokens. Switchy now records
+  which account it wrote the credentials for at the moment it writes them, and
+  files them back by that record. It additionally refuses to save a login whose
+  refresh token has been blanked, and refuses to let an older login overwrite a
+  newer saved one — the same rules the Windows/WSL reconciler already applies.
+
+- **Deep links reported "expected 'switchy' or legacy 'switchy'".** Leftover
+  from the rename; the message now names the one scheme that exists.
+
+---
+
 ## [1.0.7] — 2026-07-05 — Capturing and switching Official Claude accounts now works on macOS
 
 ### Fixed
