@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.10] — 2026-09-17 — Official Claude cards show their quota again
+
+### Fixed
+
+- **Every Official Claude card showing "Query failed" instead of its usage
+  windows.** Anthropic's usage endpoint now refuses requests that don't
+  identify themselves as Claude Code — any other `User-Agent`, or none, gets
+  an HTTP 429 regardless of how often you ask. Switchy sent none, so the
+  reading failed on every card, current or not, even with a freshly refreshed
+  login. The quota request now carries the same `claude-code/<version>`
+  identity Claude Code uses on that call. Nothing changed on your side; no
+  re-login is needed. Codex and Gemini quota were unaffected.
+
 ## [1.0.9] — 2026-09-12 — Kimi Code joins the switcher; Official Codex accounts get the same care as Official Claude accounts
 
 A Codex provider carries its whole `auth.json`, ChatGPT login included, so

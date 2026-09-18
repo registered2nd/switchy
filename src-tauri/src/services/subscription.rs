@@ -299,6 +299,12 @@ const KNOWN_TIERS: &[&str] = &[
     "seven_day_sonnet",
 ];
 
+/// Anthropic's usage endpoint answers HTTP 429 to any User-Agent that is not
+/// `claude-code/<version>` (verified 2026-09-17: no UA, curl, Mozilla and
+/// `claude-cli/...` all 429; only this form gets 200). Same shape Claude Code
+/// itself sends on this call.
+const CLAUDE_USAGE_USER_AGENT: &str = "claude-code/2.1.276";
+
 /// 查询 Claude 官方订阅额度
 async fn query_claude_quota(access_token: &str) -> SubscriptionQuota {
     let client = crate::proxy::http_client::get();
@@ -308,6 +314,7 @@ async fn query_claude_quota(access_token: &str) -> SubscriptionQuota {
         .header("Authorization", format!("Bearer {access_token}"))
         .header("anthropic-beta", "oauth-2025-04-20")
         .header("Accept", "application/json")
+        .header("User-Agent", CLAUDE_USAGE_USER_AGENT)
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await;
