@@ -242,6 +242,15 @@ impl ClaudeAdapter {
     }
 }
 
+impl ClaudeAdapter {
+    /// An Official provider whose captured login the proxy presents itself —
+    /// only while the Claude account pool is switched on.
+    pub fn serves_captured_login(provider: &Provider) -> bool {
+        crate::proxy::account_pool::claude_pool_enabled()
+            && crate::proxy::claude_pool::is_oauth_provider(provider)
+    }
+}
+
 impl Default for ClaudeAdapter {
     fn default() -> Self {
         Self::new()
@@ -254,6 +263,10 @@ impl ProviderAdapter for ClaudeAdapter {
     }
 
     fn extract_base_url(&self, provider: &Provider) -> Result<String, ProxyError> {
+        if Self::serves_captured_login(provider) {
+            return Ok(crate::proxy::claude_pool::ANTHROPIC_BASE_URL.to_string());
+        }
+
         // 1. 从 env 中获取
         if let Some(env) = provider.settings_config.get("env") {
             if let Some(url) = env.get("ANTHROPIC_BASE_URL").and_then(|v| v.as_str()) {
@@ -292,6 +305,11 @@ impl ProviderAdapter for ClaudeAdapter {
     }
 
     fn extract_auth(&self, provider: &Provider) -> Option<AuthInfo> {
+        if Self::serves_captured_login(provider) {
+            // Placeholder: the forwarder swaps in the live token.
+            return Some(AuthInfo::new(String::new(), AuthStrategy::ClaudeOAuth));
+        }
+
         let provider_type = self.provider_type(provider);
 
         // GitHub Copilot 使用特殊的认证策略

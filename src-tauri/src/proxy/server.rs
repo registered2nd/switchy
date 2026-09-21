@@ -57,6 +57,7 @@ impl ProxyServer {
         db: Arc<Database>,
         app_handle: Option<tauri::AppHandle>,
     ) -> Self {
+        super::account_pool::refresh_flags(&db);
         // 创建共享的 ProviderRouter（熔断器状态将跨所有请求保持）
         let provider_router = Arc::new(ProviderRouter::new(db.clone()));
         // 创建故障转移切换管理器
@@ -323,9 +324,26 @@ impl ProxyServer {
                 "/codex/v1/responses/compact",
                 post(handlers::handle_responses_compact),
             )
+            // Codex in ChatGPT mode, its built-in provider pointed here with
+            // `openai_base_url`. Fixed routes win over the wildcard.
+            .route(
+                "/backend-api/codex/responses",
+                post(handlers::handle_responses).get(handlers::handle_codex_websocket_refusal),
+            )
+            .route(
+                "/backend-api/codex/responses/compact",
+                post(handlers::handle_responses_compact),
+            )
+            .route(
+                "/backend-api/codex/*path",
+                get(handlers::handle_codex_backend_get),
+            )
             // Gemini API (支持带前缀和不带前缀)
             .route("/v1beta/*path", post(handlers::handle_gemini))
             .route("/gemini/v1beta/*path", post(handlers::handle_gemini))
+            // Claude Code's identity-plane calls while an Official account is
+            // served through the proxy; a 404 otherwise, as before.
+            .fallback(handlers::handle_claude_passthrough)
             // 提高默认请求体大小限制（避免 413 Payload Too Large）
             .layer(DefaultBodyLimit::max(200 * 1024 * 1024))
             .layer(cors)

@@ -385,6 +385,7 @@ pub async fn handle_responses(
         .await
         .map_err(|e| ProxyError::Internal(format!("Failed to read request body: {e}")))?
         .to_bytes();
+    let body_bytes = decode_request_body(&headers, body_bytes)?;
     let body: Value = serde_json::from_slice(&body_bytes)
         .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?;
 
@@ -439,6 +440,7 @@ pub async fn handle_responses_compact(
         .await
         .map_err(|e| ProxyError::Internal(format!("Failed to read request body: {e}")))?
         .to_bytes();
+    let body_bytes = decode_request_body(&headers, body_bytes)?;
     let body: Value = serde_json::from_slice(&body_bytes)
         .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?;
 
@@ -477,6 +479,206 @@ pub async fn handle_responses_compact(
     let response = result.response;
 
     process_response(response, &ctx, &state, &CODEX_PARSER_CONFIG).await
+}
+
+/// Codex compresses request bodies with zstd when it talks to the ChatGPT
+/// backend through its built-in provider. The proxy works on the JSON.
+fn decode_request_body(headers: &axum::http::HeaderMap, body: Bytes) -> Result<Bytes, ProxyError> {
+    let encoding = headers
+        .get(axum::http::header::CONTENT_ENCODING)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim().to_ascii_lowercase())
+        .unwrap_or_default();
+    match encoding.as_str() {
+        "" | "identity" => Ok(body),
+        "zstd" => zstd::stream::decode_all(body.as_ref())
+            .map(Bytes::from)
+            .map_err(|e| ProxyError::Internal(format!("Failed to decompress request body: {e}"))),
+        other => Err(ProxyError::Internal(format!(
+            "Unsupported request Content-Encoding: {other}"
+        ))),
+    }
+}
+
+/// Codex tries Responses-over-WebSocket first on its built-in provider. The
+/// proxy speaks HTTP only; 426 is the answer that makes Codex fall back to it
+/// at once instead of spending its retry budget.
+pub async fn handle_codex_websocket_refusal() -> impl IntoResponse {
+    (
+        StatusCode::UPGRADE_REQUIRED,
+        [(axum::http::header::CONTENT_LENGTH, "0")],
+    )
+}
+
+/// GET requests Codex makes against the ChatGPT backend besides the model
+/// call itself (the model list). Served with the selected account's login.
+pub async fn handle_codex_backend_get(
+    State(state): State<ProxyState>,
+    axum::extract::Path(path): axum::extract::Path<String>,
+    request: axum::extract::Request,
+) -> Result<axum::response::Response, ProxyError> {
+    let providers = state
+        .provider_router
+        .select_providers("codex")
+        .await
+        .map_err(|e| ProxyError::Internal(e.to_string()))?;
+    let provider = providers
+        .into_iter()
+        .next()
+        .ok_or(ProxyError::NoAvailableProvider)?;
+
+    let adapter = get_adapter(&AppType::Codex);
+    let base_url = adapter.extract_base_url(&provider)?;
+    let mut url = format!("{}/{}", base_url.trim_end_matches('/'), path);
+    if let Some(query) = request.uri().query() {
+        url.push('?');
+        url.push_str(query);
+    }
+
+    let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
+    let mut upstream = super::http_client::get_for_provider(proxy_config).get(&url);
+    for (name, value) in request.headers() {
+        if matches!(
+            name.as_str(),
+            "host" | "authorization" | "chatgpt-account-id" | "accept-encoding" | "connection"
+        ) {
+            continue;
+        }
+        upstream = upstream.header(name, value);
+    }
+    if super::codex_pool::is_chatgpt_provider(&provider) {
+        super::account_pool::ensure_exit_allowed(
+            &state.db,
+            &provider,
+            super::codex_pool::EXIT_TRACE_URL,
+        )
+        .await?;
+        let credentials = super::codex_pool::credentials_for(&state.db, &provider, false).await?;
+        upstream = upstream.bearer_auth(credentials.access_token);
+        if let Some(account_id) = credentials.account_id {
+            upstream = upstream.header("chatgpt-account-id", account_id);
+        }
+    } else if let Some(auth) = adapter.extract_auth(&provider) {
+        upstream = upstream.bearer_auth(auth.api_key);
+    }
+
+    let response = upstream
+        .timeout(std::time::Duration::from_secs(60))
+        .send()
+        .await
+        .map_err(|e| ProxyError::ForwardFailed(e.to_string()))?;
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(axum::http::header::CONTENT_TYPE)
+        .cloned();
+    let body = response
+        .bytes()
+        .await
+        .map_err(|e| ProxyError::ForwardFailed(e.to_string()))?;
+
+    let mut builder = axum::response::Response::builder().status(status);
+    if let Some(content_type) = content_type {
+        builder = builder.header(axum::http::header::CONTENT_TYPE, content_type);
+    }
+    builder
+        .body(axum::body::Body::from(body))
+        .map_err(|e| ProxyError::Internal(e.to_string()))
+}
+
+/// Everything else Claude Code sends to `ANTHROPIC_BASE_URL` while an Official
+/// account is served through the proxy. Token counting is inference and gets
+/// the selected account's login; the rest — `/api/oauth/*` (profile, file
+/// transfer) and `/v1/code/*` — is the client's own identity plane and keeps
+/// the login Claude Code sent, so it never learns another account's identity.
+/// Outside that mode this stays the 404 it always was.
+pub async fn handle_claude_passthrough(
+    State(state): State<ProxyState>,
+    request: axum::extract::Request,
+) -> Result<axum::response::Response, ProxyError> {
+    let path = request.uri().path().to_string();
+    let claude_path = path.starts_with("/api/")
+        || path.starts_with("/v1/code/")
+        || path.starts_with("/v1/messages/");
+    if !claude_path || !super::account_pool::claude_pool_enabled() {
+        return Ok((StatusCode::NOT_FOUND, "Not Found").into_response());
+    }
+
+    let providers = state
+        .provider_router
+        .select_providers("claude")
+        .await
+        .map_err(|e| ProxyError::Internal(e.to_string()))?;
+    let Some(provider) = providers.into_iter().next() else {
+        return Ok((StatusCode::NOT_FOUND, "Not Found").into_response());
+    };
+    if !super::providers::ClaudeAdapter::serves_captured_login(&provider) {
+        return Ok((StatusCode::NOT_FOUND, "Not Found").into_response());
+    }
+
+    super::account_pool::ensure_exit_allowed(
+        &state.db,
+        &provider,
+        super::claude_pool::EXIT_TRACE_URL,
+    )
+    .await?;
+
+    let presents_pool_login = path.starts_with("/v1/messages/");
+    let mut url = format!("{}{path}", super::claude_pool::ANTHROPIC_BASE_URL);
+    if let Some(query) = request.uri().query() {
+        url.push('?');
+        url.push_str(query);
+    }
+
+    let (parts, body) = request.into_parts();
+    let body_bytes = body
+        .collect()
+        .await
+        .map_err(|e| ProxyError::Internal(format!("Failed to read request body: {e}")))?
+        .to_bytes();
+
+    let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
+    let mut upstream = super::http_client::get_for_provider(proxy_config)
+        .request(parts.method.clone(), &url)
+        .body(body_bytes);
+    for (name, value) in &parts.headers {
+        if matches!(
+            name.as_str(),
+            "host" | "content-length" | "accept-encoding" | "connection" | "transfer-encoding"
+        ) || (presents_pool_login && name.as_str() == "authorization")
+        {
+            continue;
+        }
+        upstream = upstream.header(name, value);
+    }
+    if presents_pool_login {
+        let token = super::claude_pool::access_token_for(&provider, false).await?;
+        upstream = upstream.bearer_auth(token);
+    }
+
+    let response = upstream
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| ProxyError::ForwardFailed(e.to_string()))?;
+    if presents_pool_login {
+        super::claude_pool::record_quota(&provider.id, response.headers());
+    }
+
+    let mut builder = axum::response::Response::builder().status(response.status());
+    for (name, value) in response.headers() {
+        if matches!(
+            name.as_str(),
+            "content-length" | "transfer-encoding" | "connection" | "content-encoding"
+        ) {
+            continue;
+        }
+        builder = builder.header(name, value);
+    }
+    let body = axum::body::Body::from_stream(response.bytes_stream());
+    builder
+        .body(body)
+        .map_err(|e| ProxyError::Internal(e.to_string()))
 }
 
 // ============================================================================

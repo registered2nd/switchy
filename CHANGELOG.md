@@ -6,6 +6,56 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.11] — 2026-09-21 — Codex switches accounts in an open session; Claude and Codex can rotate accounts before the limit
+
+A running Codex session reads its login once and refuses to reload another
+account's, so switching Official Codex providers only ever took effect for
+the next session. Routed through the local proxy, the open session follows
+the switch. The same proxy can now carry Official Claude accounts, behind its
+own switch, and both tools can move to the next account before the current
+one is spent.
+
+### Added
+
+- **Codex account switching in an open session.** Turn the proxy on for
+  Codex (Settings → Proxy → Local Proxy) and switching Official providers
+  takes effect on the next message of a session that is already running.
+  Codex keeps its own sign-in, its model list and its `codex resume`
+  history; the proxy presents the selected account's login on each request.
+  Sessions started before the proxy was turned on keep talking to OpenAI
+  directly until they are restarted.
+- **Rotate accounts before the limit** (Settings → Proxy → Auto Failover,
+  Claude and Codex tabs; off by default). With automatic failover on, an
+  Official account whose usage reaches the threshold — 98% unless you change
+  it — is moved to the back of the queue until its limit resets, and an
+  account the service refuses for usage is passed over until the reset it
+  names. When every account is spent the request still goes out, so you see
+  the service's own message.
+- **Serve Official Claude accounts through the proxy** (Auto Failover →
+  Claude; off by default). Claude Code stays signed in with its own
+  subscription and only its API address changes; the proxy presents the
+  selected Official account's captured login and keeps the account id in
+  each request in step with it. Claude Code's own identity calls keep the
+  login it sent. Without this switch an Official Claude provider is not
+  served while the proxy is on, as before.
+- **Exit check for stored logins.** Before a stored login is presented, the
+  proxy asks the service's own edge where it sees this machine, over the
+  route the request will take. If the answer is mainland China, or there is
+  no answer, the request is held for up to 30 seconds and then refused;
+  nothing is sent.
+- **Stored logins stay usable while pooled.** A login whose access token is
+  about to run out is renewed before it is presented, under the same
+  newest-valid-login-wins rules as the two-installs reconciler, and the
+  renewed login is handed back to the tool's own login file when that file
+  holds the same account. A login the service has rejected is not retried;
+  sign in again while that provider is current.
+
+### Changed
+
+- **Taking over Codex in ChatGPT mode** now redirects Codex's built-in
+  provider instead of writing an API-key placeholder into `auth.json`, which
+  had switched Codex to API-key mode against an address it never read.
+
 ## [1.0.10] — 2026-09-17 — Official Claude cards show their quota again
 
 ### Fixed

@@ -741,6 +741,10 @@ impl RequestForwarder {
     }
 
     /// 转发单个请求（使用适配器）
+    ///
+    /// A ChatGPT-login Codex account gets one more try after a 401, with its
+    /// login refreshed first; a usage-limit refusal is noted so the account is
+    /// passed over until it resets.
     async fn forward(
         &self,
         provider: &Provider,
@@ -749,6 +753,49 @@ impl RequestForwarder {
         headers: &axum::http::HeaderMap,
         extensions: &Extensions,
         adapter: &dyn ProviderAdapter,
+    ) -> Result<(ProxyResponse, Option<String>), ProxyError> {
+        let first = self
+            .forward_once(
+                provider, endpoint, body, headers, extensions, adapter, false,
+            )
+            .await;
+        let pooled_codex =
+            adapter.name() == "Codex" && super::codex_pool::is_chatgpt_provider(provider);
+        let pooled_claude = adapter.name() == "Claude"
+            && super::providers::ClaudeAdapter::serves_captured_login(provider);
+        if !pooled_codex && !pooled_claude {
+            return first;
+        }
+        let result = match first {
+            Err(ProxyError::UpstreamError { status: 401, .. }) => {
+                log::info!(
+                    "[{}] provider={} answered 401; refreshing its login and retrying once",
+                    adapter.name(),
+                    provider.id
+                );
+                self.forward_once(provider, endpoint, body, headers, extensions, adapter, true)
+                    .await
+            }
+            other => other,
+        };
+        if pooled_codex {
+            if let Err(ProxyError::UpstreamError { status, body }) = &result {
+                super::codex_pool::record_limit_refusal(&provider.id, *status, body.as_deref());
+            }
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn forward_once(
+        &self,
+        provider: &Provider,
+        endpoint: &str,
+        body: &Value,
+        headers: &axum::http::HeaderMap,
+        extensions: &Extensions,
+        adapter: &dyn ProviderAdapter,
+        force_login_refresh: bool,
     ) -> Result<(ProxyResponse, Option<String>), ProxyError> {
         // 使用适配器提取 base_url
         let mut base_url = adapter.extract_base_url(provider)?;
@@ -765,6 +812,14 @@ impl RequestForwarder {
 
         // 与 CCH 对齐：请求前不做 thinking 主动改写（仅保留兼容入口）
         let mut mapped_body = normalize_thinking_type(mapped_body);
+
+        let claude_oauth = adapter.name() == "Claude"
+            && super::providers::ClaudeAdapter::serves_captured_login(provider);
+        if claude_oauth {
+            if let Some(uuid) = super::claude_pool::account_uuid(provider) {
+                super::claude_pool::patch_account_uuid(&mut mapped_body, uuid);
+            }
+        }
 
         // 确定有效端点
         // GitHub Copilot API 使用 /chat/completions（无 /v1 前缀）
@@ -969,10 +1024,55 @@ impl RequestForwarder {
                     ));
                 }
             }
-            adapter.get_auth_headers(&auth)
+            if auth.strategy == AuthStrategy::ChatGpt {
+                super::account_pool::ensure_exit_allowed(
+                    self.router.db(),
+                    provider,
+                    super::codex_pool::EXIT_TRACE_URL,
+                )
+                .await?;
+                let credentials = super::codex_pool::credentials_for(
+                    self.router.db(),
+                    provider,
+                    force_login_refresh,
+                )
+                .await?;
+                let mut chatgpt_headers = vec![(
+                    http::header::AUTHORIZATION,
+                    http::HeaderValue::from_str(&format!("Bearer {}", credentials.access_token))
+                        .map_err(|e| ProxyError::AuthError(format!("invalid access token: {e}")))?,
+                )];
+                if let Some(account_id) = credentials.account_id.as_deref() {
+                    if let Ok(value) = http::HeaderValue::from_str(account_id) {
+                        chatgpt_headers
+                            .push((http::HeaderName::from_static("chatgpt-account-id"), value));
+                    }
+                }
+                chatgpt_headers
+            } else if auth.strategy == AuthStrategy::ClaudeOAuth {
+                super::account_pool::ensure_exit_allowed(
+                    self.router.db(),
+                    provider,
+                    super::claude_pool::EXIT_TRACE_URL,
+                )
+                .await?;
+                let token =
+                    super::claude_pool::access_token_for(provider, force_login_refresh).await?;
+                vec![(
+                    http::header::AUTHORIZATION,
+                    http::HeaderValue::from_str(&format!("Bearer {token}"))
+                        .map_err(|e| ProxyError::AuthError(format!("invalid access token: {e}")))?,
+                )]
+            } else {
+                adapter.get_auth_headers(&auth)
+            }
         } else {
             Vec::new()
         };
+        // The account id Codex sent names its own login, not the one presented.
+        let replaces_account_id = auth_headers
+            .iter()
+            .any(|(name, _)| name.as_str() == "chatgpt-account-id");
 
         // --- Copilot 优化器：动态 header 注入 ---
         if let Some((ref classification, ref det_request_id)) = copilot_optimization {
@@ -1022,19 +1122,25 @@ impl RequestForwarder {
         // 预计算 anthropic-beta 值（仅 Claude）
         let anthropic_beta_value = if adapter.name() == "Claude" {
             const CLAUDE_CODE_BETA: &str = "claude-code-20250219";
-            Some(if let Some(beta) = headers.get("anthropic-beta") {
-                if let Ok(beta_str) = beta.to_str() {
-                    if beta_str.contains(CLAUDE_CODE_BETA) {
-                        beta_str.to_string()
+            let mut required = vec![CLAUDE_CODE_BETA];
+            if claude_oauth {
+                required.push(super::claude_pool::OAUTH_BETA);
+            }
+            let mut value = headers
+                .get("anthropic-beta")
+                .and_then(|b| b.to_str().ok())
+                .map(str::to_string)
+                .unwrap_or_default();
+            for beta in required {
+                if !value.split(',').any(|b| b.trim() == beta) {
+                    value = if value.is_empty() {
+                        beta.to_string()
                     } else {
-                        format!("{CLAUDE_CODE_BETA},{beta_str}")
-                    }
-                } else {
-                    CLAUDE_CODE_BETA.to_string()
+                        format!("{beta},{value}")
+                    };
                 }
-            } else {
-                CLAUDE_CODE_BETA.to_string()
-            })
+            }
+            Some(value)
         } else {
             None
         };
@@ -1061,10 +1167,17 @@ impl RequestForwarder {
                 continue;
             }
 
+            if replaces_account_id && key_str.eq_ignore_ascii_case("chatgpt-account-id") {
+                continue;
+            }
+
             // --- 连接 / 追踪 / CDN 类 — 无条件跳过 ---
+            // content-encoding: the body below is always re-serialized plain JSON,
+            // whatever encoding the client sent it in.
             if matches!(
                 key_str,
                 "content-length"
+                    | "content-encoding"
                     | "transfer-encoding"
                     | "x-forwarded-host"
                     | "x-forwarded-port"
@@ -1279,6 +1392,13 @@ impl RequestForwarder {
 
         // 检查响应状态
         let status = response.status();
+
+        // A pooled account reports its quota on every answer, refusals included.
+        if claude_oauth {
+            super::claude_pool::record_quota(&provider.id, response.headers());
+        } else if adapter.name() == "Codex" && super::codex_pool::is_chatgpt_provider(provider) {
+            super::codex_pool::record_quota(&provider.id, response.headers());
+        }
 
         if status.is_success() {
             Ok((response, resolved_claude_api_format))

@@ -119,6 +119,24 @@ pub enum AuthStrategy {
     ///
     /// 使用动态获取的 Copilot Token（通过 GitHub OAuth 设备码流程获取）
     GitHubCopilot,
+
+    /// ChatGPT login of an Official Codex provider
+    ///
+    /// - Header: `Authorization: Bearer <access_token>`
+    /// - Header: `chatgpt-account-id: <account id>`
+    ///
+    /// The forwarder resolves both from `codex_pool`, which refreshes the
+    /// login when its access token runs out.
+    ChatGpt,
+
+    /// Captured login of an Official Claude provider
+    ///
+    /// - Header: `Authorization: Bearer <access token>`
+    /// - `anthropic-beta` carries `oauth-2025-04-20`
+    ///
+    /// The forwarder resolves the token from `claude_pool`, which refreshes
+    /// the login when its access token runs out.
+    ClaudeOAuth,
 }
 
 #[cfg(test)]
@@ -234,6 +252,8 @@ mod tests {
             AuthStrategy::Google,
             AuthStrategy::GoogleOAuth,
             AuthStrategy::GitHubCopilot,
+            AuthStrategy::ChatGpt,
+            AuthStrategy::ClaudeOAuth,
         ];
 
         for (i, s1) in strategies.iter().enumerate() {

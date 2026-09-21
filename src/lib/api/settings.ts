@@ -208,6 +208,14 @@ export const settingsApi = {
     return await invoke("set_rectifier_config", { config });
   },
 
+  async getAccountPoolConfig(): Promise<AccountPoolConfig> {
+    return await invoke("get_account_pool_config");
+  },
+
+  async setAccountPoolConfig(config: AccountPoolConfig): Promise<boolean> {
+    return await invoke("set_account_pool_config", { config });
+  },
+
   async getOptimizerConfig(): Promise<OptimizerConfig> {
     return await invoke("get_optimizer_config");
   },
@@ -229,6 +237,15 @@ export interface RectifierConfig {
   enabled: boolean;
   requestThinkingSignature: boolean;
   requestThinkingBudget: boolean;
+}
+
+export interface AccountPoolConfig {
+  enabled: boolean;
+  thresholdPercent: number;
+  /** ISO country codes subscription account traffic must never leave from. */
+  blockedExitCountries: string[];
+  /** Serve Official Claude accounts through the proxy (Claude Code stays signed in). */
+  claudeEnabled: boolean;
 }
 
 export interface OptimizerConfig {

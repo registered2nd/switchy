@@ -92,7 +92,7 @@ pub enum SwapOutcome {
 /// this platform: the macOS login Keychain (`Claude Code-credentials`), or the
 /// `~/.claude/.credentials.json` file on Windows/Linux. Returns `Ok(None)`
 /// when no login exists yet.
-fn read_live_credentials() -> Result<Option<Vec<u8>>, AppError> {
+pub(crate) fn read_live_credentials() -> Result<Option<Vec<u8>>, AppError> {
     // The Keychain is a global side-channel the `SWITCHY_TEST_HOME` file
     // redirect can't sandbox, so tests bypass it and use the redirected file.
     #[cfg(target_os = "macos")]
@@ -113,7 +113,7 @@ fn read_live_credentials() -> Result<Option<Vec<u8>>, AppError> {
 
 /// Writes `blob` to Claude Code's live credential store for this platform: the
 /// macOS Keychain, or `~/.claude/.credentials.json` on Windows/Linux.
-fn write_live_credentials(blob: &[u8]) -> Result<(), AppError> {
+pub(crate) fn write_live_credentials(blob: &[u8]) -> Result<(), AppError> {
     // See `read_live_credentials`: tests bypass the Keychain via the file path.
     #[cfg(target_os = "macos")]
     if std::env::var_os("SWITCHY_TEST_HOME").is_none() {
@@ -295,11 +295,11 @@ fn read_oauth_from_live(path: &Path) -> Result<LiveIdentity, AppError> {
 /// moment we create it removes the guess.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct LiveOwner {
+pub(crate) struct LiveOwner {
     #[serde(default)]
     version: u32,
-    provider_id: String,
-    account_uuid: String,
+    pub(crate) provider_id: String,
+    pub(crate) account_uuid: String,
     /// `expiresAt` (ms) of the access token as written. A later value in the
     /// live file means Claude Code has refreshed since, and that refresh is
     /// what the switch-away sync exists to preserve.
@@ -309,12 +309,12 @@ struct LiveOwner {
 
 const LIVE_OWNER_VERSION: u32 = 1;
 
-fn read_live_owner() -> Option<LiveOwner> {
+pub(crate) fn read_live_owner() -> Option<LiveOwner> {
     let bytes = fs::read(paths::live_owner_path()).ok()?;
     serde_json::from_slice::<LiveOwner>(&bytes).ok()
 }
 
-fn write_live_owner(provider_id: &str, account_uuid: &str, access_expires_at: i64) {
+pub(crate) fn write_live_owner(provider_id: &str, account_uuid: &str, access_expires_at: i64) {
     let owner = LiveOwner {
         version: LIVE_OWNER_VERSION,
         provider_id: provider_id.to_string(),

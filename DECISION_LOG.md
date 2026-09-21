@@ -2,6 +2,37 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-21 — Official Claude accounts are served through the proxy behind a toggle that is off by default, partly superseding 2026-04-20
+
+- Context: Claude Code re-reads its credentials per request, so the file swap already moves an open session; what it cannot do is rotate accounts on quota without a global swap that hits every session at once and trips the open terminal-corruption finding. the user asked for the TeamClaude functions on the Claude side as well, knowing the 2026-04-20 entry had ruled out Switchy renewing Pro/Max tokens.
+- Decision:
+  1. **Same design as Codex, one more toggle.** With *Serve Official Claude accounts through the proxy* on, takeover sets only `ANTHROPIC_BASE_URL` (token keys are removed rather than replaced by the placeholder) so Claude Code stays in subscription mode; the proxy presents the selected Official provider's captured login, adds the `oauth-2025-04-20` beta, and patches `metadata.user_id`'s `account_uuid` to the presented account. With the toggle off, nothing changes: an Official Claude provider under takeover stays unserved, as before.
+  2. **The proxy is a holder of captured logins under the 2026-08-16 rules.** Ownership of the live login is read from the recorded marker, never inferred; a newer live login of the owned account is taken before a stored one is used; a login the proxy renews is written to the snapshot and, when the marker names that account, to the live store's `claudeAiOauth` block with the marker's expiry moved along. Renewal uses Claude Code's client id and the identity its own refresh call carries, because Anthropic's edge refuses the token endpoint to anything else.
+  3. **Identity-plane calls keep the client's login.** `/api/oauth/*` and `/v1/code/*` are relayed with the login Claude Code sent; only `/v1/messages*` gets the pooled login. Presenting a pooled token on the profile call makes Claude Code adopt the other account's identity (observed by TeamClaude on a live fleet).
+  4. **Quota comes from `anthropic-ratelimit-unified-*`** on every answer; only the account-wide buckets spend an account, and `rejected` passes it over until the named reset. The exit check asks `api.anthropic.com/cdn-cgi/trace` and fails closed like Codex's.
+- Why: The mechanism is the one already built for Codex, so the Claude side is the login-handling module plus the takeover change. The 2026-04-20 reasons were policy and Cloudflare enforcement; the user-agent Claude Code's own refresh sends passes the edge (verified by TeamClaude's use), and the policy question was put to the user with the current wording of Anthropic's page, who chose to build it with the toggle off by default.
+- Consequence:
+  - The 2026-04-20 abandonment stands for the captured-card quota path and for any renewal outside this toggle; the periodic background refresh loop (its BACKLOG #6) is still not built. A captured login is renewed only when the proxy is about to present it.
+  - Under rotation the live login is not swapped, so the session's own identity calls run as the account Claude Code is signed into while inference runs as the pooled one.
+  - Verified live on 2026-09-21: one `claude -p` through a test proxy serving a copy of the current account (refresh token blanked) returned its reply, and the proxy recorded the 5-hour and 7-day windows from the response.
+- Files: `src-tauri/src/proxy/claude_pool.rs`; `account_pool.rs` (settings, quota store, exit check shared with Codex); the `ClaudeOAuth` arms of `proxy/providers/claude.rs`, `proxy/forwarder.rs` and `handle_claude_passthrough` in `proxy/handlers.rs`; `apply_claude_takeover_fields` in `services/proxy.rs`.
+
+## 2026-09-21 — Codex accounts switch in an open session through the proxy, which holds ChatGPT logins under the existing newest-wins rules
+
+- Context: Codex reads `auth.json` once at start and reloads it only when the account id on disk matches the one it started as (`reload_if_account_id_matches` in its auth manager), so writing another account's login cannot move an open session. Claude Code re-reads its credentials per request, which is why the file swap is enough there.
+- Decision:
+  1. **The proxy is the switch for an open Codex session.** A provider whose `auth` is a ChatGPT login with no API key and no endpoint of its own is served from `chatgpt.com/backend-api/codex` with that login's bearer token and `chatgpt-account-id`; the login Codex sent is dropped.
+  2. **Takeover of a ChatGPT-mode install sets `openai_base_url` and leaves `auth.json` alone.** The API-key placeholder would flip Codex into API-key mode. A custom `model_provider` would work too, but Codex's resume picker lists only the sessions of the current provider id, so every earlier session would drop out of `codex resume`. The cost of staying on the built-in provider is handled in the proxy: request bodies arrive zstd-compressed, and Codex tries a WebSocket first, which is answered 426 so it falls back to HTTP at once.
+  3. **The proxy is one more holder of each login, under the 2026-09-12 rules, not a separate sign-in.** Before using a stored login it takes a newer one for the same account from `auth.json`; after renewing one it writes the result to the provider, to `auth.json` when that holds the same account, and to the takeover backup; restoring the backup never overwrites a newer live login of the same account. A rejected refresh token is never re-sent, and a 401 within a minute of a renewal does not trigger another.
+  4. **Rotation is the failover queue ordered by quota**, read from the `x-codex-*` headers of every response and from usage-limit refusals. Only account-wide windows count; spent accounts go to the back rather than out, so upstream's own message still reaches the user when all are spent.
+  5. **The exit is checked before a ChatGPT login is used, and the check fails closed.** `chatgpt.com/cdn-cgi/trace` is asked over the request's own route; a blocked country (default `CN`) or no answer holds the request up to 30 s and then refuses it.
+- Why: TeamClaude (`KarpelesLab/teamclaude`) does the same job with its own browser sign-in per account, because it has nothing that reconciles two holders of one login — its code records 287 consecutive rejected renewals from that race. Switchy already reconciles holders (2026-08-16, 2026-09-12), so sharing the login costs nothing and keeps one sign-in per account. The exit check exists because a login presented from the wrong region is answered 403, which Codex reads as a dead session, after the account has already been seen there.
+- Consequence:
+  - Claude gets the same path behind its own toggle, off by default — see the entry below.
+  - Renewing a ChatGPT login from Switchy uses the Codex CLI's OAuth client id against `auth.openai.com`. OpenAI's terms on this were not reviewed.
+  - A Codex install in WSL is not routed through the Windows proxy; the takeover edits only the Windows `config.toml`.
+- Files: `src-tauri/src/proxy/codex_pool.rs`; the ChatGPT arms of `proxy/providers/codex.rs`, `proxy/forwarder.rs` and `proxy/handlers.rs`; `apply_codex_takeover_fields` in `services/proxy.rs`; `src/components/proxy/AccountPoolPanel.tsx`.
+
 ## 2026-09-12 — Kimi Code is an exclusive-mode app whose provider is the whole `config.toml` plus its login file
 
 - Context: Kimi Code (`~/.kimi-code/`) keeps several providers side by side in one `config.toml` and selects one with `default_model` — structurally closer to OpenCode's additive file than to Codex. Its account login lives separately, in `credentials/kimi-code.json`.
@@ -115,6 +146,8 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
   - All three version-of-record files (`package.json`, `tauri.conf.json`, `Cargo.toml`) bumped together; CHANGELOG entry header matches.
 
 ## 2026-04-20 — Abandon snapshot OAuth refresh (BACKLOG #5 and #6)
+
+> **Partly superseded 2026-09-21** — a captured login is renewed by the proxy when it is about to present it, behind a toggle that is off by default. Everything else here stands.
 
 - Decision: Do not build `snapshot_oauth_refresh` (BACKLOG #5, the on-demand token refresh for captured-but-not-current accounts) or the periodic background refresh loop (BACKLOG #6). Captured-card quota pills showing "Session expired" past the access-token ceiling is the correct user-facing behavior.
 - Why — two independent reasons, either sufficient on its own:

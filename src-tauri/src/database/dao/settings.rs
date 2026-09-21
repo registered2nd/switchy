@@ -247,6 +247,28 @@ impl Database {
         self.set_setting("rectifier_config", &json)
     }
 
+    // --- Codex account pool ---
+
+    /// Quota-driven rotation settings; defaults (off, 98%) when never saved.
+    pub fn get_account_pool_config(
+        &self,
+    ) -> Result<crate::proxy::account_pool::AccountPoolConfig, AppError> {
+        match self.get_setting("account_pool_config")? {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|e| AppError::Database(format!("解析账号池配置失败: {e}"))),
+            None => Ok(crate::proxy::account_pool::AccountPoolConfig::default()),
+        }
+    }
+
+    pub fn set_account_pool_config(
+        &self,
+        config: &crate::proxy::account_pool::AccountPoolConfig,
+    ) -> Result<(), AppError> {
+        let json = serde_json::to_string(config)
+            .map_err(|e| AppError::Database(format!("序列化账号池配置失败: {e}")))?;
+        self.set_setting("account_pool_config", &json)
+    }
+
     // --- 优化器配置 ---
 
     /// 获取优化器配置

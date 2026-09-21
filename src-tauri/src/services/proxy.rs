@@ -83,7 +83,38 @@ impl ProxyService {
         Ok(())
     }
 
-    fn apply_claude_takeover_fields(config: &mut Value, proxy_url: &str) {
+    /// Whether the Claude takeover should leave Claude Code signed in with its
+    /// subscription: the account pool is on and `provider` (the current one
+    /// when `None`) is an Official provider with a captured login.
+    fn claude_takeover_keeps_login(&self, provider: Option<&Provider>) -> bool {
+        if !crate::proxy::account_pool::claude_pool_enabled() {
+            return false;
+        }
+        let owned;
+        let provider = match provider {
+            Some(p) => p,
+            None => {
+                let Some(id) =
+                    crate::settings::get_effective_current_provider(&self.db, &AppType::Claude)
+                        .ok()
+                        .flatten()
+                else {
+                    return false;
+                };
+                let Ok(Some(p)) = self.db.get_provider_by_id(&id, "claude") else {
+                    return false;
+                };
+                owned = p;
+                &owned
+            }
+        };
+        crate::proxy::claude_pool::is_oauth_provider(provider)
+    }
+
+    /// Points Claude Code at the proxy. With `keep_login`, no token placeholder
+    /// is written and any token keys are removed, so Claude Code keeps using
+    /// its subscription login and the proxy replaces it per request.
+    fn apply_claude_takeover_fields(config: &mut Value, proxy_url: &str, keep_login: bool) {
         if !config.is_object() {
             *config = json!({});
         }
@@ -111,6 +142,13 @@ impl ProxyService {
             "OPENROUTER_API_KEY",
             "OPENAI_API_KEY",
         ];
+
+        if keep_login {
+            for key in token_keys {
+                env.remove(key);
+            }
+            return;
+        }
 
         let mut replaced_any = false;
         for key in token_keys {
@@ -140,7 +178,8 @@ impl ProxyService {
         .map_err(|e| format!("构建 claude 有效配置失败: {e}"))?;
         let (proxy_url, _) = self.build_proxy_urls().await?;
 
-        Self::apply_claude_takeover_fields(&mut effective_settings, &proxy_url);
+        let keep_login = self.claude_takeover_keeps_login(Some(provider));
+        Self::apply_claude_takeover_fields(&mut effective_settings, &proxy_url, keep_login);
         self.write_claude_live(&effective_settings)?;
         Ok(())
     }
@@ -434,6 +473,92 @@ impl ProxyService {
         }
 
         Ok(())
+    }
+
+    /// Points Codex's live config at the proxy.
+    ///
+    /// A ChatGPT login is left in place and the built-in provider is redirected
+    /// with `openai_base_url`: Codex stays in ChatGPT mode (same model list, same
+    /// session history, which is filed per provider id) and the proxy replaces
+    /// the login on each request. Writing the API-key placeholder instead would
+    /// switch Codex to API-key mode against an address it does not read.
+    ///
+    /// Anything else gets the API-key takeover: placeholder key plus the active
+    /// model provider's `base_url`.
+    fn apply_codex_takeover_fields(
+        config: &mut Value,
+        proxy_url: &str,
+        proxy_codex_base_url: &str,
+    ) {
+        let config_str = config
+            .get("config")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let chatgpt_mode = config
+            .get("auth")
+            .is_some_and(crate::proxy::codex_pool::is_chatgpt_live_auth)
+            && !Self::codex_config_names_model_provider(&config_str);
+
+        if chatgpt_mode {
+            let backend_url = format!(
+                "{}{}",
+                proxy_url.trim_end_matches('/'),
+                crate::proxy::codex_pool::BACKEND_PATH_PREFIX
+            );
+            config["config"] = json!(Self::set_codex_openai_base_url(
+                &config_str,
+                Some(&backend_url)
+            ));
+            return;
+        }
+
+        if let Some(auth) = config.get_mut("auth").and_then(|v| v.as_object_mut()) {
+            auth.insert("OPENAI_API_KEY".to_string(), json!(PROXY_TOKEN_PLACEHOLDER));
+        }
+        config["config"] = json!(Self::update_toml_base_url(
+            &config_str,
+            proxy_codex_base_url
+        ));
+    }
+
+    fn codex_config_names_model_provider(toml_str: &str) -> bool {
+        toml_str
+            .parse::<toml_edit::DocumentMut>()
+            .ok()
+            .and_then(|doc| {
+                doc.get("model_provider")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            })
+            .is_some_and(|name| name != "openai")
+    }
+
+    /// Sets or removes the top-level `openai_base_url` key. Unparseable TOML is
+    /// returned untouched.
+    fn set_codex_openai_base_url(toml_str: &str, url: Option<&str>) -> String {
+        let Ok(mut doc) = toml_str.parse::<toml_edit::DocumentMut>() else {
+            return toml_str.to_string();
+        };
+        match url {
+            Some(url) => doc["openai_base_url"] = toml_edit::value(url),
+            None => {
+                doc.as_table_mut().remove("openai_base_url");
+            }
+        }
+        doc.to_string()
+    }
+
+    fn codex_openai_base_url_is_local(toml_str: &str) -> bool {
+        toml_str
+            .parse::<toml_edit::DocumentMut>()
+            .ok()
+            .and_then(|doc| {
+                doc.get("openai_base_url")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            })
+            .is_some_and(|url| Self::is_local_proxy_url(&url))
     }
 
     /// 同步 Live 配置中的 Token 到数据库
@@ -911,26 +1036,15 @@ impl ProxyService {
 
         // Claude: 修改 ANTHROPIC_BASE_URL，使用占位符替代真实 Token（代理会注入真实 Token）
         if let Ok(mut live_config) = self.read_claude_live() {
-            Self::apply_claude_takeover_fields(&mut live_config, &proxy_url);
+            let keep_login = self.claude_takeover_keeps_login(None);
+            Self::apply_claude_takeover_fields(&mut live_config, &proxy_url, keep_login);
             self.write_claude_live(&live_config)?;
             log::info!("Claude Live 配置已接管，代理地址: {proxy_url}");
         }
 
         // Codex: 修改 config.toml 的 base_url，auth.json 的 OPENAI_API_KEY（代理会注入真实 Token）
         if let Ok(mut live_config) = self.read_codex_live() {
-            // 1. 修改 auth.json 中的 OPENAI_API_KEY（使用占位符）
-            if let Some(auth) = live_config.get_mut("auth").and_then(|v| v.as_object_mut()) {
-                auth.insert("OPENAI_API_KEY".to_string(), json!(PROXY_TOKEN_PLACEHOLDER));
-            }
-
-            // 2. 修改 config.toml 中的 base_url
-            let config_str = live_config
-                .get("config")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let updated_config = Self::update_toml_base_url(config_str, &proxy_codex_base_url);
-            live_config["config"] = json!(updated_config);
-
+            Self::apply_codex_takeover_fields(&mut live_config, &proxy_url, &proxy_codex_base_url);
             self.write_codex_live(&live_config)?;
             log::info!("Codex Live 配置已接管，代理地址: {proxy_codex_base_url}");
         }
@@ -961,24 +1075,18 @@ impl ProxyService {
         match app_type {
             AppType::Claude => {
                 let mut live_config = self.read_claude_live()?;
-                Self::apply_claude_takeover_fields(&mut live_config, &proxy_url);
+                let keep_login = self.claude_takeover_keeps_login(None);
+                Self::apply_claude_takeover_fields(&mut live_config, &proxy_url, keep_login);
                 self.write_claude_live(&live_config)?;
                 log::info!("Claude Live 配置已接管，代理地址: {proxy_url}");
             }
             AppType::Codex => {
                 let mut live_config = self.read_codex_live()?;
-
-                if let Some(auth) = live_config.get_mut("auth").and_then(|v| v.as_object_mut()) {
-                    auth.insert("OPENAI_API_KEY".to_string(), json!(PROXY_TOKEN_PLACEHOLDER));
-                }
-
-                let config_str = live_config
-                    .get("config")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let updated_config = Self::update_toml_base_url(config_str, &proxy_codex_base_url);
-                live_config["config"] = json!(updated_config);
-
+                Self::apply_codex_takeover_fields(
+                    &mut live_config,
+                    &proxy_url,
+                    &proxy_codex_base_url,
+                );
                 self.write_codex_live(&live_config)?;
                 log::info!("Codex Live 配置已接管，代理地址: {proxy_codex_base_url}");
             }
@@ -1018,25 +1126,18 @@ impl ProxyService {
         match app_type {
             AppType::Claude => {
                 if let Ok(mut live_config) = self.read_claude_live() {
-                    Self::apply_claude_takeover_fields(&mut live_config, &proxy_url);
+                    let keep_login = self.claude_takeover_keeps_login(None);
+                    Self::apply_claude_takeover_fields(&mut live_config, &proxy_url, keep_login);
                     let _ = self.write_claude_live(&live_config);
                 }
             }
             AppType::Codex => {
                 if let Ok(mut live_config) = self.read_codex_live() {
-                    if let Some(auth) = live_config.get_mut("auth").and_then(|v| v.as_object_mut())
-                    {
-                        auth.insert("OPENAI_API_KEY".to_string(), json!(PROXY_TOKEN_PLACEHOLDER));
-                    }
-
-                    let config_str = live_config
-                        .get("config")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let updated_config =
-                        Self::update_toml_base_url(config_str, &proxy_codex_base_url);
-                    live_config["config"] = json!(updated_config);
-
+                    Self::apply_codex_takeover_fields(
+                        &mut live_config,
+                        &proxy_url,
+                        &proxy_codex_base_url,
+                    );
                     let _ = self.write_codex_live(&live_config);
                 }
             }
@@ -1084,8 +1185,11 @@ impl ProxyService {
             }
             AppType::Codex => {
                 if let Ok(Some(backup)) = self.db.get_live_backup("codex").await {
-                    let config: Value = serde_json::from_str(&backup.original_config)
+                    let mut config: Value = serde_json::from_str(&backup.original_config)
                         .map_err(|e| format!("解析 Codex 备份失败: {e}"))?;
+                    // Codex may have refreshed its own login while the proxy was
+                    // on; the backup's copy of that login is then spent.
+                    crate::proxy::codex_pool::keep_newer_live_login(&self.db, &mut config);
                     self.write_codex_live(&config)?;
                     log::info!("Codex Live 配置已恢复");
                 }
@@ -1332,7 +1436,10 @@ impl ProxyService {
         }
 
         if let Some(cfg_str) = config.get("config").and_then(|v| v.as_str()) {
-            let updated = Self::remove_local_toml_base_url(cfg_str);
+            let mut updated = Self::remove_local_toml_base_url(cfg_str);
+            if Self::codex_openai_base_url_is_local(&updated) {
+                updated = Self::set_codex_openai_base_url(&updated, None);
+            }
             config["config"] = json!(updated);
         }
 
@@ -1431,6 +1538,14 @@ impl ProxyService {
             None => return false,
         };
 
+        if env
+            .get("ANTHROPIC_BASE_URL")
+            .and_then(|v| v.as_str())
+            .is_some_and(Self::is_local_proxy_url)
+        {
+            return true;
+        }
+
         for key in [
             "ANTHROPIC_AUTH_TOKEN",
             "ANTHROPIC_API_KEY",
@@ -1446,6 +1561,13 @@ impl ProxyService {
     }
 
     fn is_codex_live_taken_over(config: &Value) -> bool {
+        if config
+            .get("config")
+            .and_then(|v| v.as_str())
+            .is_some_and(Self::codex_openai_base_url_is_local)
+        {
+            return true;
+        }
         let auth = match config.get("auth").and_then(|v| v.as_object()) {
             Some(auth) => auth,
             None => return false,
@@ -1988,6 +2110,124 @@ mod tests {
                 None => env::remove_var("SWITCHY_TEST_HOME"),
             }
         }
+    }
+
+    fn chatgpt_live(config: &str) -> Value {
+        json!({
+            "auth": {
+                "tokens": {
+                    "id_token": "x.e30.y",
+                    "access_token": "AAA",
+                    "refresh_token": "RRR",
+                    "account_id": "acct-a"
+                },
+                "last_refresh": "2026-09-01T00:00:00Z"
+            },
+            "config": config
+        })
+    }
+
+    #[test]
+    fn claude_takeover_that_keeps_the_login_writes_no_token_placeholder() {
+        let mut live = json!({ "env": { "ANTHROPIC_AUTH_TOKEN": "stale", "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000" } });
+        ProxyService::apply_claude_takeover_fields(&mut live, "http://127.0.0.1:15721", true);
+        let env = live["env"].as_object().unwrap();
+        assert_eq!(env["ANTHROPIC_BASE_URL"], "http://127.0.0.1:15721");
+        assert!(
+            env.get("ANTHROPIC_AUTH_TOKEN").is_none(),
+            "a token key would take Claude Code out of subscription mode"
+        );
+        assert!(env.get("ANTHROPIC_API_KEY").is_none());
+        assert_eq!(env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"], "64000");
+        assert!(
+            ProxyService::is_claude_live_taken_over(&live),
+            "the local base URL marks the takeover"
+        );
+    }
+
+    #[test]
+    fn claude_takeover_for_an_api_key_provider_still_writes_the_placeholder() {
+        let mut live = json!({ "env": { "ANTHROPIC_AUTH_TOKEN": "sk-real" } });
+        ProxyService::apply_claude_takeover_fields(&mut live, "http://127.0.0.1:15721", false);
+        assert_eq!(live["env"]["ANTHROPIC_AUTH_TOKEN"], PROXY_TOKEN_PLACEHOLDER);
+        let mut bare = json!({ "env": {} });
+        ProxyService::apply_claude_takeover_fields(&mut bare, "http://127.0.0.1:15721", false);
+        assert_eq!(bare["env"]["ANTHROPIC_AUTH_TOKEN"], PROXY_TOKEN_PLACEHOLDER);
+    }
+
+    #[test]
+    fn codex_takeover_keeps_a_chatgpt_login_and_redirects_the_builtin_provider() {
+        let mut live = chatgpt_live("model = \"gpt-5\"\n");
+        ProxyService::apply_codex_takeover_fields(
+            &mut live,
+            "http://127.0.0.1:15721",
+            "http://127.0.0.1:15721/v1",
+        );
+
+        assert!(
+            live["auth"].get("OPENAI_API_KEY").is_none(),
+            "an API key would switch Codex out of ChatGPT mode"
+        );
+        assert_eq!(live["auth"]["tokens"]["refresh_token"], "RRR");
+        let parsed: toml::Value = toml::from_str(live["config"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            parsed.get("openai_base_url").and_then(|v| v.as_str()),
+            Some("http://127.0.0.1:15721/backend-api/codex")
+        );
+        assert_eq!(parsed.get("model").and_then(|v| v.as_str()), Some("gpt-5"));
+        assert!(ProxyService::is_codex_live_taken_over(&live));
+    }
+
+    #[test]
+    fn codex_takeover_of_an_api_key_provider_is_unchanged() {
+        let mut live = json!({
+            "auth": { "OPENAI_API_KEY": "sk-real" },
+            "config": "model_provider = \"any\"\n[model_providers.any]\nbase_url = \"https://x/v1\"\n"
+        });
+        ProxyService::apply_codex_takeover_fields(
+            &mut live,
+            "http://127.0.0.1:15721",
+            "http://127.0.0.1:15721/v1",
+        );
+
+        assert_eq!(live["auth"]["OPENAI_API_KEY"], PROXY_TOKEN_PLACEHOLDER);
+        let parsed: toml::Value = toml::from_str(live["config"].as_str().unwrap()).unwrap();
+        assert!(parsed.get("openai_base_url").is_none());
+        assert_eq!(
+            parsed["model_providers"]["any"]["base_url"].as_str(),
+            Some("http://127.0.0.1:15721/v1")
+        );
+    }
+
+    #[test]
+    fn codex_chatgpt_login_with_a_third_party_provider_gets_the_api_key_takeover() {
+        let mut live = chatgpt_live(
+            "model_provider = \"any\"\n[model_providers.any]\nbase_url = \"https://x/v1\"\n",
+        );
+        ProxyService::apply_codex_takeover_fields(
+            &mut live,
+            "http://127.0.0.1:15721",
+            "http://127.0.0.1:15721/v1",
+        );
+        assert_eq!(live["auth"]["OPENAI_API_KEY"], PROXY_TOKEN_PLACEHOLDER);
+    }
+
+    #[test]
+    fn codex_openai_base_url_is_removed_only_when_it_points_at_the_proxy() {
+        let local = ProxyService::set_codex_openai_base_url(
+            "model = \"gpt-5\"\n",
+            Some("http://127.0.0.1:15721/backend-api/codex"),
+        );
+        assert!(ProxyService::codex_openai_base_url_is_local(&local));
+        let cleaned = ProxyService::set_codex_openai_base_url(&local, None);
+        assert!(!cleaned.contains("openai_base_url"));
+        assert!(cleaned.contains("model = \"gpt-5\""));
+
+        let users_own = "openai_base_url = \"https://gateway.example/backend-api/codex\"\n";
+        assert!(!ProxyService::codex_openai_base_url_is_local(users_own));
+        assert!(!ProxyService::is_codex_live_taken_over(&chatgpt_live(
+            users_own
+        )));
     }
 
     #[test]

@@ -85,6 +85,11 @@ impl ProviderAdapter for CodexAdapter {
     }
 
     fn extract_base_url(&self, provider: &Provider) -> Result<String, ProxyError> {
+        // A ChatGPT login is served by the ChatGPT backend, not the API platform.
+        if crate::proxy::codex_pool::is_chatgpt_provider(provider) {
+            return Ok(crate::proxy::codex_pool::CHATGPT_CODEX_BASE_URL.to_string());
+        }
+
         // 1. 尝试直接获取 base_url 字段
         if let Some(url) = provider
             .settings_config
@@ -132,6 +137,10 @@ impl ProviderAdapter for CodexAdapter {
     }
 
     fn extract_auth(&self, provider: &Provider) -> Option<AuthInfo> {
+        if crate::proxy::codex_pool::is_chatgpt_provider(provider) {
+            // Placeholder: the forwarder swaps in the live credentials.
+            return Some(AuthInfo::new(String::new(), AuthStrategy::ChatGpt));
+        }
         self.extract_key(provider)
             .map(|key| AuthInfo::new(key, AuthStrategy::Bearer))
     }
@@ -240,6 +249,27 @@ mod tests {
 
         let auth = adapter.extract_auth(&provider).unwrap();
         assert_eq!(auth.api_key, "sk-env-key-12345678");
+    }
+
+    #[test]
+    fn chatgpt_login_routes_to_chatgpt_backend() {
+        let adapter = CodexAdapter::new();
+        let provider = create_provider(json!({
+            "auth": { "tokens": { "access_token": "a", "refresh_token": "r", "account_id": "acct" } },
+            "config": "model = \"gpt-5\"
+        "
+        }));
+
+        let base = adapter.extract_base_url(&provider).unwrap();
+        assert_eq!(base, "https://chatgpt.com/backend-api/codex");
+        assert_eq!(
+            adapter.build_url(&base, "/responses"),
+            "https://chatgpt.com/backend-api/codex/responses"
+        );
+        assert_eq!(
+            adapter.extract_auth(&provider).unwrap().strategy,
+            AuthStrategy::ChatGpt
+        );
     }
 
     #[test]

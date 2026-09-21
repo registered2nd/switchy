@@ -5241,7 +5241,7 @@ dependencies = [
 
 [[package]]
 name = "switchy"
-version = "1.0.10"
+version = "1.0.11"
 dependencies = [
  "anyhow",
  "arboard",
@@ -5306,6 +5306,7 @@ dependencies = [
  "webpki-roots 0.26.11",
  "winreg 0.52.0",
  "zip 2.4.2",
+ "zstd",
 ]
 
 [[package]]

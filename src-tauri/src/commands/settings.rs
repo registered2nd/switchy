@@ -217,6 +217,40 @@ pub async fn set_rectifier_config(
     Ok(true)
 }
 
+/// Account pool settings: quota-driven rotation, the Claude proxy path, the exit check.
+#[tauri::command]
+pub async fn get_account_pool_config(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<crate::proxy::account_pool::AccountPoolConfig, String> {
+    state
+        .db
+        .get_account_pool_config()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_account_pool_config(
+    state: tauri::State<'_, crate::AppState>,
+    config: crate::proxy::account_pool::AccountPoolConfig,
+) -> Result<bool, String> {
+    if !(50..=100).contains(&config.threshold_percent) {
+        return Err("threshold must be between 50 and 100".to_string());
+    }
+    state
+        .db
+        .set_account_pool_config(&config)
+        .map_err(|e| e.to_string())?;
+    crate::proxy::account_pool::refresh_flags(&state.db);
+    Ok(true)
+}
+
+/// Quota each pooled account last reported, keyed by provider id.
+#[tauri::command]
+pub async fn get_account_pool_quota(
+) -> Result<std::collections::HashMap<String, crate::proxy::account_pool::AccountQuota>, String> {
+    Ok(crate::proxy::account_pool::quota_snapshot())
+}
+
 /// 获取优化器配置
 #[tauri::command]
 pub async fn get_optimizer_config(

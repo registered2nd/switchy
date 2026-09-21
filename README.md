@@ -86,7 +86,7 @@ Switchy supports six tools: **Claude Code**, **Codex**, **Gemini CLI**, **Kimi C
 <details>
 <summary><strong>Do I need to restart the terminal after switching providers?</strong></summary>
 
-For most tools, yes — restart your terminal or the CLI tool for changes to take effect. The exception is **Claude Code**, which currently supports hot-switching of provider data without a restart.
+For most tools, yes — restart your terminal or the CLI tool for changes to take effect. **Claude Code** picks up a switch without a restart. **Codex** does too while it is routed through the local proxy (see [Switching Codex accounts in an open session](#switching-codex-accounts-in-an-open-session)); otherwise exit and run `codex resume --last`, which brings the conversation back under the new account.
 
 </details>
 
@@ -394,6 +394,25 @@ Two deadlines govern how long a captured account stays usable. The access token 
 Claude Code and Codex both rotate the refresh token on every renewal, and the server accepts each one only once. Two installs holding the same login — most commonly Windows and WSL — will therefore race, and the one that renews second is rejected and left signed out.
 
 Switchy reconciles the two sides in the background, moving the surviving login to whichever side lost, so this heals on its own. It needs the mirror directory configured and reachable (one per tool, under Settings → Directories); while WSL is shut down, a rotation that happens on the Windows side cannot be propagated until it comes back. For Codex, an install that is on an API key rather than a ChatGPT login is left alone.
+
+### Switching Codex accounts in an open session
+
+A running Codex session reads its ChatGPT login once, at start, and refuses to reload a login that belongs to a different account. Switching the Official provider therefore changes the account for the next session, not the open one.
+
+Turn on the proxy for Codex (Settings → Proxy → Local Proxy) and the open session switches too. Codex keeps its own login and its built-in provider is pointed at the local proxy; on every request the proxy replaces that login with the one of the Official provider currently selected. Codex stays in ChatGPT mode, so its model list and its `codex resume` history are unchanged. Sessions started before the proxy was turned on keep talking to OpenAI directly until they are restarted.
+
+- **Rotation.** With automatic failover on, the failover queue is the pool of accounts. *Rotate accounts before the limit* (Settings → Proxy → Auto Failover → Codex) moves an account whose usage has reached the threshold to the back of the queue until its limit resets, and an account OpenAI refuses for usage is passed over until the reset it names. When every account is spent the request still goes out, so you see OpenAI's own message.
+- **Logins stay usable.** The proxy renews a stored login when its access token runs out and hands the renewed login to Codex's own `auth.json` and to the copy restored when the proxy is turned off, under the same newest-valid-login-wins rules as [One login, two installs](#one-login-two-installs). A login OpenAI has rejected is not retried; sign in again with `codex login` while that provider is current.
+- **Exit check.** Before a stored login is used, the proxy asks the edge in front of the service (`chatgpt.com`, or `api.anthropic.com` for Claude) where it sees this machine, over the route the request will take. If that is mainland China, or the question gets no answer, the request is held for up to 30 seconds and then refused; nothing is sent. Set Switchy's global outbound proxy if this machine reaches the internet through a local proxy port rather than a router or TUN path.
+- A Codex install in WSL is not routed through the Windows proxy.
+
+### Rotating Claude accounts through the proxy
+
+Claude Code picks up a switch without a restart, so Official Claude accounts already swap by hand at any time. Rotating them automatically is behind its own switch, *Serve Official Claude accounts through the proxy* (Settings → Proxy → Auto Failover → Claude), off by default. Without it, an Official Claude provider is not served while the proxy is on.
+
+With it on and the proxy taken over for Claude, Claude Code keeps its own subscription sign-in and only its API address changes. The proxy presents the selected Official account's captured login on each request and patches the account id Claude Code writes into the request to match it. Rotation, renewal, the exit check and the login rules are the ones described for Codex above; Anthropic's rate-limit headers decide when an account is spent, and an account it refuses is passed over until the reset it names. Claude Code's own identity calls (`/api/oauth/*`) pass through with the login Claude Code sent, so it never learns another account's identity.
+
+Switchy then sits in the request path and renews captured logins itself, using Claude Code's own client id against Anthropic's token endpoint. Whether that fits Anthropic's terms for subscription logins is yours to weigh before turning it on.
 
 ### What a Gemini or Kimi card can show
 

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { ProxyPanel } from "@/components/proxy";
 import { AutoFailoverConfigPanel } from "@/components/proxy/AutoFailoverConfigPanel";
 import { FailoverQueueManager } from "@/components/proxy/FailoverQueueManager";
+import { AccountPoolPanel } from "@/components/proxy/AccountPoolPanel";
 import { RectifierConfigPanel } from "@/components/settings/RectifierConfigPanel";
 import { GlobalProxySettings } from "@/components/settings/GlobalProxySettings";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -192,6 +193,9 @@ export function ProxyTabContent({
                     />
                   </div>
                   <div className="border-t border-border/50 pt-6">
+                    <AccountPoolPanel app="claude" disabled={!isRunning} />
+                  </div>
+                  <div className="border-t border-border/50 pt-6">
                     <AutoFailoverConfigPanel
                       appType="claude"
                       disabled={!isRunning}
@@ -212,6 +216,9 @@ export function ProxyTabContent({
                       appType="codex"
                       disabled={!isRunning}
                     />
+                  </div>
+                  <div className="border-t border-border/50 pt-6">
+                    <AccountPoolPanel app="codex" disabled={!isRunning} />
                   </div>
                   <div className="border-t border-border/50 pt-6">
                     <AutoFailoverConfigPanel

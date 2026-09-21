@@ -1987,6 +1987,14 @@
       "reorderFailed": "Failed to update order",
       "toggleFailed": "Failed to update status"
     },
+    "accountPool": {
+      "enabled": "Rotate accounts before the limit",
+      "enabledDescription": "With automatic failover on, an Official account whose usage reaches the threshold is moved to the back of the queue until its limit resets, so the session carries on with the next account. Applies to Claude and Codex.",
+      "claudeEnabled": "Serve Official Claude accounts through the proxy",
+      "claudeEnabledDescription": "Claude Code stays signed in with its own subscription; the proxy presents the selected Official account's login on each request and refreshes it when needed. Off, an Official Claude provider is not served while the proxy is on.",
+      "threshold": "Usage threshold (%)",
+      "thresholdDescription": "Pass an account over once its account-wide usage reaches this level. 50–100."
+    },
     "autoFailover": {
       "info": "When the failover queue has multiple providers, the system will try them in priority order when requests fail. When a provider reaches the consecutive failure threshold, the circuit breaker will open and skip it temporarily.",
       "configSaved": "Auto failover config saved",
