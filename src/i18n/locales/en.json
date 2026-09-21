@@ -1990,8 +1990,6 @@
     "accountPool": {
       "enabled": "Rotate accounts before the limit",
       "enabledDescription": "With automatic failover on, an Official account whose usage reaches the threshold is moved to the back of the queue until its limit resets, so the session carries on with the next account. Applies to Claude and Codex.",
-      "claudeEnabled": "Serve Official Claude accounts through the proxy",
-      "claudeEnabledDescription": "Claude Code stays signed in with its own subscription; the proxy presents the selected Official account's login on each request and refreshes it when needed. Off, an Official Claude provider is not served while the proxy is on.",
       "threshold": "Usage threshold (%)",
       "thresholdDescription": "Pass an account over once its account-wide usage reaches this level. 50–100."
     },

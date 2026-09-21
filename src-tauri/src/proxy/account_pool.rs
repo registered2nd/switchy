@@ -30,27 +30,6 @@ pub struct AccountPoolConfig {
     /// Empty turns the check off.
     #[serde(default = "default_blocked_exit_countries")]
     pub blocked_exit_countries: Vec<String>,
-    /// Serve Official Claude accounts through the proxy: takeover leaves Claude
-    /// Code in subscription mode and the proxy presents the selected account's
-    /// login. Off by default; without it an Official Claude provider under
-    /// takeover is not served.
-    #[serde(default)]
-    pub claude_enabled: bool,
-}
-
-/// Mirror of `claude_enabled`, for the adapter code that runs without a
-/// database handle. Set from the stored config at proxy start and on save.
-static CLAUDE_POOL_ENABLED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-pub fn claude_pool_enabled() -> bool {
-    CLAUDE_POOL_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Loads the stored settings into the process-wide flags.
-pub fn refresh_flags(db: &Database) {
-    let config = db.get_account_pool_config().unwrap_or_default();
-    CLAUDE_POOL_ENABLED.store(config.claude_enabled, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn default_threshold() -> u8 {
@@ -67,7 +46,6 @@ impl Default for AccountPoolConfig {
             enabled: false,
             threshold_percent: default_threshold(),
             blocked_exit_countries: default_blocked_exit_countries(),
-            claude_enabled: false,
         }
     }
 }
@@ -367,7 +345,6 @@ mod tests {
         let saved: AccountPoolConfig =
             serde_json::from_str(r#"{"enabled":true,"thresholdPercent":95}"#).unwrap();
         assert_eq!(saved.blocked_exit_countries, vec!["CN".to_string()]);
-        assert!(!saved.claude_enabled);
         assert_eq!(
             AccountPoolConfig::default().blocked_exit_countries,
             vec!["CN".to_string()]

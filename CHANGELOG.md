@@ -6,6 +6,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.13] — 2026-09-21 — One switch for Claude through the proxy
+
+### Changed
+
+- **Turning Local Proxy on for Claude is all it takes.** The separate
+  *Serve Official Claude accounts through the proxy* switch is gone: an
+  Official Claude account is served through the proxy whenever the proxy is
+  on for Claude. The only case still refused is an Official account whose
+  login has not been captured, and the message says to capture it first.
+
+### Fixed
+
+- **"Failed to toggle takeover" with no reason.** The message now carries
+  the reason the takeover was refused.
+
 ## [1.0.12] — 2026-09-21 — Turning the proxy on for an Official Claude account can no longer break Claude Code
 
 ### Fixed

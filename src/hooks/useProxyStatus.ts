@@ -127,11 +127,11 @@ export function useProxyStatus() {
       const detail =
         extractErrorMessage(error) ||
         t("common.unknown", { defaultValue: "未知错误" });
-      toast.error(
-        t("proxy.takeover.failed", {
-          defaultValue: `操作失败: ${detail}`,
-        }),
-      );
+      toast.error(t("proxy.takeover.failed"), {
+        description: detail,
+        duration: 12000,
+        closeButton: true,
+      });
     },
   });
 

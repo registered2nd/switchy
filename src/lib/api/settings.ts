@@ -244,8 +244,6 @@ export interface AccountPoolConfig {
   thresholdPercent: number;
   /** ISO country codes subscription account traffic must never leave from. */
   blockedExitCountries: string[];
-  /** Serve Official Claude accounts through the proxy (Claude Code stays signed in). */
-  claudeEnabled: boolean;
 }
 
 export interface OptimizerConfig {

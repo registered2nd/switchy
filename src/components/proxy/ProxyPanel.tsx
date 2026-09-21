@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
 import { toast } from "sonner";
+import { extractErrorMessage } from "@/utils/errorUtils";
 import { useFailoverQueue } from "@/lib/query/failover";
 import { ProviderHealthBadge } from "@/components/providers/ProviderHealthBadge";
 import { useProviderHealth } from "@/lib/query/failover";
@@ -88,11 +89,11 @@ export function ProxyPanel({
         { closeButton: true },
       );
     } catch (error) {
-      toast.error(
-        t("proxy.takeover.failed", {
-          defaultValue: "切换接管状态失败",
-        }),
-      );
+      toast.error(t("proxy.takeover.failed"), {
+        description: extractErrorMessage(error) || undefined,
+        duration: 12000,
+        closeButton: true,
+      });
     }
   };
 

@@ -7,21 +7,15 @@ import { Input } from "@/components/ui/input";
 import { settingsApi, type AccountPoolConfig } from "@/lib/api/settings";
 
 interface AccountPoolPanelProps {
-  /** Which tab the panel sits in; the Claude tab adds the proxy-path toggle. */
-  app: "claude" | "codex";
   disabled?: boolean;
 }
 
-export function AccountPoolPanel({
-  app,
-  disabled = false,
-}: AccountPoolPanelProps) {
+export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
   const { t } = useTranslation();
   const [config, setConfig] = useState<AccountPoolConfig>({
     enabled: false,
     thresholdPercent: 98,
     blockedExitCountries: ["CN"],
-    claudeEnabled: false,
   });
   const [thresholdText, setThresholdText] = useState("98");
   const [isLoading, setIsLoading] = useState(true);
@@ -66,22 +60,6 @@ export function AccountPoolPanel({
 
   return (
     <div className="space-y-4">
-      {app === "claude" && (
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-0.5">
-            <Label>{t("proxy.accountPool.claudeEnabled")}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t("proxy.accountPool.claudeEnabledDescription")}
-            </p>
-          </div>
-          <Switch
-            checked={config.claudeEnabled}
-            disabled={disabled}
-            onCheckedChange={(checked) => void save({ claudeEnabled: checked })}
-          />
-        </div>
-      )}
-
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-0.5">
           <Label>{t("proxy.accountPool.enabled")}</Label>

@@ -600,7 +600,7 @@ pub async fn handle_claude_passthrough(
     let claude_path = path.starts_with("/api/")
         || path.starts_with("/v1/code/")
         || path.starts_with("/v1/messages/");
-    if !claude_path || !super::account_pool::claude_pool_enabled() {
+    if !claude_path {
         return Ok((StatusCode::NOT_FOUND, "Not Found").into_response());
     }
 

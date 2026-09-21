@@ -243,11 +243,9 @@ impl ClaudeAdapter {
 }
 
 impl ClaudeAdapter {
-    /// An Official provider whose captured login the proxy presents itself —
-    /// only while the Claude account pool is switched on.
+    /// An Official provider whose captured login the proxy presents itself.
     pub fn serves_captured_login(provider: &Provider) -> bool {
-        crate::proxy::account_pool::claude_pool_enabled()
-            && crate::proxy::claude_pool::is_oauth_provider(provider)
+        crate::proxy::claude_pool::is_oauth_provider(provider)
     }
 }
 

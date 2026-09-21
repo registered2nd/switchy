@@ -4,6 +4,8 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
 
 ## 2026-09-21 — Official Claude accounts are served through the proxy behind a toggle that is off by default, partly superseding 2026-04-20
 
+> **Amended the same day (1.0.13)** — the separate toggle was removed at the user's direction. Taking Claude over with the per-app Local Proxy switch is the opt-in; an Official account is then served with its captured login, and a takeover is refused only when that login has not been captured. The toggle had left Local Proxy for Claude broken for an Official account unless a second, initially greyed-out switch was set first.
+
 - Context: Claude Code re-reads its credentials per request, so the file swap already moves an open session; what it cannot do is rotate accounts on quota without a global swap that hits every session at once and trips the open terminal-corruption finding. the user asked for the TeamClaude functions on the Claude side as well, knowing the 2026-04-20 entry had ruled out Switchy renewing Pro/Max tokens.
 - Decision:
   1. **Same design as Codex, one more toggle.** With *Serve Official Claude accounts through the proxy* on, takeover sets only `ANTHROPIC_BASE_URL` (token keys are removed rather than replaced by the placeholder) so Claude Code stays in subscription mode; the proxy presents the selected Official provider's captured login, adds the `oauth-2025-04-20` beta, and patches `metadata.user_id`'s `account_uuid` to the presented account. With the toggle off, nothing changes: an Official Claude provider under takeover stays unserved, as before.
