@@ -193,7 +193,7 @@ export function ProxyTabContent({
                     />
                   </div>
                   <div className="border-t border-border/50 pt-6">
-                    <AccountPoolPanel app="claude" disabled={!isRunning} />
+                    <AccountPoolPanel app="claude" />
                   </div>
                   <div className="border-t border-border/50 pt-6">
                     <AutoFailoverConfigPanel
@@ -218,7 +218,7 @@ export function ProxyTabContent({
                     />
                   </div>
                   <div className="border-t border-border/50 pt-6">
-                    <AccountPoolPanel app="codex" disabled={!isRunning} />
+                    <AccountPoolPanel app="codex" />
                   </div>
                   <div className="border-t border-border/50 pt-6">
                     <AutoFailoverConfigPanel

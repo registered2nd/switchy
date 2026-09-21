@@ -86,6 +86,19 @@ impl ProxyService {
     /// Whether the Claude takeover should leave Claude Code signed in with its
     /// subscription: the account pool is on and `provider` (the current one
     /// when `None`) is an Official provider with a captured login.
+    /// True when the current Claude provider is an Official account and the
+    /// account pool switch is off: the proxy could not serve it.
+    fn claude_takeover_would_strand_official(&self) -> bool {
+        if crate::proxy::account_pool::claude_pool_enabled() {
+            return false;
+        }
+        crate::settings::get_effective_current_provider(&self.db, &AppType::Claude)
+            .ok()
+            .flatten()
+            .and_then(|id| self.db.get_provider_by_id(&id, "claude").ok().flatten())
+            .is_some_and(|p| p.category.as_deref() == Some("official"))
+    }
+
     fn claude_takeover_keeps_login(&self, provider: Option<&Provider>) -> bool {
         if !crate::proxy::account_pool::claude_pool_enabled() {
             return false;
@@ -371,6 +384,17 @@ impl ProxyService {
 
                 log::warn!(
                     "{app_type_str} 标记为已接管，但缺少备份或占位符，正在重新接管并补齐备份"
+                );
+            }
+
+            // An Official Claude provider can only be served while the account
+            // pool switch is on. Taking over without it points Claude Code at a
+            // proxy that has nothing to answer with, so refuse before touching
+            // any file.
+            if matches!(app, AppType::Claude) && self.claude_takeover_would_strand_official() {
+                return Err(
+                    "The current Claude provider is an Official account. Turn on \"Serve Official Claude accounts through the proxy\" (Settings → Proxy → Auto Failover → Claude) first, or switch to a provider with its own API key."
+                        .to_string(),
                 );
             }
 

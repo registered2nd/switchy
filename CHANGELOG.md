@@ -6,6 +6,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.12] — 2026-09-21 — Turning the proxy on for an Official Claude account can no longer break Claude Code
+
+### Fixed
+
+- **Claude Code answering `400` and then `Connection refused` after Local
+  Proxy was turned on for Claude.** With an Official Claude account current
+  and *Serve Official Claude accounts through the proxy* off, the proxy took
+  Claude Code over anyway and had nothing to answer with. The takeover is now
+  refused with a message naming the switch to turn on, and no file is touched.
+- **The account-pool switches were greyed out until the proxy was running**,
+  so the Claude switch could not be turned on before the takeover that needed
+  it. They can now be set at any time.
+
+Sessions that were started while the proxy was on keep calling it after it is
+turned off; quit and reopen them.
+
 ## [1.0.11] — 2026-09-21 — Codex switches accounts in an open session; Claude and Codex can rotate accounts before the limit
 
 A running Codex session reads its login once and refuses to reload another

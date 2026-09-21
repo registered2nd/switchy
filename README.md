@@ -408,7 +408,7 @@ Turn on the proxy for Codex (Settings → Proxy → Local Proxy) and the open se
 
 ### Rotating Claude accounts through the proxy
 
-Claude Code picks up a switch without a restart, so Official Claude accounts already swap by hand at any time. Rotating them automatically is behind its own switch, *Serve Official Claude accounts through the proxy* (Settings → Proxy → Auto Failover → Claude), off by default. Without it, an Official Claude provider is not served while the proxy is on.
+Claude Code picks up a switch without a restart, so Official Claude accounts already swap by hand at any time. Rotating them automatically is behind its own switch, *Serve Official Claude accounts through the proxy* (Settings → Proxy → Auto Failover → Claude), off by default. Turn it on before turning Local Proxy on for Claude: while it is off, Switchy refuses to take Claude over with an Official account current, because the proxy would have nothing to answer with. Claude Code sessions started while the proxy was on keep calling it after it is turned off; quit and reopen them.
 
 With it on and the proxy taken over for Claude, Claude Code keeps its own subscription sign-in and only its API address changes. The proxy presents the selected Official account's captured login on each request and patches the account id Claude Code writes into the request to match it. Rotation, renewal, the exit check and the login rules are the ones described for Codex above; Anthropic's rate-limit headers decide when an account is spent, and an account it refuses is passed over until the reset it names. Claude Code's own identity calls (`/api/oauth/*`) pass through with the login Claude Code sent, so it never learns another account's identity.
 
