@@ -414,6 +414,16 @@ With the proxy taken over for Claude, Claude Code keeps its own subscription sig
 
 Switchy then sits in the request path and renews captured logins itself, using Claude Code's own client id against Anthropic's token endpoint. Whether that fits Anthropic's terms for subscription logins is yours to weigh before turning the proxy on for Claude.
 
+### Keeping pooled accounts warm
+
+A subscription's session window — Anthropic's five hours, ChatGPT's equivalent — opens on a real request and resets a fixed time later. An account nobody has used has no window running, so when rotation moves onto it the window starts from cold, and that account is the one holding the session with its reset furthest away.
+
+*Keep accounts warm* (Settings → Proxy → Auto Failover → Claude or Codex) opens those windows in advance. Each Official account is looked at on the interval you set, and one request for a single token goes out to the ones whose window has lapsed. An account whose window is still running is skipped, and so is one at its limit, so the cost stays near one request per account per window. It runs while Switchy is running and needs neither the proxy nor rotation to be on; it is off by default, because this spends quota with nobody present.
+
+Presenting the login renews it, so a warmed account is also a signed-in one — but only as far as its refresh token reaches. That deadline is set by the last sign-in in the browser and renewing does not push it back, so keep-warm cannot hold an account open indefinitely; when the refresh token expires the account needs `claude /login` or `codex login` while it is the current provider. Everything else is as it is for a real request: the exit check runs first, a rejected refresh token is not retried, and the quota the answer reports is recorded for rotation to use — which is the other thing keep-warm buys, since an account nobody has used reports nothing at all.
+
+The model each request uses is the test model for that tool under Settings → Advanced → Model Test Config, which defaults to the cheapest one.
+
 ### What a Gemini or Kimi card can show
 
 Usage badges and account switching both come from signing a tool in with an account. Claude Code, Codex and Kimi Code keep that login in a file Switchy stores with each provider, so switching providers switches accounts.

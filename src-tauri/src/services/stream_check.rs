@@ -630,7 +630,7 @@ impl StreamCheckService {
 
     /// 解析模型名和推理等级 (支持 model@level 或 model#level 格式)
     /// 返回 (实际模型名, Option<推理等级>)
-    fn parse_model_with_effort(model: &str) -> (String, Option<String>) {
+    pub(crate) fn parse_model_with_effort(model: &str) -> (String, Option<String>) {
         if let Some(pos) = model.find('@').or_else(|| model.find('#')) {
             let actual_model = model[..pos].to_string();
             let effort = model[pos + 1..].to_string();
@@ -746,7 +746,7 @@ impl StreamCheckService {
     }
 
     /// 获取操作系统名称（映射为 Claude CLI 使用的格式）
-    fn get_os_name() -> &'static str {
+    pub(crate) fn get_os_name() -> &'static str {
         match std::env::consts::OS {
             "macos" => "MacOS",
             "linux" => "Linux",
@@ -756,7 +756,7 @@ impl StreamCheckService {
     }
 
     /// 获取 CPU 架构名称（映射为 Claude CLI 使用的格式）
-    fn get_arch_name() -> &'static str {
+    pub(crate) fn get_arch_name() -> &'static str {
         match std::env::consts::ARCH {
             "aarch64" => "arm64",
             "x86_64" => "x86_64",

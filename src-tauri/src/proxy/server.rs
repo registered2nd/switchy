@@ -90,7 +90,7 @@ impl ProxyServer {
         let addr: SocketAddr =
             format!("{}:{}", self.config.listen_address, self.config.listen_port)
                 .parse()
-                .map_err(|e| ProxyError::BindFailed(format!("无效的地址: {e}")))?;
+                .map_err(|e| ProxyError::BindFailed(format!("Invalid address: {e}")))?;
 
         // 创建关闭通道
         let (shutdown_tx, shutdown_rx) = oneshot::channel();

@@ -19,6 +19,7 @@ mod handlers;
 mod health;
 pub mod http_client;
 pub mod hyper_client;
+pub mod keep_warm;
 pub mod log_codes;
 pub mod model_mapper;
 pub mod provider_router;

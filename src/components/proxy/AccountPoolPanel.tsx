@@ -16,8 +16,11 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
     enabled: false,
     thresholdPercent: 98,
     blockedExitCountries: ["CN"],
+    keepWarmEnabled: false,
+    keepWarmIntervalMinutes: 60,
   });
   const [thresholdText, setThresholdText] = useState("98");
+  const [keepWarmText, setKeepWarmText] = useState("60");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -26,6 +29,7 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
       .then((loaded) => {
         setConfig(loaded);
         setThresholdText(String(loaded.thresholdPercent));
+        setKeepWarmText(String(loaded.keepWarmIntervalMinutes));
       })
       .catch((e) => console.error("Failed to load account pool config:", e))
       .finally(() => setIsLoading(false));
@@ -41,6 +45,7 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
       toast.error(String(e));
       setConfig(config);
       setThresholdText(String(config.thresholdPercent));
+      setKeepWarmText(String(config.keepWarmIntervalMinutes));
     }
   };
 
@@ -53,6 +58,18 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
     setThresholdText(String(parsed));
     if (parsed !== config.thresholdPercent) {
       void save({ thresholdPercent: parsed });
+    }
+  };
+
+  const commitKeepWarmInterval = () => {
+    const parsed = Math.round(Number(keepWarmText));
+    if (!Number.isFinite(parsed) || parsed < 15 || parsed > 1440) {
+      setKeepWarmText(String(config.keepWarmIntervalMinutes));
+      return;
+    }
+    setKeepWarmText(String(parsed));
+    if (parsed !== config.keepWarmIntervalMinutes) {
+      void save({ keepWarmIntervalMinutes: parsed });
     }
   };
 
@@ -93,6 +110,42 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
           disabled={disabled || !config.enabled}
           onChange={(e) => setThresholdText(e.target.value)}
           onBlur={commitThreshold}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-4 border-t border-border/50 pt-4">
+        <div className="space-y-0.5">
+          <Label>{t("proxy.accountPool.keepWarm")}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t("proxy.accountPool.keepWarmDescription")}
+          </p>
+        </div>
+        <Switch
+          checked={config.keepWarmEnabled}
+          disabled={disabled}
+          onCheckedChange={(checked) => void save({ keepWarmEnabled: checked })}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-4 pl-4">
+        <div className="space-y-0.5">
+          <Label htmlFor="account-pool-keep-warm-interval">
+            {t("proxy.accountPool.keepWarmInterval")}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {t("proxy.accountPool.keepWarmIntervalDescription")}
+          </p>
+        </div>
+        <Input
+          id="account-pool-keep-warm-interval"
+          type="number"
+          min={15}
+          max={1440}
+          className="w-24"
+          value={keepWarmText}
+          disabled={disabled || !config.keepWarmEnabled}
+          onChange={(e) => setKeepWarmText(e.target.value)}
+          onBlur={commitKeepWarmInterval}
         />
       </div>
     </div>

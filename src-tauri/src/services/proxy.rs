@@ -185,7 +185,7 @@ impl ProxyService {
             &AppType::Claude,
             provider,
         )
-        .map_err(|e| format!("构建 claude 有效配置失败: {e}"))?;
+        .map_err(|e| format!("Could not build the effective Claude config: {e}"))?;
         let (proxy_url, _) = self.build_proxy_urls().await?;
 
         let keep_login = self.claude_takeover_keeps_login(Some(provider));
@@ -208,14 +208,14 @@ impl ProxyService {
             .db
             .get_global_proxy_config()
             .await
-            .map_err(|e| format!("获取全局代理配置失败: {e}"))?;
+            .map_err(|e| format!("Could not read the global proxy config: {e}"))?;
 
         if !global_config.proxy_enabled {
             global_config.proxy_enabled = true;
             self.db
                 .update_global_proxy_config(global_config.clone())
                 .await
-                .map_err(|e| format!("更新代理总开关失败: {e}"))?;
+                .map_err(|e| format!("Could not update the proxy master switch: {e}"))?;
         }
 
         // 2. 获取配置
@@ -223,7 +223,7 @@ impl ProxyService {
             .db
             .get_proxy_config()
             .await
-            .map_err(|e| format!("获取代理配置失败: {e}"))?;
+            .map_err(|e| format!("Could not read the proxy config: {e}"))?;
 
         // 3. 若已在运行：确保持久化状态（如需要）并返回当前信息
         if let Some(server) = self.server.read().await.as_ref() {
@@ -242,7 +242,7 @@ impl ProxyService {
         let info = server
             .start()
             .await
-            .map_err(|e| format!("启动代理服务器失败: {e}"))?;
+            .map_err(|e| format!("Could not start the proxy server: {e}"))?;
 
         // 5. 保存服务器实例
         *self.server.write().await = Some(server);
@@ -271,7 +271,7 @@ impl ProxyService {
             if let Err(clean_err) = self.db.delete_all_live_backups().await {
                 log::warn!("清理 Live 备份失败: {clean_err}");
             }
-            return Err(format!("设置接管状态失败: {e}"));
+            return Err(format!("Could not set the takeover state: {e}"));
         }
 
         // 4. 接管各应用的 Live 配置（写入代理地址，清空 Token）
@@ -349,7 +349,7 @@ impl ProxyService {
     /// - 开启：自动启动代理服务，仅接管当前 app 的 Live 配置
     /// - 关闭：仅恢复当前 app 的 Live 配置；若无其它接管，则自动停止代理服务
     pub async fn set_takeover_for_app(&self, app_type: &str, enabled: bool) -> Result<(), String> {
-        let app = AppType::from_str(app_type).map_err(|e| format!("无效的应用类型: {e}"))?;
+        let app = AppType::from_str(app_type).map_err(|e| format!("Invalid app type: {e}"))?;
         let app_type_str = app.as_str();
 
         if enabled {
@@ -363,7 +363,7 @@ impl ProxyService {
                 .db
                 .get_proxy_config_for_app(app_type_str)
                 .await
-                .map_err(|e| format!("获取 {app_type_str} 配置失败: {e}"))?;
+                .map_err(|e| format!("Could not read the {app_type_str} config: {e}"))?;
 
             if current_config.enabled {
                 let has_backup = match self.db.get_live_backup(app_type_str).await {
@@ -425,12 +425,12 @@ impl ProxyService {
                 .db
                 .get_proxy_config_for_app(app_type_str)
                 .await
-                .map_err(|e| format!("获取 {app_type_str} 配置失败: {e}"))?;
+                .map_err(|e| format!("Could not read the {app_type_str} config: {e}"))?;
             updated_config.enabled = true;
             self.db
                 .update_proxy_config_for_app(updated_config)
                 .await
-                .map_err(|e| format!("设置 {app_type_str} enabled 状态失败: {e}"))?;
+                .map_err(|e| format!("Could not set the {app_type_str} enabled state: {e}"))?;
 
             // 7) 兼容旧逻辑：写入 any-of 标志（失败不影响功能）
             let _ = self.db.set_live_takeover_active(true).await;
@@ -442,7 +442,7 @@ impl ProxyService {
             .db
             .get_proxy_config_for_app(app_type_str)
             .await
-            .map_err(|e| format!("获取 {app_type_str} 配置失败: {e}"))?;
+            .map_err(|e| format!("Could not read the {app_type_str} config: {e}"))?;
 
         if !current_config.enabled {
             return Ok(()); // 未接管，幂等返回
@@ -455,25 +455,25 @@ impl ProxyService {
         self.db
             .delete_live_backup(app_type_str)
             .await
-            .map_err(|e| format!("删除 {app_type_str} Live 备份失败: {e}"))?;
+            .map_err(|e| format!("Could not delete the {app_type_str} live backup: {e}"))?;
 
         // 3) 设置 proxy_config.enabled = false
         let mut updated_config = self
             .db
             .get_proxy_config_for_app(app_type_str)
             .await
-            .map_err(|e| format!("获取 {app_type_str} 配置失败: {e}"))?;
+            .map_err(|e| format!("Could not read the {app_type_str} config: {e}"))?;
         updated_config.enabled = false;
         self.db
             .update_proxy_config_for_app(updated_config)
             .await
-            .map_err(|e| format!("清除 {app_type_str} enabled 状态失败: {e}"))?;
+            .map_err(|e| format!("Could not clear the {app_type_str} enabled state: {e}"))?;
 
         // 4) 清除该应用的健康状态（关闭代理时重置队列状态）
         self.db
             .clear_provider_health_for_app(app_type_str)
             .await
-            .map_err(|e| format!("清除 {app_type_str} 健康状态失败: {e}"))?;
+            .map_err(|e| format!("Could not clear the {app_type_str} health state: {e}"))?;
 
         // 5) 若无其它接管，更新旧标志，并停止代理服务
         // 检查是否还有其它 app 的 enabled = true
@@ -481,7 +481,7 @@ impl ProxyService {
             .db
             .is_live_takeover_active()
             .await
-            .map_err(|e| format!("检查接管状态失败: {e}"))?;
+            .map_err(|e| format!("Could not check the takeover state: {e}"))?;
 
         if !any_enabled {
             let _ = self.db.set_live_takeover_active(false).await;
@@ -592,11 +592,11 @@ impl ProxyService {
             AppType::Gemini => self.read_gemini_live()?,
             AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features
-                return Err("OpenCode 不支持代理功能".to_string());
+                return Err("OpenCode cannot be proxied".to_string());
             }
             AppType::OpenClaw => {
                 // OpenClaw doesn't support proxy features
-                return Err("OpenClaw 不支持代理功能".to_string());
+                return Err("OpenClaw cannot be proxied".to_string());
             }
         };
 
@@ -613,7 +613,7 @@ impl ProxyService {
             AppType::Claude => {
                 let provider_id =
                     crate::settings::get_effective_current_provider(&self.db, &AppType::Claude)
-                        .map_err(|e| format!("获取 Claude 当前供应商失败: {e}"))?;
+                        .map_err(|e| format!("Could not read the current Claude provider: {e}"))?;
 
                 if let Some(provider_id) = provider_id {
                     if let Ok(Some(mut provider)) =
@@ -708,7 +708,7 @@ impl ProxyService {
             AppType::Codex => {
                 let provider_id =
                     crate::settings::get_effective_current_provider(&self.db, &AppType::Codex)
-                        .map_err(|e| format!("获取 Codex 当前供应商失败: {e}"))?;
+                        .map_err(|e| format!("Could not read the current Codex provider: {e}"))?;
 
                 if let Some(provider_id) = provider_id {
                     if let Ok(Some(mut provider)) =
@@ -760,7 +760,7 @@ impl ProxyService {
             AppType::Gemini => {
                 let provider_id =
                     crate::settings::get_effective_current_provider(&self.db, &AppType::Gemini)
-                        .map_err(|e| format!("获取 Gemini 当前供应商失败: {e}"))?;
+                        .map_err(|e| format!("Could not read the current Gemini provider: {e}"))?;
 
                 if let Some(provider_id) = provider_id {
                     if let Ok(Some(mut provider)) =
@@ -848,26 +848,26 @@ impl ProxyService {
             server
                 .stop()
                 .await
-                .map_err(|e| format!("停止代理服务器失败: {e}"))?;
+                .map_err(|e| format!("Could not stop the proxy server: {e}"))?;
 
             // 停止时设置 proxy_enabled = false
             let mut global_config = self
                 .db
                 .get_global_proxy_config()
                 .await
-                .map_err(|e| format!("获取全局代理配置失败: {e}"))?;
+                .map_err(|e| format!("Could not read the global proxy config: {e}"))?;
 
             if global_config.proxy_enabled {
                 global_config.proxy_enabled = false;
                 if let Err(e) = self.db.update_global_proxy_config(global_config).await {
-                    log::warn!("更新代理总开关失败: {e}");
+                    log::warn!("Could not update the proxy master switch: {e}");
                 }
             }
 
             log::info!("代理服务器已停止");
             Ok(())
         } else {
-            Err("代理服务器未运行".to_string())
+            Err("The proxy server is not running".to_string())
         }
     }
 
@@ -887,7 +887,7 @@ impl ProxyService {
         self.db
             .set_live_takeover_active(false)
             .await
-            .map_err(|e| format!("清除接管状态失败: {e}"))?;
+            .map_err(|e| format!("Could not clear the takeover state: {e}"))?;
 
         // 4. 清除所有应用的 enabled 状态（用户手动关闭，不需要下次自动恢复）
         for app_type in ["claude", "codex", "gemini"] {
@@ -905,13 +905,13 @@ impl ProxyService {
         self.db
             .delete_all_live_backups()
             .await
-            .map_err(|e| format!("删除备份失败: {e}"))?;
+            .map_err(|e| format!("Could not delete the backup: {e}"))?;
 
         // 6. 重置健康状态（让健康徽章恢复为正常）
         self.db
             .clear_all_provider_health()
             .await
-            .map_err(|e| format!("重置健康状态失败: {e}"))?;
+            .map_err(|e| format!("Could not reset the health state: {e}"))?;
 
         // 注意：不清除故障转移队列和开关状态，保留供下次开启代理时使用
         log::info!("代理已停止，Live 配置已恢复");
@@ -941,13 +941,13 @@ impl ProxyService {
         self.db
             .delete_all_live_backups()
             .await
-            .map_err(|e| format!("删除备份失败: {e}"))?;
+            .map_err(|e| format!("Could not delete the backup: {e}"))?;
 
         // 5. 重置健康状态
         self.db
             .clear_all_provider_health()
             .await
-            .map_err(|e| format!("重置健康状态失败: {e}"))?;
+            .map_err(|e| format!("Could not reset the health state: {e}"))?;
 
         log::info!("代理已停止，Live 配置已恢复（保留代理状态，下次启动将自动恢复）");
         Ok(())
@@ -958,31 +958,31 @@ impl ProxyService {
         // Claude
         if let Ok(config) = self.read_claude_live() {
             let json_str = serde_json::to_string(&config)
-                .map_err(|e| format!("序列化 Claude 配置失败: {e}"))?;
+                .map_err(|e| format!("Could not serialize the Claude config: {e}"))?;
             self.db
                 .save_live_backup("claude", &json_str)
                 .await
-                .map_err(|e| format!("备份 Claude 配置失败: {e}"))?;
+                .map_err(|e| format!("Could not back up the Claude config: {e}"))?;
         }
 
         // Codex
         if let Ok(config) = self.read_codex_live() {
             let json_str = serde_json::to_string(&config)
-                .map_err(|e| format!("序列化 Codex 配置失败: {e}"))?;
+                .map_err(|e| format!("Could not serialize the Codex config: {e}"))?;
             self.db
                 .save_live_backup("codex", &json_str)
                 .await
-                .map_err(|e| format!("备份 Codex 配置失败: {e}"))?;
+                .map_err(|e| format!("Could not back up the Codex config: {e}"))?;
         }
 
         // Gemini
         if let Ok(config) = self.read_gemini_live() {
             let json_str = serde_json::to_string(&config)
-                .map_err(|e| format!("序列化 Gemini 配置失败: {e}"))?;
+                .map_err(|e| format!("Could not serialize the Gemini config: {e}"))?;
             self.db
                 .save_live_backup("gemini", &json_str)
                 .await
-                .map_err(|e| format!("备份 Gemini 配置失败: {e}"))?;
+                .map_err(|e| format!("Could not back up the Gemini config: {e}"))?;
         }
 
         log::info!("已备份所有应用的 Live 配置");
@@ -997,20 +997,20 @@ impl ProxyService {
             AppType::Gemini => ("gemini", self.read_gemini_live()?),
             AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features
-                return Err("OpenCode 不支持代理功能".to_string());
+                return Err("OpenCode cannot be proxied".to_string());
             }
             AppType::OpenClaw => {
                 // OpenClaw doesn't support proxy features
-                return Err("OpenClaw 不支持代理功能".to_string());
+                return Err("OpenClaw cannot be proxied".to_string());
             }
         };
 
         let json_str = serde_json::to_string(&config)
-            .map_err(|e| format!("序列化 {app_type_str} 配置失败: {e}"))?;
+            .map_err(|e| format!("Could not serialize the {app_type_str} config: {e}"))?;
         self.db
             .save_live_backup(app_type_str, &json_str)
             .await
-            .map_err(|e| format!("备份 {app_type_str} 配置失败: {e}"))?;
+            .map_err(|e| format!("Could not back up the {app_type_str} config: {e}"))?;
 
         Ok(())
     }
@@ -1021,7 +1021,7 @@ impl ProxyService {
             .db
             .get_proxy_config()
             .await
-            .map_err(|e| format!("获取代理配置失败: {e}"))?;
+            .map_err(|e| format!("Could not read the proxy config: {e}"))?;
 
         // listen_address 可能是 0.0.0.0（用于监听所有网卡），但客户端无法用 0.0.0.0 连接；
         // 因此写回到各应用配置时，优先使用本机回环地址。
@@ -1128,11 +1128,11 @@ impl ProxyService {
             }
             AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features
-                return Err("OpenCode 不支持代理功能".to_string());
+                return Err("OpenCode cannot be proxied".to_string());
             }
             AppType::OpenClaw => {
                 // OpenClaw doesn't support proxy features
-                return Err("OpenClaw 不支持代理功能".to_string());
+                return Err("OpenClaw cannot be proxied".to_string());
             }
         }
 
@@ -1198,7 +1198,7 @@ impl ProxyService {
             AppType::Claude => {
                 if let Ok(Some(backup)) = self.db.get_live_backup("claude").await {
                     let config: Value = serde_json::from_str(&backup.original_config)
-                        .map_err(|e| format!("解析 Claude 备份失败: {e}"))?;
+                        .map_err(|e| format!("Could not parse the Claude backup: {e}"))?;
                     self.write_claude_live(&config)?;
                     log::info!("Claude Live 配置已恢复");
                 }
@@ -1206,7 +1206,7 @@ impl ProxyService {
             AppType::Codex => {
                 if let Ok(Some(backup)) = self.db.get_live_backup("codex").await {
                     let mut config: Value = serde_json::from_str(&backup.original_config)
-                        .map_err(|e| format!("解析 Codex 备份失败: {e}"))?;
+                        .map_err(|e| format!("Could not parse the Codex backup: {e}"))?;
                     // Codex may have refreshed its own login while the proxy was
                     // on; the backup's copy of that login is then spent.
                     crate::proxy::codex_pool::keep_newer_live_login(&self.db, &mut config);
@@ -1217,7 +1217,7 @@ impl ProxyService {
             AppType::Gemini => {
                 if let Ok(Some(backup)) = self.db.get_live_backup("gemini").await {
                     let config: Value = serde_json::from_str(&backup.original_config)
-                        .map_err(|e| format!("解析 Gemini 备份失败: {e}"))?;
+                        .map_err(|e| format!("Could not parse the Gemini backup: {e}"))?;
                     self.write_gemini_live(&config)?;
                     log::info!("Gemini Live 配置已恢复");
                 }
@@ -1249,7 +1249,7 @@ impl ProxyService {
         if errors.is_empty() {
             Ok(())
         } else {
-            Err(errors.join("；"))
+            Err(errors.join("; "))
         }
     }
 
@@ -1273,10 +1273,10 @@ impl ProxyService {
             .db
             .get_live_backup(app_type_str)
             .await
-            .map_err(|e| format!("获取 {app_type_str} Live 备份失败: {e}"))?;
+            .map_err(|e| format!("Could not read the {app_type_str} live backup: {e}"))?;
         if let Some(backup) = backup {
             let config: Value = serde_json::from_str(&backup.original_config)
-                .map_err(|e| format!("解析 {app_type_str} 备份失败: {e}"))?;
+                .map_err(|e| format!("Could not parse the {app_type_str} backup: {e}"))?;
             self.write_live_config_for_app(app_type, &config)?;
             log::info!("{app_type_str} Live 配置已从备份恢复");
             return Ok(());
@@ -1318,11 +1318,11 @@ impl ProxyService {
             AppType::Gemini => self.write_gemini_live(config),
             AppType::OpenCode | AppType::Kimi => {
                 // OpenCode doesn't support proxy features
-                Err("OpenCode 不支持代理功能".to_string())
+                Err("OpenCode cannot be proxied".to_string())
             }
             AppType::OpenClaw => {
                 // OpenClaw doesn't support proxy features
-                Err("OpenClaw 不支持代理功能".to_string())
+                Err("OpenClaw cannot be proxied".to_string())
             }
         }
     }
@@ -1359,7 +1359,7 @@ impl ProxyService {
     /// - Ok(false)：缺少当前供应商/供应商不存在，无法写回
     fn restore_live_from_ssot_for_app(&self, app_type: &AppType) -> Result<bool, String> {
         let current_id = crate::settings::get_effective_current_provider(&self.db, app_type)
-            .map_err(|e| format!("获取 {app_type:?} 当前供应商失败: {e}"))?;
+            .map_err(|e| format!("Could not read the current {app_type:?} provider: {e}"))?;
 
         let Some(current_id) = current_id else {
             return Ok(false);
@@ -1368,14 +1368,14 @@ impl ProxyService {
         let providers = self
             .db
             .get_all_providers(app_type.as_str())
-            .map_err(|e| format!("读取 {app_type:?} 供应商列表失败: {e}"))?;
+            .map_err(|e| format!("Could not read the {app_type:?} provider list: {e}"))?;
 
         let Some(provider) = providers.get(&current_id) else {
             return Ok(false);
         };
 
         write_live_with_common_config(self.db.as_ref(), app_type, provider)
-            .map_err(|e| format!("写入 {app_type:?} Live 配置失败: {e}"))?;
+            .map_err(|e| format!("Could not write the {app_type:?} live config: {e}"))?;
 
         Ok(true)
     }
@@ -1514,13 +1514,13 @@ impl ProxyService {
         self.db
             .set_live_takeover_active(false)
             .await
-            .map_err(|e| format!("清除接管状态失败: {e}"))?;
+            .map_err(|e| format!("Could not clear the takeover state: {e}"))?;
 
         // 3. 删除备份
         self.db
             .delete_all_live_backups()
             .await
-            .map_err(|e| format!("删除备份失败: {e}"))?;
+            .map_err(|e| format!("Could not delete the backup: {e}"))?;
 
         log::info!("已从异常退出中恢复 Live 配置");
         Ok(())
@@ -1624,21 +1624,21 @@ impl ProxyService {
         provider: &Provider,
     ) -> Result<(), String> {
         let app_type_enum =
-            AppType::from_str(app_type).map_err(|_| format!("未知的应用类型: {app_type}"))?;
+            AppType::from_str(app_type).map_err(|_| format!("Unknown app type: {app_type}"))?;
         let mut effective_settings =
             build_effective_settings_with_common_config(self.db.as_ref(), &app_type_enum, provider)
-                .map_err(|e| format!("构建 {app_type} 有效配置失败: {e}"))?;
+                .map_err(|e| format!("Could not build the effective {app_type} config: {e}"))?;
 
         if matches!(app_type_enum, AppType::Codex) {
             let existing_backup = self
                 .db
                 .get_live_backup(app_type)
                 .await
-                .map_err(|e| format!("读取 {app_type} 现有备份失败: {e}"))?;
+                .map_err(|e| format!("Could not read the existing {app_type} backup: {e}"))?;
 
             if let Some(existing_backup) = existing_backup {
                 let existing_value: Value = serde_json::from_str(&existing_backup.original_config)
-                    .map_err(|e| format!("解析 {app_type} 现有备份失败: {e}"))?;
+                    .map_err(|e| format!("Could not parse the existing {app_type} backup: {e}"))?;
                 Self::preserve_codex_mcp_servers_in_backup(
                     &mut effective_settings,
                     &existing_value,
@@ -1648,9 +1648,9 @@ impl ProxyService {
 
         let backup_json = match app_type_enum {
             AppType::Claude => serde_json::to_string(&effective_settings)
-                .map_err(|e| format!("序列化 Claude 配置失败: {e}"))?,
+                .map_err(|e| format!("Could not serialize the Claude config: {e}"))?,
             AppType::Codex => serde_json::to_string(&effective_settings)
-                .map_err(|e| format!("序列化 Codex 配置失败: {e}"))?,
+                .map_err(|e| format!("Could not serialize the Codex config: {e}"))?,
             AppType::Gemini => {
                 // Gemini takeover 仅修改 .env；settings.json（含 mcpServers）保持原样。
                 let env_backup = if let Some(env) = effective_settings.get("env") {
@@ -1659,17 +1659,17 @@ impl ProxyService {
                     json!({ "env": {} })
                 };
                 serde_json::to_string(&env_backup)
-                    .map_err(|e| format!("序列化 Gemini 配置失败: {e}"))?
+                    .map_err(|e| format!("Could not serialize the Gemini config: {e}"))?
             }
             AppType::OpenCode | AppType::OpenClaw | AppType::Kimi => {
-                return Err(format!("未知的应用类型: {app_type}"));
+                return Err(format!("Unknown app type: {app_type}"));
             }
         };
 
         self.db
             .save_live_backup(app_type, &backup_json)
             .await
-            .map_err(|e| format!("更新 {app_type} 备份失败: {e}"))?;
+            .map_err(|e| format!("Could not update the {app_type} backup: {e}"))?;
 
         log::info!("已更新 {app_type} Live 备份（热切换）");
         Ok(())
@@ -1683,16 +1683,16 @@ impl ProxyService {
         let _guard = self.switch_locks.lock_for_app(app_type).await;
 
         let app_type_enum =
-            AppType::from_str(app_type).map_err(|_| format!("无效的应用类型: {app_type}"))?;
+            AppType::from_str(app_type).map_err(|_| format!("Invalid app type: {app_type}"))?;
         let provider = self
             .db
             .get_provider_by_id(provider_id, app_type)
-            .map_err(|e| format!("读取供应商失败: {e}"))?
-            .ok_or_else(|| format!("供应商不存在: {provider_id}"))?;
+            .map_err(|e| format!("Could not read the provider: {e}"))?
+            .ok_or_else(|| format!("No such provider: {provider_id}"))?;
 
         let logical_target_changed =
             crate::settings::get_effective_current_provider(&self.db, &app_type_enum)
-                .map_err(|e| format!("读取当前供应商失败: {e}"))?
+                .map_err(|e| format!("Could not read the current provider: {e}"))?
                 .as_deref()
                 != Some(provider_id);
 
@@ -1700,16 +1700,16 @@ impl ProxyService {
             .db
             .get_live_backup(app_type_enum.as_str())
             .await
-            .map_err(|e| format!("读取 {app_type} 备份失败: {e}"))?
+            .map_err(|e| format!("Could not read the {app_type} backup: {e}"))?
             .is_some();
         let live_taken_over = self.detect_takeover_in_live_config_for_app(&app_type_enum);
         let should_sync_backup = has_backup || live_taken_over;
 
         self.db
             .set_current_provider(app_type_enum.as_str(), provider_id)
-            .map_err(|e| format!("更新当前供应商失败: {e}"))?;
+            .map_err(|e| format!("Could not update the current provider: {e}"))?;
         crate::settings::set_current_provider(&app_type_enum, Some(provider_id))
-            .map_err(|e| format!("更新本地当前供应商失败: {e}"))?;
+            .map_err(|e| format!("Could not update the local current provider: {e}"))?;
 
         if should_sync_backup {
             self.update_live_backup_from_provider_inner(app_type, &provider)
@@ -1746,7 +1746,7 @@ impl ProxyService {
     ) -> Result<(), String> {
         let target_obj = target_settings
             .as_object_mut()
-            .ok_or_else(|| "Codex 备份必须是 JSON 对象".to_string())?;
+            .ok_or_else(|| "The Codex backup must be a JSON object".to_string())?;
 
         let target_config = target_obj
             .get("config")
@@ -1757,7 +1757,7 @@ impl ProxyService {
         } else {
             target_config
                 .parse::<toml_edit::DocumentMut>()
-                .map_err(|e| format!("解析新的 Codex config.toml 失败: {e}"))?
+                .map_err(|e| format!("Could not parse the new Codex config.toml: {e}"))?
         };
 
         let existing_config = existing_backup
@@ -1771,7 +1771,7 @@ impl ProxyService {
 
         let existing_doc = existing_config
             .parse::<toml_edit::DocumentMut>()
-            .map_err(|e| format!("解析现有 Codex 备份失败: {e}"))?;
+            .map_err(|e| format!("Could not parse the existing Codex backup: {e}"))?;
 
         if let Some(existing_mcp_servers) = existing_doc.get("mcp_servers") {
             match target_doc.get_mut("mcp_servers") {
@@ -1828,11 +1828,11 @@ impl ProxyService {
     fn read_claude_live(&self) -> Result<Value, String> {
         let path = get_claude_settings_path();
         if !path.exists() {
-            return Err("Claude 配置文件不存在".to_string());
+            return Err("The Claude config file does not exist".to_string());
         }
 
         let mut value: Value =
-            read_json_file(&path).map_err(|e| format!("读取 Claude 配置失败: {e}"))?;
+            read_json_file(&path).map_err(|e| format!("Could not read the Claude config: {e}"))?;
 
         if value.is_null() {
             value = json!({});
@@ -1848,7 +1848,7 @@ impl ProxyService {
                 Value::Object(_) => "object",
             };
             return Err(format!(
-                "Claude 配置文件格式错误：根节点必须是 JSON 对象（当前为 {kind}），路径: {}",
+                "The Claude config file is malformed: its root must be a JSON object (it is {kind}), at {}",
                 path.display()
             ));
         }
@@ -1859,7 +1859,8 @@ impl ProxyService {
     fn write_claude_live(&self, config: &Value) -> Result<(), String> {
         let path = get_claude_settings_path();
         let settings = crate::services::provider::sanitize_claude_settings_for_live(config);
-        write_json_file(&path, &settings).map_err(|e| format!("写入 Claude 配置失败: {e}"))
+        write_json_file(&path, &settings)
+            .map_err(|e| format!("Could not write the Claude config: {e}"))
     }
 
     fn read_codex_live(&self) -> Result<Value, String> {
@@ -1867,16 +1868,16 @@ impl ProxyService {
 
         let auth_path = get_codex_auth_path();
         if !auth_path.exists() {
-            return Err("Codex auth.json 不存在".to_string());
+            return Err("Codex auth.json does not exist".to_string());
         }
 
-        let auth: Value =
-            read_json_file(&auth_path).map_err(|e| format!("读取 Codex auth 失败: {e}"))?;
+        let auth: Value = read_json_file(&auth_path)
+            .map_err(|e| format!("Could not read the Codex auth file: {e}"))?;
 
         let config_path = get_codex_config_path();
         let config_str = if config_path.exists() {
             std::fs::read_to_string(&config_path)
-                .map_err(|e| format!("读取 Codex config 失败: {e}"))?
+                .map_err(|e| format!("Could not read the Codex config file: {e}"))?
         } else {
             String::new()
         };
@@ -1897,16 +1898,16 @@ impl ProxyService {
 
         match (auth, config_str) {
             (Some(auth), Some(cfg)) => write_codex_live_atomic(auth, Some(cfg))
-                .map_err(|e| format!("写入 Codex 配置失败: {e}"))?,
+                .map_err(|e| format!("Could not write the Codex config: {e}"))?,
             (Some(auth), None) => {
                 let auth_path = get_codex_auth_path();
                 write_json_file(&auth_path, auth)
-                    .map_err(|e| format!("写入 Codex auth 失败: {e}"))?;
+                    .map_err(|e| format!("Could not write the Codex auth file: {e}"))?;
             }
             (None, Some(cfg)) => {
                 let config_path = get_codex_config_path();
                 crate::config::write_text_file(&config_path, cfg)
-                    .map_err(|e| format!("写入 Codex config 失败: {e}"))?;
+                    .map_err(|e| format!("Could not write the Codex config file: {e}"))?;
             }
             (None, None) => {}
         }
@@ -1919,18 +1920,21 @@ impl ProxyService {
 
         let env_path = get_gemini_env_path();
         if !env_path.exists() {
-            return Err("Gemini .env 文件不存在".to_string());
+            return Err("The Gemini .env file does not exist".to_string());
         }
 
-        let env_map = read_gemini_env().map_err(|e| format!("读取 Gemini env 失败: {e}"))?;
+        let env_map =
+            read_gemini_env().map_err(|e| format!("Could not read the Gemini env file: {e}"))?;
         Ok(env_to_json(&env_map))
     }
 
     fn write_gemini_live(&self, config: &Value) -> Result<(), String> {
         use crate::gemini_config::{json_to_env, write_gemini_env_atomic};
 
-        let env_map = json_to_env(config).map_err(|e| format!("转换 Gemini 配置失败: {e}"))?;
-        write_gemini_env_atomic(&env_map).map_err(|e| format!("写入 Gemini env 失败: {e}"))?;
+        let env_map =
+            json_to_env(config).map_err(|e| format!("Could not convert the Gemini config: {e}"))?;
+        write_gemini_env_atomic(&env_map)
+            .map_err(|e| format!("Could not write the Gemini env file: {e}"))?;
         Ok(())
     }
 
@@ -1954,7 +1958,7 @@ impl ProxyService {
         self.db
             .get_proxy_config()
             .await
-            .map_err(|e| format!("获取代理配置失败: {e}"))
+            .map_err(|e| format!("Could not read the proxy config: {e}"))
     }
 
     /// 更新代理配置
@@ -1964,7 +1968,7 @@ impl ProxyService {
             .db
             .get_proxy_config()
             .await
-            .map_err(|e| format!("获取代理配置失败: {e}"))?;
+            .map_err(|e| format!("Could not read the proxy config: {e}"))?;
 
         // 保存到数据库（保持 live_takeover_active 状态不变）
         let mut new_config = config.clone();
@@ -1973,7 +1977,7 @@ impl ProxyService {
         self.db
             .update_proxy_config(new_config.clone())
             .await
-            .map_err(|e| format!("保存代理配置失败: {e}"))?;
+            .map_err(|e| format!("Could not save the proxy config: {e}"))?;
 
         // 检查服务器当前状态
         let mut server_guard = self.server.write().await;
@@ -1987,10 +1991,9 @@ impl ProxyService {
 
         if require_restart {
             if let Some(server) = server_guard.take() {
-                server
-                    .stop()
-                    .await
-                    .map_err(|e| format!("重启前停止代理服务器失败: {e}"))?;
+                server.stop().await.map_err(|e| {
+                    format!("Could not stop the proxy server before restarting it: {e}")
+                })?;
             }
 
             let app_handle = self.app_handle.read().await.clone();
@@ -1998,7 +2001,7 @@ impl ProxyService {
             new_server
                 .start()
                 .await
-                .map_err(|e| format!("重启代理服务器失败: {e}"))?;
+                .map_err(|e| format!("Could not restart the proxy server: {e}"))?;
 
             *server_guard = Some(new_server);
             log::info!("代理配置已更新，服务器已自动重启应用最新配置");

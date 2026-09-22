@@ -6,6 +6,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.15] — 2026-09-21 — Pooled accounts can be kept warm, and the proxy speaks English
+
+### Added
+
+- **Keep accounts warm** (Settings → Proxy → Auto Failover → Claude or Codex,
+  off by default). A subscription's session window only opens when a real
+  request is made, so an account nobody has used is cold when rotation
+  reaches it — the whole window starts then, and nothing is known about its
+  quota until a request has been spent finding out. With this on, each
+  Official account whose window has lapsed is sent one single-token request,
+  so it is already inside a window before it is needed. An account whose
+  window is still running is skipped, and so is one at its limit, which keeps
+  the cost near one request per account per window. Presenting the login
+  renews it as well, but only as far as its refresh token reaches: that
+  deadline comes from the last sign-in in the browser and renewing does not
+  move it, so an account still needs `claude /login` or `codex login` when it
+  passes. It runs while Switchy is running and needs neither the proxy nor
+  rotation to be on. It is off by default because it spends quota with nobody
+  present.
+
+### Changed
+
+- **What the proxy says is now in English.** Errors it returns to Claude Code
+  and Codex, the messages behind failed takeovers and failed proxy starts,
+  and the last-error line in the proxy status were the fork's Chinese
+  strings — which is why turning the proxy on for a provider with no address
+  configured answered `配置错误: Claude Provider 缺少 base_url 配置`.
+
 ## [1.0.14] — 2026-09-21 — The proxy returns the answer instead of dropping the connection
 
 ### Fixed

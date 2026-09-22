@@ -298,7 +298,7 @@ impl ProviderAdapter for ClaudeAdapter {
         }
 
         Err(ProxyError::ConfigError(
-            "Claude Provider 缺少 base_url 配置".to_string(),
+            "The Claude provider has no base_url configured".to_string(),
         ))
     }
 

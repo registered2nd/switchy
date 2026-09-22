@@ -812,6 +812,11 @@ pub fn run() {
                 // 检查 settings 表中的代理状态，自动恢复代理服务
                 restore_proxy_state_on_startup(&state).await;
 
+                // Keep pooled subscription accounts' session windows open, if
+                // the user has asked for it. Off by default; the sweep reads
+                // the switch itself and does nothing while it is off.
+                crate::proxy::keep_warm::start(state.db.clone());
+
                 // Periodic backup check (on startup)
                 if let Err(e) = state.db.periodic_backup_if_needed() {
                     log::warn!("Periodic backup failed on startup: {e}");

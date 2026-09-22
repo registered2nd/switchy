@@ -8,71 +8,71 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ProxyError {
-    #[error("服务器已在运行")]
+    #[error("The proxy server is already running")]
     AlreadyRunning,
 
-    #[error("服务器未运行")]
+    #[error("The proxy server is not running")]
     NotRunning,
 
-    #[error("地址绑定失败: {0}")]
+    #[error("Could not bind the address: {0}")]
     BindFailed(String),
 
-    #[error("停止超时")]
+    #[error("Timed out stopping the proxy server")]
     StopTimeout,
 
-    #[error("停止失败: {0}")]
+    #[error("Could not stop the proxy server: {0}")]
     StopFailed(String),
 
-    #[error("请求转发失败: {0}")]
+    #[error("Could not forward the request: {0}")]
     ForwardFailed(String),
 
-    #[error("无可用的Provider")]
+    #[error("No provider is available")]
     NoAvailableProvider,
 
-    #[error("所有供应商已熔断，无可用渠道")]
+    #[error("Every provider's circuit is open; no channel is available")]
     AllProvidersCircuitOpen,
 
-    #[error("未配置供应商")]
+    #[error("No provider is configured")]
     NoProvidersConfigured,
 
     #[allow(dead_code)]
-    #[error("Provider不健康: {0}")]
+    #[error("The provider is unhealthy: {0}")]
     ProviderUnhealthy(String),
 
-    #[error("上游错误 (状态码 {status}): {body:?}")]
+    #[error("Upstream error (status {status}): {body:?}")]
     UpstreamError { status: u16, body: Option<String> },
 
-    #[error("超过最大重试次数")]
+    #[error("Out of retries")]
     MaxRetriesExceeded,
 
-    #[error("数据库错误: {0}")]
+    #[error("Database error: {0}")]
     DatabaseError(String),
 
-    #[error("配置错误: {0}")]
+    #[error("Configuration error: {0}")]
     ConfigError(String),
 
     #[allow(dead_code)]
-    #[error("格式转换错误: {0}")]
+    #[error("Format conversion error: {0}")]
     TransformError(String),
 
     #[allow(dead_code)]
-    #[error("无效的请求: {0}")]
+    #[error("Invalid request: {0}")]
     InvalidRequest(String),
 
-    #[error("超时: {0}")]
+    #[error("Timed out: {0}")]
     Timeout(String),
 
     /// 流式响应空闲超时
     #[allow(dead_code)]
-    #[error("流式响应空闲超时: {0}秒无数据")]
+    #[error("The streamed response went idle: no data for {0}s")]
     StreamIdleTimeout(u64),
 
     /// 认证错误
-    #[error("认证失败: {0}")]
+    #[error("Authentication failed: {0}")]
     AuthError(String),
 
     #[allow(dead_code)]
-    #[error("内部错误: {0}")]
+    #[error("Internal error: {0}")]
     Internal(String),
 }
 

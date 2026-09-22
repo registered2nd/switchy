@@ -662,7 +662,7 @@ impl RequestForwarder {
                             {
                                 let mut status = self.status.write().await;
                                 status.last_error =
-                                    Some(format!("Provider {} 失败: {}", provider.name, e));
+                                    Some(format!("Provider {} failed: {}", provider.name, e));
                             }
 
                             let (log_code, log_message) = build_retryable_failure_log(
@@ -705,7 +705,8 @@ impl RequestForwarder {
             {
                 let mut status = self.status.write().await;
                 status.failed_requests += 1;
-                status.last_error = Some("所有供应商暂时不可用（熔断器限制）".to_string());
+                status.last_error =
+                    Some("No provider is available right now (all circuits are open)".to_string());
                 if status.total_requests > 0 {
                     status.success_rate =
                         (status.success_requests as f32 / status.total_requests as f32) * 100.0;
@@ -721,7 +722,7 @@ impl RequestForwarder {
         {
             let mut status = self.status.write().await;
             status.failed_requests += 1;
-            status.last_error = Some("所有供应商都失败".to_string());
+            status.last_error = Some("Every provider failed".to_string());
             if status.total_requests > 0 {
                 status.success_rate =
                     (status.success_requests as f32 / status.total_requests as f32) * 100.0;
@@ -1013,14 +1014,14 @@ impl RequestForwarder {
                                 account_id.as_deref().unwrap_or("default")
                             );
                             return Err(ProxyError::AuthError(format!(
-                                "GitHub Copilot 认证失败: {e}"
+                                "GitHub Copilot authentication failed: {e}"
                             )));
                         }
                     }
                 } else {
                     log::error!("[Copilot] AppHandle 不可用");
                     return Err(ProxyError::AuthError(
-                        "GitHub Copilot 认证不可用（无 AppHandle）".to_string(),
+                        "GitHub Copilot authentication is unavailable (no AppHandle)".to_string(),
                     ));
                 }
             }
@@ -1367,9 +1368,9 @@ impl RequestForwarder {
             }
             let reqwest_resp = request.body(body_bytes).send().await.map_err(|e| {
                 if e.is_timeout() {
-                    ProxyError::Timeout(format!("请求超时: {e}"))
+                    ProxyError::Timeout(format!("The request timed out: {e}"))
                 } else if e.is_connect() {
-                    ProxyError::ForwardFailed(format!("连接失败: {e}"))
+                    ProxyError::ForwardFailed(format!("Could not connect: {e}"))
                 } else {
                     ProxyError::ForwardFailed(e.to_string())
                 }

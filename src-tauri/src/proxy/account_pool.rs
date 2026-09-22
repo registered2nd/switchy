@@ -30,6 +30,16 @@ pub struct AccountPoolConfig {
     /// Empty turns the check off.
     #[serde(default = "default_blocked_exit_countries")]
     pub blocked_exit_countries: Vec<String>,
+    /// Open each pooled account's session window before it is needed by
+    /// sending it one single-token request. Off by default: it spends quota
+    /// with nobody present. See `keep_warm`.
+    #[serde(default)]
+    pub keep_warm_enabled: bool,
+    /// How often each account is considered for a keep-warm request. A
+    /// request goes out only when that account's session window is not
+    /// already running.
+    #[serde(default = "default_keep_warm_interval")]
+    pub keep_warm_interval_minutes: u32,
 }
 
 fn default_threshold() -> u8 {
@@ -40,12 +50,18 @@ fn default_blocked_exit_countries() -> Vec<String> {
     vec!["CN".to_string()]
 }
 
+fn default_keep_warm_interval() -> u32 {
+    60
+}
+
 impl Default for AccountPoolConfig {
     fn default() -> Self {
         Self {
             enabled: false,
             threshold_percent: default_threshold(),
             blocked_exit_countries: default_blocked_exit_countries(),
+            keep_warm_enabled: false,
+            keep_warm_interval_minutes: default_keep_warm_interval(),
         }
     }
 }
@@ -285,6 +301,23 @@ pub fn is_spent(provider_id: &str, threshold_percent: u8, now: i64) -> bool {
     quota_is_spent(quota, threshold_percent, now)
 }
 
+/// When the account's session window resets — the shortest account-wide
+/// window, the one a single request opens. `None` when no response has
+/// reported one, which is also what an account nobody has used looks like.
+pub fn session_window_reset(provider_id: &str) -> Option<i64> {
+    let quotas = QUOTAS.read().unwrap_or_else(|e| e.into_inner());
+    session_reset_of(quotas.get(provider_id)?)
+}
+
+fn session_reset_of(quota: &AccountQuota) -> Option<i64> {
+    quota
+        .windows
+        .iter()
+        .filter(|w| w.limit_name.is_none())
+        .min_by_key(|w| w.window_minutes)?
+        .reset_at
+}
+
 fn quota_is_spent(quota: &AccountQuota, threshold_percent: u8, now: i64) -> bool {
     if quota.limited_until.is_some_and(|until| until > now) {
         return true;
@@ -351,6 +384,15 @@ mod tests {
         );
     }
 
+    #[test]
+    fn keep_warm_is_off_in_defaults_and_in_settings_saved_before_it_existed() {
+        let saved: AccountPoolConfig =
+            serde_json::from_str(r#"{"enabled":true,"thresholdPercent":95}"#).unwrap();
+        assert!(!saved.keep_warm_enabled);
+        assert_eq!(saved.keep_warm_interval_minutes, 60);
+        assert!(!AccountPoolConfig::default().keep_warm_enabled);
+    }
+
     fn quota(used: f64, reset_at: Option<i64>, name: Option<&str>) -> AccountQuota {
         AccountQuota {
             windows: vec![QuotaWindow {
@@ -378,6 +420,31 @@ mod tests {
             98,
             1500
         ));
+    }
+
+    #[test]
+    fn the_session_window_is_the_shortest_account_wide_one() {
+        let mut q = quota(10.0, Some(2000), None);
+        q.windows.push(QuotaWindow {
+            limit_name: None,
+            window_minutes: 300,
+            used_percent: 5.0,
+            reset_at: Some(1200),
+        });
+        q.windows.push(QuotaWindow {
+            limit_name: Some("7d_oi".to_string()),
+            window_minutes: 60,
+            used_percent: 5.0,
+            reset_at: Some(1100),
+        });
+        assert_eq!(session_reset_of(&q), Some(1200));
+    }
+
+    #[test]
+    fn an_account_no_response_has_reported_on_has_no_session_window() {
+        assert_eq!(session_reset_of(&AccountQuota::default()), None);
+        let model_only = quota(10.0, Some(2000), Some("Spark"));
+        assert_eq!(session_reset_of(&model_only), None);
     }
 
     #[test]

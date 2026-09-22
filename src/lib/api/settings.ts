@@ -244,6 +244,10 @@ export interface AccountPoolConfig {
   thresholdPercent: number;
   /** ISO country codes subscription account traffic must never leave from. */
   blockedExitCountries: string[];
+  /** Open each pooled account's session window before it is needed. */
+  keepWarmEnabled: boolean;
+  /** How often each account is considered for a keep-warm request. */
+  keepWarmIntervalMinutes: number;
 }
 
 export interface OptimizerConfig {

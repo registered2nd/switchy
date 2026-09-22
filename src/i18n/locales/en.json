@@ -1991,7 +1991,11 @@
       "enabled": "Rotate accounts before the limit",
       "enabledDescription": "With automatic failover on, an Official account whose usage reaches the threshold is moved to the back of the queue until its limit resets, so the session carries on with the next account. Applies to Claude and Codex.",
       "threshold": "Usage threshold (%)",
-      "thresholdDescription": "Pass an account over once its account-wide usage reaches this level. 50–100."
+      "thresholdDescription": "Pass an account over once its account-wide usage reaches this level. 50–100.",
+      "keepWarm": "Keep accounts warm",
+      "keepWarmDescription": "When an Official account's session window has lapsed, send it one single-token request, so an account is already inside a window before rotation reaches it. Presenting the login renews it as a byproduct — but only as far as its refresh token reaches, and that deadline comes from the last sign-in in the browser and does not move when the login is renewed. This spends a little quota with nobody present, which is why it is off. Claude and Codex, while Switchy is running.",
+      "keepWarmInterval": "Check every (minutes)",
+      "keepWarmIntervalDescription": "How often each account is considered. A request goes out only when that account's window has lapsed and the account is not at its limit, so the cost stays near one request per account per window. 15–1440."
     },
     "autoFailover": {
       "info": "When the failover queue has multiple providers, the system will try them in priority order when requests fail. When a provider reaches the consecutive failure threshold, the circuit breaker will open and skip it temporarily.",

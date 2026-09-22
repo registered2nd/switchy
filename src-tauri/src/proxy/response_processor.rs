@@ -106,7 +106,7 @@ pub(crate) async fn read_decoded_body(
             .await
             .map_err(|_| {
                 ProxyError::Timeout(format!(
-                    "响应体读取超时: {}s（上游发完响应头后 body 未到达）",
+                    "Timed out reading the response body after {}s (the upstream sent its headers but no body)",
                     body_timeout.as_secs()
                 ))
             })??
@@ -624,9 +624,9 @@ pub fn create_logged_passthrough_stream(
                         Ok(None) => None, // 流结束
                         Err(_) => {
                             // 超时
-                            let timeout_type = if is_first_chunk { "首字节" } else { "静默期" };
-                            log::error!("[{tag}] 流式响应{}超时 ({}秒)", timeout_type, duration.as_secs());
-                            yield Err(std::io::Error::other(format!("流式响应{timeout_type}超时")));
+                            let timeout_type = if is_first_chunk { "first byte" } else { "idle" };
+                            log::error!("[{tag}] the streamed response timed out ({timeout_type}, {}s)", duration.as_secs());
+                            yield Err(std::io::Error::other(format!("the streamed response timed out ({timeout_type})")));
                             break;
                         }
                     }

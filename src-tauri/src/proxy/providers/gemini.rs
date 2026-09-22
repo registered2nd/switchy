@@ -176,7 +176,7 @@ impl ProviderAdapter for GeminiAdapter {
         }
 
         Err(ProxyError::ConfigError(
-            "Gemini Provider 缺少 base_url 配置".to_string(),
+            "The Gemini provider has no base_url configured".to_string(),
         ))
     }
 
