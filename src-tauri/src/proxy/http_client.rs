@@ -11,6 +11,13 @@ use std::net::IpAddr;
 use std::sync::RwLock;
 use std::time::Duration;
 
+/// rustls 0.23 will not choose a process-wide crypto provider when both
+/// `ring` (hyper-rustls) and `aws-lc-rs` (reqwest) are linked. The first
+/// HTTPS call then panics, and the proxy drops the client connection.
+pub fn install_rustls_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 /// 全局 HTTP 客户端实例
 static GLOBAL_CLIENT: OnceCell<RwLock<Client>> = OnceCell::new();
 
@@ -215,6 +222,7 @@ pub fn is_proxy_enabled() -> bool {
 
 /// 构建 HTTP 客户端
 fn build_client(proxy_url: Option<&str>) -> Result<Client, String> {
+    install_rustls_provider();
     let mut builder = Client::builder()
         .timeout(Duration::from_secs(600))
         .connect_timeout(Duration::from_secs(30))

@@ -6,6 +6,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.14] — 2026-09-21 — The proxy returns the answer instead of dropping the connection
+
+### Fixed
+
+- **A request through the local proxy failing after the service had already
+  answered.** Two faults, either of which broke the request on its way back:
+  the proxy copied the upstream connection's framing headers onto a response
+  whose body it had already read, which made it abort the client connection,
+  and the first HTTPS call could panic because two TLS backends were linked
+  with neither chosen. Claude Code saw a dropped connection, and once the
+  proxy was switched off the same sessions kept calling the address it had
+  been listening on.
+
 ## [1.0.13] — 2026-09-21 — One switch for Claude through the proxy
 
 ### Changed

@@ -197,6 +197,9 @@ fn macos_tray_icon() -> Option<Image<'static>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before any HTTPS client is built. See `install_rustls_provider`.
+    crate::proxy::http_client::install_rustls_provider();
+
     // One-shot legacy-directory migration. Runs before any config/DB access.
     // If `~/.switchy/` is missing but the legacy pre-rename directory (name in
     // `paths::LEGACY_APP_DIR`) exists, rename it in place.

@@ -69,10 +69,22 @@ fn get_content_encoding(headers: &HeaderMap) -> Option<String> {
 }
 
 /// 移除在重建响应体后会失真的实体头。
+///
+/// A buffered body is sent with a content-length. Leaving the upstream
+/// `transfer-encoding: chunked` on that response makes hyper abort the
+/// client connection (`user sent unexpected header`) after a successful
+/// upstream reply.
 pub(crate) fn strip_entity_headers_for_rebuilt_body(headers: &mut HeaderMap) {
     headers.remove(axum::http::header::CONTENT_ENCODING);
+    strip_framing_headers(headers);
+}
+
+/// Drop hop-by-hop framing. The server sets content-length or chunked
+/// encoding for the body it actually sends.
+fn strip_framing_headers(headers: &mut HeaderMap) {
     headers.remove(axum::http::header::CONTENT_LENGTH);
     headers.remove(axum::http::header::TRANSFER_ENCODING);
+    headers.remove(axum::http::header::CONNECTION);
 }
 
 /// 读取响应体并在需要时解压，确保 headers 与返回 body 一致。
@@ -123,9 +135,12 @@ pub(crate) async fn read_decoded_body(
         }
     }
 
+    // The bytes above are the full payload. Upstream `transfer-encoding:
+    // chunked` must not be copied onto that response.
     if decoded {
-        strip_entity_headers_for_rebuilt_body(&mut headers);
+        headers.remove(axum::http::header::CONTENT_ENCODING);
     }
+    strip_framing_headers(&mut headers);
 
     Ok((headers, status, body_bytes))
 }
@@ -165,8 +180,17 @@ pub async fn handle_streaming(
 
     let mut builder = axum::response::Response::builder().status(status);
 
-    // 复制响应头
+    // Hop-by-hop headers describe the upstream connection. Hyper frames
+    // this stream itself; copying `transfer-encoding` aborts the client.
     for (key, value) in response.headers() {
+        if matches!(
+            key,
+            &axum::http::header::TRANSFER_ENCODING
+                | &axum::http::header::CONNECTION
+                | &axum::http::header::CONTENT_LENGTH
+        ) {
+            continue;
+        }
         builder = builder.header(key, value);
     }
 

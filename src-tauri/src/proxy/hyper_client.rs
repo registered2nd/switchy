@@ -59,6 +59,7 @@ type HyperClient = Client<
 fn global_hyper_client() -> &'static HyperClient {
     static CLIENT: OnceLock<HyperClient> = OnceLock::new();
     CLIENT.get_or_init(|| {
+        crate::proxy::http_client::install_rustls_provider();
         let connector = HttpsConnectorBuilder::new()
             .with_webpki_roots()
             .https_or_http()
@@ -507,6 +508,7 @@ async fn connect_via_proxy(
 fn global_tls_connector() -> &'static tokio_rustls::TlsConnector {
     static CONNECTOR: OnceLock<tokio_rustls::TlsConnector> = OnceLock::new();
     CONNECTOR.get_or_init(|| {
+        crate::proxy::http_client::install_rustls_provider();
         let mut root_store = rustls::RootCertStore::empty();
         // Baseline: Mozilla/webpki roots
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
