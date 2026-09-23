@@ -2,6 +2,20 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-23 — A switch writes only what the provider owns, for every tool; the common config reaches the tool when it is saved
+
+- Context: a provider's stored settings are filled by the switch-away backfill, so every card, relay or Official, holds an old copy of the whole settings file. Writing it back on a switch rolled the file back to that moment: Orca's hooks disappeared (07:13 on 2026-09-23), Codex's `notify`, trusted projects, plugins and MCP servers reverted, and the Windows Codex config (with Windows paths) was merged into WSL's.
+- Decision: a switch, with the proxy on or off, in Windows and in the WSL mirror, and in the backups the proxy restores from, writes only the keys the provider owns and keeps the rest of the file:
+  - **Claude**: the connection `env` keys (`ANTHROPIC_*`, `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`, the AWS and Google credential variables, `API_TIMEOUT_MS`, `ENABLE_TOOL_SEARCH`) and `apiKeyHelper`, for every provider. `model`, `permissions` and the rest are the user's.
+  - **Codex**: an API provider owns `model_provider`, its `[model_providers]` table, `model` and `disable_response_storage`, and leaving one removes them; an Official account owns nothing in `config.toml` (its login is `auth.json`).
+  - **Kimi**: `default_model` and the `[providers]` and `[models]` tables.
+  - **Gemini** already merged its `settings.json` keys over the user's and writes its own `.env`; unchanged. OpenCode and OpenClaw write only the provider's own entry; unchanged.
+  - **The common config** is applied when it is saved: what the old snippet set is removed from the live file and the new one merged in. A switch no longer writes it.
+  - When the live file does not exist yet, the provider's settings are written as they are.
+- Why: the user — the better way, for everything. What differs between providers is the endpoint, credentials and model; everything else in the file belongs to the user and the other tools that write it.
+- Supersedes: the 2026-09-22 three-way merge entry's point 4 (a switch applies the difference between the two providers) and the consequence that a switch with the proxy off writes the provider's whole settings; the earlier 2026-09-23 entry limiting this to Official Claude accounts.
+- Files: `merge_claude_connection_into_target`, `codex_config_after_switch`, `kimi_config_after_switch`, `apply_common_config_change` and `write_live_snapshot` in `src-tauri/src/services/provider/live.rs`; the hot-switch and backup paths in `services/proxy.rs`; `set_common_config_snippet` in `commands/config.rs`.
+
 ## 2026-09-23 — A provider picked by hand holds for 10 minutes; the saved login of Claude Code and Codex follows the pick
 
 - Context: with Switch automatically on, Enable only put an account first in line. Its first failed request fell through to the next account and the failover switch made that one current, so a pick was undone within seconds and its error never reached the session; rotation could skip it before trying it. Codex's `auth.json` kept the login it started with, so its `/status` never showed the pick.

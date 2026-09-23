@@ -186,7 +186,8 @@ impl ProxyService {
     }
 
     /// Rewrites Claude's live settings for `provider` while the proxy has them.
-    /// Only the keys a provider owns change (see `claude_provider_owned`), and
+    /// Only the keys a provider owns change (see
+    /// `services::provider::claude_provider_owned`), and
     /// only where they differ between `previous` (the provider the file was
     /// written for) and `provider`. Everything else in the file (hooks,
     /// plugins, the status line) belongs to the user and other tools and
@@ -201,20 +202,19 @@ impl ProxyService {
         let (proxy_url, _) = self.build_proxy_urls().await?;
         let effective_settings = self.claude_settings_under_takeover(provider, &proxy_url)?;
         let base = match previous {
-            Some(previous) => Some(claude_provider_owned(
+            Some(previous) => Some(crate::services::provider::claude_provider_owned(
                 &self.claude_settings_under_takeover(previous, &proxy_url)?,
-                previous,
             )),
             None => self
                 .live_written(&AppType::Claude)
                 .await
-                .map(|written| claude_provider_owned(&written, provider)),
+                .map(|written| crate::services::provider::claude_provider_owned(&written)),
         };
         let mut merged = match self.read_claude_live().ok() {
             Some(live) => Self::merge_live(
                 &AppType::Claude,
                 &base.unwrap_or_else(|| json!({})),
-                claude_provider_owned(&effective_settings, provider),
+                crate::services::provider::claude_provider_owned(&effective_settings),
                 &live,
             ),
             None => effective_settings.clone(),
@@ -1680,22 +1680,18 @@ impl ProxyService {
         &self,
         app_type: &str,
         provider: &Provider,
-        previous: Option<&Provider>,
     ) -> Result<(), String> {
         let _guard = self.switch_locks.lock_for_app(app_type).await;
-        self.update_live_backup_from_provider_inner(app_type, provider, previous)
+        self.update_live_backup_from_provider_inner(app_type, provider)
             .await
     }
 
-    /// Only for callers that already hold the per-app switch lock.
-    /// With `previous` (the provider the backup was written for), a Codex
-    /// backup keeps what it held beyond that provider's config, the way the
-    /// live file keeps it through the switch.
+    /// Only for callers that already hold the per-app switch lock. A Codex
+    /// backup changes only in the keys `provider` owns.
     async fn update_live_backup_from_provider_inner(
         &self,
         app_type: &str,
         provider: &Provider,
-        previous: Option<&Provider>,
     ) -> Result<(), String> {
         let app_type_enum =
             AppType::from_str(app_type).map_err(|_| format!("Unknown app type: {app_type}"))?;
@@ -1713,32 +1709,25 @@ impl ProxyService {
             if let Some(existing_backup) = existing_backup {
                 let existing_value: Value = serde_json::from_str(&existing_backup.original_config)
                     .map_err(|e| format!("Could not parse the existing {app_type} backup: {e}"))?;
-                if let Some(previous) = previous {
-                    let previous_settings = build_effective_settings_with_common_config(
-                        self.db.as_ref(),
-                        &app_type_enum,
-                        previous,
-                    )
-                    .map_err(|e| format!("Could not build the effective {app_type} config: {e}"))?;
-                    let text =
-                        |v: &Value| v.get("config").and_then(Value::as_str).map(str::to_string);
-                    if let (Some(base), Some(old), Some(new)) = (
-                        text(&previous_settings),
-                        text(&existing_value),
-                        text(&effective_settings),
-                    ) {
-                        // The backup's own keys carried onto the new
-                        // provider's config; the provider wins where both
-                        // changed a value.
-                        if let Some(merged) = live_merge::merge_toml(&base, &old, &new) {
-                            effective_settings["config"] = json!(merged);
-                        }
-                    }
+                // Only the keys the incoming provider owns change in the
+                // backup; the rest is the user's config as it was.
+                let old_text = existing_value
+                    .get("config")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let new_text = effective_settings
+                    .get("config")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let official = provider.category.as_deref() == Some("official");
+                match crate::services::provider::codex_config_after_switch(
+                    &old_text, &new_text, official,
+                ) {
+                    Ok(text) => effective_settings["config"] = json!(text),
+                    Err(e) => log::warn!("Could not carry the switch into the Codex backup: {e}"),
                 }
-                Self::preserve_codex_mcp_servers_in_backup(
-                    &mut effective_settings,
-                    &existing_value,
-                )?;
             }
         }
 
@@ -1763,7 +1752,7 @@ impl ProxyService {
         };
 
         self.ensure_live_written_record(&app_type_enum).await;
-        self.update_mirror_backup(&app_type_enum, &effective_settings)
+        self.update_mirror_backup(&app_type_enum, &effective_settings, provider)
             .await;
         self.db
             .save_live_backup(app_type, &backup_json)
@@ -1811,7 +1800,7 @@ impl ProxyService {
             .map_err(|e| format!("Could not update the local current provider: {e}"))?;
 
         if should_sync_backup {
-            self.update_live_backup_from_provider_inner(app_type, &provider, previous.as_ref())
+            self.update_live_backup_from_provider_inner(app_type, &provider)
                 .await?;
 
             if matches!(app_type_enum, AppType::Claude) {
@@ -1840,67 +1829,6 @@ impl ProxyService {
     #[cfg(test)]
     async fn lock_switch_for_test(&self, app_type: &str) -> tokio::sync::OwnedMutexGuard<()> {
         self.switch_locks.lock_for_app(app_type).await
-    }
-
-    fn preserve_codex_mcp_servers_in_backup(
-        target_settings: &mut Value,
-        existing_backup: &Value,
-    ) -> Result<(), String> {
-        let target_obj = target_settings
-            .as_object_mut()
-            .ok_or_else(|| "The Codex backup must be a JSON object".to_string())?;
-
-        let target_config = target_obj
-            .get("config")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let mut target_doc = if target_config.trim().is_empty() {
-            toml_edit::DocumentMut::new()
-        } else {
-            target_config
-                .parse::<toml_edit::DocumentMut>()
-                .map_err(|e| format!("Could not parse the new Codex config.toml: {e}"))?
-        };
-
-        let existing_config = existing_backup
-            .get("config")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        if existing_config.trim().is_empty() {
-            target_obj.insert("config".to_string(), json!(target_doc.to_string()));
-            return Ok(());
-        }
-
-        let existing_doc = existing_config
-            .parse::<toml_edit::DocumentMut>()
-            .map_err(|e| format!("Could not parse the existing Codex backup: {e}"))?;
-
-        if let Some(existing_mcp_servers) = existing_doc.get("mcp_servers") {
-            match target_doc.get_mut("mcp_servers") {
-                Some(target_mcp_servers) => {
-                    if let (Some(target_table), Some(existing_table)) = (
-                        target_mcp_servers.as_table_like_mut(),
-                        existing_mcp_servers.as_table_like(),
-                    ) {
-                        for (server_id, server_item) in existing_table.iter() {
-                            if target_table.get(server_id).is_none() {
-                                target_table.insert(server_id, server_item.clone());
-                            }
-                        }
-                    } else {
-                        log::warn!(
-                            "Codex config contains a non-table mcp_servers section; skipping backup MCP merge"
-                        );
-                    }
-                }
-                None => {
-                    target_doc["mcp_servers"] = existing_mcp_servers.clone();
-                }
-            }
-        }
-
-        target_obj.insert("config".to_string(), json!(target_doc.to_string()));
-        Ok(())
     }
 
     /// Switch provider in proxy mode (hot switch; does not write the live config)
@@ -2432,7 +2360,12 @@ impl ProxyService {
     /// Carries a provider switch made during the takeover into the second
     /// install's backup, the way the switch would have written it to the
     /// mirror with the proxy off.
-    async fn update_mirror_backup(&self, app_type: &AppType, effective: &Value) {
+    async fn update_mirror_backup(
+        &self,
+        app_type: &AppType,
+        effective: &Value,
+        provider: &Provider,
+    ) {
         let Some(key) = Self::mirror_backup_key(app_type) else {
             return;
         };
@@ -2446,7 +2379,7 @@ impl ProxyService {
             AppType::Claude => {
                 let settings =
                     crate::services::provider::sanitize_claude_settings_for_live(effective);
-                backup = crate::services::provider::merge_claude_provider_fields_into_target(
+                backup = crate::services::provider::merge_claude_connection_into_target(
                     &backup, &settings,
                 );
             }
@@ -2456,7 +2389,10 @@ impl ProxyService {
                     .get("config")
                     .and_then(Value::as_str)
                     .unwrap_or("");
-                match crate::services::provider::codex_mirror_config(current, source) {
+                let official = provider.category.as_deref() == Some("official");
+                match crate::services::provider::codex_config_after_switch(
+                    current, source, official,
+                ) {
                     Ok(text) => backup["config"] = json!(text),
                     Err(e) => {
                         log::warn!("Could not update the {key} backup: {e}");
@@ -2741,37 +2677,6 @@ impl ProxyService {
         }
         Ok(())
     }
-}
-
-/// The part of Claude settings a provider switch owns while the proxy has the
-/// file. Every provider owns the `env` keys that choose the endpoint,
-/// credentials and models (`ANTHROPIC_*`, the Bedrock and Vertex switches,
-/// the API timeout). An API provider also owns `model`, `permissions` and
-/// `effortLevel`, as a switch into the WSL mirror counts them. An Official
-/// account owns nothing more: Official accounts are one person's
-/// subscriptions, and what they store beyond the login is an old copy of
-/// that person's own settings.
-fn claude_provider_owned(settings: &Value, provider: &Provider) -> Value {
-    let env: serde_json::Map<String, Value> = settings
-        .get("env")
-        .and_then(Value::as_object)
-        .map(|env| {
-            env.iter()
-                .filter(|(key, _)| crate::services::provider::is_claude_connection_env_key(key))
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect()
-        })
-        .unwrap_or_default();
-    let mut owned = serde_json::Map::new();
-    owned.insert("env".to_string(), Value::Object(env));
-    if provider.category.as_deref() != Some("official") {
-        for key in ["model", "permissions", "effortLevel"] {
-            if let Some(value) = settings.get(key) {
-                owned.insert(key.to_string(), value.clone());
-            }
-        }
-    }
-    Value::Object(owned)
 }
 
 #[cfg(test)]
@@ -3252,8 +3157,8 @@ model = "gpt-5.1-codex"
         let live = service.read_claude_live().expect("read live config");
         assert_eq!(
             live.get("permissions"),
-            provider_b.settings_config.get("permissions"),
-            "provider-derived live settings should be refreshed"
+            Some(&json!({ "allow": ["Bash"] })),
+            "a switch writes only the provider's connection keys"
         );
         assert_eq!(
             live.get("env")
@@ -3501,7 +3406,7 @@ model = "gpt-5.1-codex"
         });
 
         service
-            .update_live_backup_from_provider("claude", &provider, None)
+            .update_live_backup_from_provider("claude", &provider)
             .await
             .expect("update live backup");
 
@@ -3557,7 +3462,7 @@ base_url = "https://codex.example/v1"
         });
 
         service
-            .update_live_backup_from_provider("codex", &provider, None)
+            .update_live_backup_from_provider("codex", &provider)
             .await
             .expect("update live backup");
 
@@ -3628,7 +3533,7 @@ base_url = "https://new.example/v1"
         );
 
         service
-            .update_live_backup_from_provider("codex", &provider, None)
+            .update_live_backup_from_provider("codex", &provider)
             .await
             .expect("update live backup");
 
@@ -3656,7 +3561,7 @@ base_url = "https://new.example/v1"
 
     #[tokio::test]
     #[serial]
-    async fn update_live_backup_from_provider_keeps_new_codex_mcp_entries_on_conflict() {
+    async fn a_switch_leaves_the_mcp_servers_in_the_codex_backup_as_they_were() {
         let _home = TempHome::new();
         crate::settings::reload_settings().expect("reload settings");
 
@@ -3699,7 +3604,7 @@ command = "latest-command"
         );
 
         service
-            .update_live_backup_from_provider("codex", &provider, None)
+            .update_live_backup_from_provider("codex", &provider)
             .await
             .expect("update live backup");
 
@@ -3724,25 +3629,11 @@ command = "latest-command"
                 .get("shared")
                 .and_then(|v| v.get("command"))
                 .and_then(|v| v.as_str()),
-            Some("new-command"),
-            "new provider/common-config MCP definition should win on conflict"
+            Some("old-command"),
+            "the MCP servers are the user's; a switch does not write the card's"
         );
-        assert_eq!(
-            mcp_servers
-                .get("legacy")
-                .and_then(|v| v.get("command"))
-                .and_then(|v| v.as_str()),
-            Some("legacy-command"),
-            "backup-only MCP entries should still be preserved"
-        );
-        assert_eq!(
-            mcp_servers
-                .get("latest")
-                .and_then(|v| v.get("command"))
-                .and_then(|v| v.as_str()),
-            Some("latest-command"),
-            "new MCP entries should remain in the restore backup"
-        );
+        assert!(mcp_servers.get("legacy").is_some());
+        assert!(mcp_servers.get("latest").is_none());
     }
 
     /// Orca's status hooks, written into `settings.json` by another tool.
@@ -3958,7 +3849,11 @@ command = "latest-command"
             .expect("hot switch");
         let live = service.read_claude_live().expect("read live");
         assert_eq!(live["hooks"], orca_hooks(), "a hot switch keeps the hooks");
-        assert_eq!(live["permissions"], json!({ "allow": ["Read"] }));
+        assert_eq!(
+            live["permissions"],
+            json!({ "allow": ["Bash"] }),
+            "the permissions are the user's"
+        );
         assert!(ProxyService::is_claude_live_taken_over(&live));
 
         service
@@ -3966,9 +3861,14 @@ command = "latest-command"
             .await
             .expect("stop with restore");
 
-        let mut expected = provider_b.settings_config.clone();
-        expected["hooks"] = orca_hooks();
-        assert_eq!(service.read_claude_live().expect("read live"), expected);
+        assert_eq!(
+            service.read_claude_live().expect("read live"),
+            json!({
+                "env": { "ANTHROPIC_API_KEY": "b-key" },
+                "permissions": { "allow": ["Bash"] },
+                "hooks": orca_hooks(),
+            })
+        );
     }
 
     #[tokio::test]
@@ -4392,7 +4292,10 @@ command = "latest-command"
 
         let live = service.read_claude_live().expect("read live");
         assert_eq!(live["hooks"], orca_hooks(), "the switch keeps the hooks");
-        assert_eq!(live["model"], "sonnet");
+        assert_eq!(
+            live["model"], "opus",
+            "the model is the user's, not the provider's"
+        );
         assert!(ProxyService::is_claude_live_taken_over(&live));
 
         service
@@ -4400,9 +4303,14 @@ command = "latest-command"
             .await
             .expect("stop with restore");
 
-        let mut expected = provider_b.settings_config.clone();
-        expected["hooks"] = orca_hooks();
-        assert_eq!(service.read_claude_live().expect("read live"), expected);
+        assert_eq!(
+            service.read_claude_live().expect("read live"),
+            json!({
+                "env": { "ANTHROPIC_API_KEY": "b-key" },
+                "model": "opus",
+                "hooks": orca_hooks(),
+            })
+        );
     }
 
     #[tokio::test]

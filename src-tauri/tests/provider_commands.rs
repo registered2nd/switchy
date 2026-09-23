@@ -303,15 +303,19 @@ command = "say"
         .get("config")
         .and_then(|v| v.as_str())
         .unwrap_or_default();
-    // The provider config should be in the live file
-    // Note: the live file also contains the content synced from MCP
+    // A switch writes only what the provider owns: the MCP servers in the
+    // live file are the user's and stay; the card's are not added.
     assert!(
-        config_text.contains("mcp_servers.latest"),
-        "live file should contain provider's original config"
+        config_text.contains("mcp_servers.legacy"),
+        "the user's MCP servers stay in the live file"
+    );
+    assert!(
+        !config_text.contains("mcp_servers.latest"),
+        "a switch does not write the card's MCP servers"
     );
     assert!(
         new_config_text.contains("mcp_servers.latest"),
-        "provider snapshot should contain provider's original config"
+        "the provider keeps its stored config"
     );
 
     let legacy = providers

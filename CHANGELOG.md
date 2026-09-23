@@ -38,6 +38,15 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ### Fixed
 
+- **Switching never rewrites your settings.** For every tool, with the proxy
+  on or off, in Windows and in WSL, a switch changes only what the provider
+  owns: its endpoint, credentials and model. Hooks, plugins, MCP servers,
+  trusted projects, permissions and everything else you or other tools set
+  stay as they are. Before, a switch wrote back an old copy of the whole
+  file that the provider card had kept, undoing changes made since, and
+  copied the Windows Codex config into WSL's. The common config now reaches
+  the tool when you save it.
+
 - **An account you pick by hand stays picked.** With Switch automatically on,
   Enable (or the tray) now holds that account for 10 minutes: requests go
   only to it, with no failover or rotation, so if it is broken you see its

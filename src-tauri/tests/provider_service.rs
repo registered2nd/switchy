@@ -912,8 +912,8 @@ command = "say"
     let config_text =
         std::fs::read_to_string(switchy_lib::get_codex_config_path()).expect("read config.toml");
     assert!(
-        config_text.contains("mcp_servers.latest"),
-        "live config.toml should hold the new provider's config"
+        !config_text.contains("mcp_servers.latest"),
+        "a switch writes only what the provider owns, not the card's MCP servers"
     );
 
     let current_id = state

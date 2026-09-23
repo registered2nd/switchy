@@ -26,13 +26,13 @@ pub use live::{
 
 // Internal re-exports (pub(crate))
 pub(crate) use live::{
+    apply_common_config_change, claude_provider_owned, codex_config_after_switch,
+    merge_claude_connection_into_target, sanitize_claude_settings_for_live,
+};
+pub(crate) use live::{
     build_effective_settings_with_common_config, normalize_provider_common_config_for_storage,
     provider_exists_in_live_config, strip_common_config_from_live_settings,
     sync_current_provider_for_app_to_live, write_live_with_common_config,
-};
-pub(crate) use live::{
-    codex_mirror_config, is_claude_connection_env_key, merge_claude_provider_fields_into_target,
-    sanitize_claude_settings_for_live,
 };
 
 // Internal re-exports
@@ -1257,11 +1257,11 @@ impl ProviderService {
             let should_sync_via_proxy = is_proxy_running && (has_live_backup || live_taken_over);
 
             if should_sync_via_proxy {
-                futures::executor::block_on(state.proxy_service.update_live_backup_from_provider(
-                    app_type.as_str(),
-                    &provider,
-                    existing_provider.as_ref(),
-                ))
+                futures::executor::block_on(
+                    state
+                        .proxy_service
+                        .update_live_backup_from_provider(app_type.as_str(), &provider),
+                )
                 .map_err(|e| AppError::Message(format!("Failed to update the live backup: {e}")))?;
 
                 if matches!(app_type, AppType::Claude) {
@@ -1508,9 +1508,8 @@ impl ProviderService {
             // the account, so /status and its account calls match what serves
             // the requests.
             let mut result = SwitchResult::default();
-            match app_type {
-                AppType::Claude => result.warnings = Self::swap_claude_login(state, _provider),
-                _ => {}
+            if matches!(app_type, AppType::Claude) {
+                result.warnings = Self::swap_claude_login(state, _provider);
             }
             return Ok(result);
         }
@@ -1746,11 +1745,11 @@ impl ProviderService {
             .detect_takeover_in_live_config_for_app(&app_type);
 
         if takeover_enabled && (has_live_backup || live_taken_over) {
-            futures::executor::block_on(state.proxy_service.update_live_backup_from_provider(
-                app_type.as_str(),
-                provider,
-                None,
-            ))
+            futures::executor::block_on(
+                state
+                    .proxy_service
+                    .update_live_backup_from_provider(app_type.as_str(), provider),
+            )
             .map_err(|e| AppError::Message(format!("Failed to update the live backup: {e}")))?;
             return Ok(());
         }

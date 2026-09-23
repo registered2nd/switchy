@@ -32,24 +32,46 @@ pub(crate) fn sanitize_claude_settings_for_live(settings: &Value) -> Value {
     v
 }
 
+// A provider owns only what chooses its endpoint, credentials and model. A
+// switch writes that and leaves the rest of each settings file to the user
+// and the other tools that write it (Orca's hooks, Claude Code's `/config`,
+// Codex's own UI state): what a card stores beyond that is an old copy of
+// the file, taken when the card was last switched away from, and writing it
+// back would undo everything changed since.
+
 /// Whether `key` is a Claude `env` key that chooses the endpoint, credentials
 /// or models, as opposed to the user's own variables.
 pub(crate) fn is_claude_connection_env_key(key: &str) -> bool {
     key.starts_with("ANTHROPIC_")
         || matches!(
             key,
-            "CLAUDE_CODE_USE_BEDROCK" | "CLAUDE_CODE_USE_VERTEX" | "API_TIMEOUT_MS"
+            "CLAUDE_CODE_USE_BEDROCK"
+                | "CLAUDE_CODE_USE_VERTEX"
+                | "API_TIMEOUT_MS"
+                | "GOOGLE_APPLICATION_CREDENTIALS"
+                | "AWS_REGION"
+                | "AWS_PROFILE"
+                | "AWS_ACCESS_KEY_ID"
+                | "AWS_SECRET_ACCESS_KEY"
+                | "AWS_SESSION_TOKEN"
+                | "ENABLE_TOOL_SEARCH"
         )
 }
 
-/// `target` with its connection `env` keys replaced by `source`'s and
-/// everything else kept. An Official account is one person's subscription:
-/// what its card stores beyond the login is an old copy of that person's own
-/// settings, so switching to it must not write that copy over the file.
+/// Top-level Claude settings a provider owns besides its `env` keys.
+const CLAUDE_PROVIDER_OWNED_KEYS: [&str; 1] = ["apiKeyHelper"];
+
+/// The part of Claude `settings` a provider owns.
+pub(crate) fn claude_provider_owned(settings: &Value) -> Value {
+    merge_claude_connection_into_target(&json!({}), settings)
+}
+
+/// `target` with the keys a provider owns replaced by `source`'s (removed
+/// where `source` lacks them) and everything else kept.
 pub(crate) fn merge_claude_connection_into_target(target: &Value, source: &Value) -> Value {
     let mut merged = target.clone();
     let Some(target_obj) = merged.as_object_mut() else {
-        return source.clone();
+        return claude_provider_owned(source);
     };
     let env = target_obj
         .entry("env".to_string())
@@ -69,76 +91,99 @@ pub(crate) fn merge_claude_connection_into_target(target: &Value, source: &Value
     if env.is_empty() {
         target_obj.remove("env");
     }
+    for key in CLAUDE_PROVIDER_OWNED_KEYS {
+        match source.get(key) {
+            Some(value) => {
+                target_obj.insert(key.to_string(), value.clone());
+            }
+            None => {
+                target_obj.remove(key);
+            }
+        }
+    }
     merged
 }
 
-fn build_claude_mirror_env(source: &serde_json::Map<String, Value>) -> Option<Value> {
-    let source_env = source.get("env")?.as_object()?;
-    let mut merged_env = serde_json::Map::new();
+/// `config.toml` keys an API provider owns: its routing, its model, and the
+/// storage flag some relays require. An Official account owns none of the
+/// file; its login is in `auth.json`.
+const CODEX_RELAY_OWNED_KEYS: [&str; 4] = [
+    "model_provider",
+    "model_providers",
+    "model",
+    "disable_response_storage",
+];
 
-    for key in [
-        "ANTHROPIC_AUTH_TOKEN",
-        "ANTHROPIC_BASE_URL",
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_MODEL",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        "AWS_REGION",
-        "AWS_PROFILE",
-        "AWS_ACCESS_KEY_ID",
-        "AWS_SECRET_ACCESS_KEY",
-        "AWS_SESSION_TOKEN",
-        "ENABLE_TOOL_SEARCH",
-    ] {
-        if let Some(value) = source_env.get(key) {
-            merged_env.insert(key.to_string(), value.clone());
+/// A Codex `config.toml` (`current`) after a switch to a provider whose stored
+/// config is `config_text`. Leaving an API provider removes the keys it owns;
+/// switching to one writes them; everything else in `current` stays. An
+/// empty `current` gets the provider's config as it is.
+pub(crate) fn codex_config_after_switch(
+    current: &str,
+    config_text: &str,
+    official: bool,
+) -> Result<String, AppError> {
+    if current.trim().is_empty() {
+        return Ok(config_text.to_string());
+    }
+    let mut doc = current
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
+    if doc.contains_key("model_provider") {
+        for key in CODEX_RELAY_OWNED_KEYS {
+            doc.remove(key);
         }
     }
-
-    Some(Value::Object(merged_env))
-}
-
-pub(crate) fn merge_claude_provider_fields_into_target(target: &Value, source: &Value) -> Value {
-    let mut merged = target.clone();
-
-    let Some(target_obj) = merged.as_object_mut() else {
-        return json!({});
-    };
-    let Some(source_obj) = source.as_object() else {
-        return merged;
-    };
-
-    if let Some(value) = build_claude_mirror_env(source_obj) {
-        target_obj.insert("env".to_string(), value);
-    } else {
-        target_obj.remove("env");
-    }
-
-    for key in ["model", "permissions", "effortLevel"] {
-        if let Some(value) = source_obj.get(key) {
-            target_obj.insert(key.to_string(), value.clone());
-        } else {
-            target_obj.remove(key);
+    doc.remove("model_providers");
+    if !official {
+        let source = config_text
+            .parse::<DocumentMut>()
+            .map_err(|e| AppError::Message(format!("Invalid Codex provider config: {e}")))?;
+        for key in CODEX_RELAY_OWNED_KEYS {
+            if let Some(item) = source.get(key) {
+                doc.insert(key, item.clone());
+            }
         }
     }
-
-    merged
+    Ok(doc.to_string())
 }
 
-/// Keys of `config.toml` a provider owns outright. They are cleared from the
-/// mirror before the live text is merged over it, so a previous provider's
-/// `[model_providers.x]` table cannot linger beside the new one. Everything
-/// else the mirror holds (`[mcp_servers]`, per-machine paths) stays.
-const CODEX_PROVIDER_OWNED_KEYS: [&str; 3] = ["model_provider", "model", "model_providers"];
+/// `config.toml` keys a Kimi provider owns: its default model and the
+/// provider and model tables it names.
+const KIMI_PROVIDER_OWNED_KEYS: [&str; 3] = ["default_model", "providers", "models"];
 
-/// Writes the Codex login and provider config into a second `~/.codex`.
-/// `auth.json` is copied whole (it holds nothing machine-specific);
-/// `config.toml` is merged key-by-key over the mirror's own file.
+/// A Kimi `config.toml` (`current`) after a switch to a provider whose config
+/// is `config_text`: the keys the provider owns are replaced, the rest stays.
+pub(crate) fn kimi_config_after_switch(
+    current: &str,
+    config_text: &str,
+) -> Result<String, AppError> {
+    if current.trim().is_empty() {
+        return Ok(config_text.to_string());
+    }
+    let mut doc = current
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Kimi config.toml: {e}")))?;
+    let source = config_text
+        .parse::<DocumentMut>()
+        .map_err(|e| AppError::Message(format!("Invalid Kimi provider config: {e}")))?;
+    for key in KIMI_PROVIDER_OWNED_KEYS {
+        doc.remove(key);
+        if let Some(item) = source.get(key) {
+            doc.insert(key, item.clone());
+        }
+    }
+    Ok(doc.to_string())
+}
+
+/// Writes the Codex login and the keys the provider owns into a second
+/// `~/.codex` (typically WSL). `auth.json` is copied whole; `config.toml`
+/// keeps everything else that machine holds for itself.
 fn write_codex_mirror(
     mirror_dir: &std::path::Path,
     auth: &Value,
     config_text: &str,
+    official: bool,
 ) -> Result<(), AppError> {
     std::fs::create_dir_all(mirror_dir).map_err(|e| AppError::io(mirror_dir, e))?;
     write_json_file(&mirror_dir.join("auth.json"), auth)?;
@@ -152,52 +197,56 @@ fn write_codex_mirror(
         );
         return Ok(());
     }
-    let text = codex_mirror_config(&current, config_text)?;
+    let text = codex_config_after_switch(&current, config_text, official)?;
     crate::config::write_text_file(&config_path, &text)
 }
 
-/// The mirror's `config.toml` after a switch to a provider whose config is
-/// `config_text`: the provider-owned keys are replaced, the rest of `current`
-/// stays.
-pub(crate) fn codex_mirror_config(current: &str, config_text: &str) -> Result<String, AppError> {
-    let mut target_doc = if current.trim().is_empty() {
-        DocumentMut::new()
-    } else {
-        current
-            .parse::<DocumentMut>()
-            .map_err(|e| AppError::Message(format!("Invalid Codex mirror config.toml: {e}")))?
-    };
-    let source_doc = config_text
-        .parse::<DocumentMut>()
-        .map_err(|e| AppError::Message(format!("Invalid Codex config.toml: {e}")))?;
-
-    for key in CODEX_PROVIDER_OWNED_KEYS {
-        target_doc.remove(key);
-    }
-    merge_toml_table_like(target_doc.as_table_mut(), source_doc.as_table());
-    Ok(target_doc.to_string())
-}
-
-fn build_claude_mirror_settings(source: &Value) -> Value {
-    let mut settings = json!({});
-    let Some(settings_obj) = settings.as_object_mut() else {
-        return settings;
-    };
-    let Some(source_obj) = source.as_object() else {
-        return settings;
-    };
-
-    if let Some(value) = build_claude_mirror_env(source_obj) {
-        settings_obj.insert("env".to_string(), value);
-    }
-
-    for key in ["model", "permissions", "effortLevel"] {
-        if let Some(value) = source_obj.get(key) {
-            settings_obj.insert(key.to_string(), value.clone());
+/// Applies a change of the common config snippet (`old` to `new`) to the
+/// app's live file: what the old snippet set is removed and the new one is
+/// merged in; everything else in the file stays. Saving the common config is
+/// how it reaches the tool, since a switch no longer writes it.
+pub(crate) fn apply_common_config_change(
+    app_type: &AppType,
+    old: Option<&str>,
+    new: Option<&str>,
+) -> Result<(), AppError> {
+    match app_type {
+        AppType::Claude => {
+            let path = get_claude_settings_path();
+            if !path.exists() {
+                return Ok(());
+            }
+            let live: Value = read_json_file(&path)?;
+            let without_old =
+                remove_common_config_from_settings(app_type, &live, old.unwrap_or(""))?;
+            let next = apply_common_config_to_settings(app_type, &without_old, new.unwrap_or(""))?;
+            if next != live {
+                write_json_file(&path, &next)?;
+            }
         }
+        AppType::Codex | AppType::Kimi => {
+            let path = if matches!(app_type, AppType::Codex) {
+                get_codex_config_path()
+            } else {
+                crate::kimi_config::get_kimi_config_path()
+            };
+            if !path.exists() {
+                return Ok(());
+            }
+            let text = std::fs::read_to_string(&path).map_err(|e| AppError::io(&path, e))?;
+            let live = json!({ "config": text });
+            let without_old =
+                remove_common_config_from_settings(app_type, &live, old.unwrap_or(""))?;
+            let next = apply_common_config_to_settings(app_type, &without_old, new.unwrap_or(""))?;
+            if let Some(next_text) = next.get("config").and_then(Value::as_str) {
+                if next_text != text {
+                    crate::config::write_text_file(&path, next_text)?;
+                }
+            }
+        }
+        _ => {}
     }
-
-    settings
+    Ok(())
 }
 
 pub(crate) fn provider_exists_in_live_config(
@@ -834,8 +883,7 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
         AppType::Claude => {
             let path = get_claude_settings_path();
             let settings = sanitize_claude_settings_for_live(&provider.settings_config);
-            let official = provider.category.as_deref() == Some("official");
-            let existing_live = if official && path.exists() {
+            let existing_live = if path.exists() {
                 read_json_file::<Value>(&path).ok()
             } else {
                 None
@@ -860,11 +908,8 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
                 if mirror_path != path {
                     let mirror_settings = if mirror_path.exists() {
                         match read_json_file::<Value>(&mirror_path) {
-                            Ok(existing) if official => {
-                                merge_claude_connection_into_target(&existing, &settings)
-                            }
                             Ok(existing) => {
-                                merge_claude_provider_fields_into_target(&existing, &settings)
+                                merge_claude_connection_into_target(&existing, &settings)
                             }
                             Err(err) => {
                                 log::warn!(
@@ -875,7 +920,7 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
                             }
                         }
                     } else {
-                        build_claude_mirror_settings(&settings)
+                        claude_provider_owned(&settings)
                     };
 
                     write_json_file(&mirror_path, &mirror_settings)?;
@@ -896,16 +941,28 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
                 )
             })?;
 
+            let official = provider.category.as_deref() == Some("official");
             let auth_path = get_codex_auth_path();
             write_json_file(&auth_path, auth)?;
             let config_path = get_codex_config_path();
-            std::fs::write(&config_path, config_str).map_err(|e| AppError::io(&config_path, e))?;
+            let current = std::fs::read_to_string(&config_path).unwrap_or_default();
+            match codex_config_after_switch(&current, config_str, official) {
+                Ok(text) => {
+                    if text != current {
+                        crate::config::write_text_file(&config_path, &text)?;
+                    }
+                }
+                Err(err) => log::warn!(
+                    "Codex config '{}' is not valid TOML; leaving it untouched: {err}",
+                    config_path.display()
+                ),
+            }
 
-            // Second install (typically WSL): same login, provider fields of
-            // config.toml merged over whatever that machine keeps for itself.
+            // Second install (typically WSL): same login, the keys the
+            // provider owns written over whatever that machine keeps.
             if let Some(mirror_dir) = crate::settings::get_codex_mirror_override_dir() {
                 if mirror_dir != get_codex_config_dir() {
-                    if let Err(err) = write_codex_mirror(&mirror_dir, auth, config_str) {
+                    if let Err(err) = write_codex_mirror(&mirror_dir, auth, config_str, official) {
                         log::warn!(
                             "Failed to write Codex mirror '{}': {err}. Live config was written; mirror left as-is.",
                             mirror_dir.display()
@@ -928,7 +985,10 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
                         .to_string(),
                 )
             })?;
-            crate::kimi_config::write_kimi_live_atomic(obj.get("credentials"), config_str)?;
+            let current = std::fs::read_to_string(crate::kimi_config::get_kimi_config_path())
+                .unwrap_or_default();
+            let config_text = kimi_config_after_switch(&current, config_str)?;
+            crate::kimi_config::write_kimi_live_atomic(obj.get("credentials"), &config_text)?;
         }
         AppType::OpenCode => {
             // OpenCode uses additive mode - write provider to config
@@ -1675,7 +1735,74 @@ mod tests {
     }
 
     #[test]
-    fn claude_mirror_merge_preserves_machine_specific_settings() {
+    fn switching_to_an_official_codex_account_leaves_config_toml_alone() {
+        let live = "model = \"gpt-6-astra\"
+approval_policy = \"never\"
+
+[mcp_servers.mine]
+command = \"x\"
+";
+        let card = "model = \"old\"
+
+[mcp_servers.card]
+command = \"y\"
+";
+        assert_eq!(codex_config_after_switch(live, card, true).unwrap(), live);
+    }
+
+    #[test]
+    fn a_codex_relay_writes_its_routing_and_leaving_it_removes_them() {
+        let live = "approval_policy = \"never\"
+model = \"gpt-6-astra\"
+";
+        let relay = "model_provider = \"relay\"
+model = \"glm\"
+sandbox_mode = \"read-only\"
+
+[model_providers.relay]
+base_url = \"https://relay.example/v1\"
+";
+        let on_relay = codex_config_after_switch(live, relay, false).unwrap();
+        let table: toml::Table = on_relay.parse().unwrap();
+        assert_eq!(table["model_provider"].as_str(), Some("relay"));
+        assert_eq!(table["model"].as_str(), Some("glm"));
+        assert!(table.contains_key("model_providers"));
+        assert_eq!(table["approval_policy"].as_str(), Some("never"));
+        assert!(!table.contains_key("sandbox_mode"), "only the relay's own keys are written");
+
+        let back: toml::Table = codex_config_after_switch(&on_relay, "", true)
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(!back.contains_key("model_provider"));
+        assert!(!back.contains_key("model_providers"));
+        assert!(!back.contains_key("model"), "the relay's model goes with it");
+        assert_eq!(back["approval_policy"].as_str(), Some("never"));
+    }
+
+    #[test]
+    fn a_kimi_switch_replaces_only_the_provider_keys() {
+        let live = "default_model = \"a/m\"
+default_permission_mode = \"yolo\"
+
+[providers.a]
+base_url = \"https://a\"
+";
+        let card = "default_model = \"b/m\"
+default_permission_mode = \"ask\"
+
+[providers.b]
+base_url = \"https://b\"
+";
+        let table: toml::Table = kimi_config_after_switch(live, card).unwrap().parse().unwrap();
+        assert_eq!(table["default_model"].as_str(), Some("b/m"));
+        assert!(table["providers"].get("b").is_some());
+        assert!(table["providers"].get("a").is_none());
+        assert_eq!(table["default_permission_mode"].as_str(), Some("yolo"));
+    }
+
+    #[test]
+    fn a_claude_switch_writes_only_the_connection_keys() {
         let target = json!({
             "env": {
                 "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "95"
@@ -1723,15 +1850,22 @@ mod tests {
             }
         });
 
-        let merged = merge_claude_provider_fields_into_target(&target, &source);
+        let merged = merge_claude_connection_into_target(&target, &source);
         assert_eq!(
             merged["env"],
             json!({
+                "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "95",
                 "ANTHROPIC_AUTH_TOKEN": "sk-test",
                 "ANTHROPIC_BASE_URL": "https://www.right.codes/claude",
                 "ENABLE_TOOL_SEARCH": "true"
-            })
+            }),
+            "the connection keys come from the provider; the machine's own variables stay"
         );
+        assert!(
+            merged.get("model").is_none(),
+            "the model is the user's, not the provider's"
+        );
+        assert!(merged.get("permissions").is_none());
         assert_eq!(
             merged["hooks"]["Stop"][0]["hooks"][0]["command"],
             json!("python3 /home/agentcode/.claude/hooks/dashboard-hook.py")
@@ -1743,7 +1877,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_mirror_new_file_contains_only_provider_fields() {
+    fn a_new_claude_mirror_file_gets_only_the_connection_keys() {
         let source = json!({
             "env": {
                 "ANTHROPIC_AUTH_TOKEN": "sk-test",
@@ -1770,7 +1904,7 @@ mod tests {
             }
         });
 
-        let mirror = build_claude_mirror_settings(&source);
+        let mirror = claude_provider_owned(&source);
         assert_eq!(
             mirror,
             json!({
@@ -1778,12 +1912,7 @@ mod tests {
                     "ANTHROPIC_AUTH_TOKEN": "sk-test",
                     "ANTHROPIC_BASE_URL": "https://www.right.codes/claude",
                     "ENABLE_TOOL_SEARCH": "true"
-                },
-                "model": "opus",
-                "permissions": {
-                    "defaultMode": "bypassPermissions"
-                },
-                "effortLevel": "medium"
+                }
             })
         );
     }

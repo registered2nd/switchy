@@ -396,18 +396,28 @@ pub async fn set_common_config_snippet(
 
     state
         .db
-        .set_config_snippet(&app_type, value)
+        .set_config_snippet(&app_type, value.clone())
         .map_err(|e| e.to_string())?;
     state
         .db
         .set_config_snippet_cleared(&app_type, is_cleared)
         .map_err(|e| e.to_string())?;
 
-    if matches!(app_type.as_str(), "claude" | "codex" | "gemini") {
+    // A switch writes only what a provider owns, so the common config
+    // reaches the tool when it is saved: its change is applied to the live
+    // file and the rest of the file stays.
+    if matches!(app_type.as_str(), "claude" | "codex" | "kimi") {
         let app = AppType::from_str(&app_type).map_err(|e| e.to_string())?;
+        crate::services::provider::apply_common_config_change(
+            &app,
+            old_snippet.as_deref(),
+            value.as_deref(),
+        )
+        .map_err(|e| e.to_string())?;
+    } else if app_type == "gemini" {
         crate::services::provider::ProviderService::sync_current_provider_for_app(
             state.inner(),
-            app,
+            AppType::Gemini,
         )
         .map_err(|e| e.to_string())?;
     }
