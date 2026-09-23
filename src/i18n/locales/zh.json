@@ -1424,7 +1424,7 @@
     "refresh": "刷新",
     "signedOut": "已登出",
     "signedOutHint": {
-      "codex": "启用此卡片后运行 codex login",
+      "codex": "启用此卡片后，在 Codex 中以此账号登录",
       "claude": "在 Claude Code 中重新登录此账号，然后保存登录"
     }
   },

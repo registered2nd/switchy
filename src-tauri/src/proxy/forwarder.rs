@@ -848,6 +848,9 @@ impl RequestForwarder {
         if !signed_out {
             return;
         }
+        if codex {
+            super::codex_pool::sign_codex_out_for(provider);
+        }
         let account = provider.account_email();
         if let Some(app) = self.app_handle.as_ref() {
             let payload = serde_json::json!({

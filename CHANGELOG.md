@@ -49,8 +49,10 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   saved login to it, as switching does with the proxy off. Codex's saved
   login, on Windows and in WSL, moves to an account once it has answered a
   request through the proxy, so new Codex sessions show it; a login OpenAI
-  refuses is never given to Codex, which could not start on it. Codex
-  sessions already running keep the login they started with.
+  refuses is never given to Codex, which could not start on it. If the
+  account you picked is signed out, Codex is signed out too and opens on its
+  own sign-in screen; sign in as that account. Codex sessions already
+  running keep the login they started with.
 
 - **"Degraded" no longer appears on healthy accounts.** Only failures that
   are about the account count against it: a refused login, a server error, a

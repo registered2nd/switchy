@@ -1424,7 +1424,7 @@
     "refresh": "Refresh",
     "signedOut": "Signed out",
     "signedOutHint": {
-      "codex": "Enable this card, then run codex login",
+      "codex": "Enable this card, then sign in to Codex as this account",
       "claude": "Sign in to this account in Claude Code again, then capture it"
     }
   },

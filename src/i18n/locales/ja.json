@@ -1424,7 +1424,7 @@
     "refresh": "更新",
     "signedOut": "サインアウト済み",
     "signedOutHint": {
-      "codex": "このカードを有効にしてから codex login を実行",
+      "codex": "このカードを有効にしてから、Codex でこのアカウントにサインイン",
       "claude": "Claude Code でこのアカウントに再ログインし、ログインを保存"
     }
   },

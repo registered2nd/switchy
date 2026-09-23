@@ -220,6 +220,50 @@ pub fn save_login_of_serving_account(db: &Database, provider: &Provider) {
     *SAVED_LOGIN_OF.lock().unwrap_or_else(|e| e.into_inner()) = Some(provider.id.clone());
 }
 
+/// Signs Codex out when `provider` is the account picked by hand (held) and
+/// OpenAI has refused its login: the login is removed from Codex's
+/// `auth.json` (Windows and the WSL mirror), so Codex opens on its own
+/// sign-in screen, as a signed-out Codex does, instead of running on another
+/// account's login while every request is sent as the refused one. The
+/// logins stay stored with their providers; a working account's login is put
+/// back once it answers (`save_login_of_serving_account`).
+pub fn sign_codex_out_for(provider: &Provider) {
+    if super::manual_hold::held("codex").as_deref() != Some(provider.id.as_str())
+        || !needs_sign_in(provider)
+    {
+        return;
+    }
+    let mut paths = vec![crate::codex_config::get_codex_auth_path()];
+    if let Some(dir) = crate::settings::get_codex_mirror_override_dir() {
+        paths.push(dir.join("auth.json"));
+    }
+    let mut signed_out = false;
+    for path in paths.into_iter().filter(|p| p.exists()) {
+        let mut auth: Value = crate::config::read_json_file(&path).unwrap_or(Value::Null);
+        let Some(obj) = auth.as_object_mut() else {
+            continue;
+        };
+        if obj.remove("tokens").is_none() {
+            continue;
+        }
+        obj.remove("last_refresh");
+        match crate::config::write_json_file(&path, &auth) {
+            Ok(()) => signed_out = true,
+            Err(e) => log::warn!(
+                "[codex_pool] could not sign Codex out at {}: {e}",
+                path.display()
+            ),
+        }
+    }
+    if signed_out {
+        *SAVED_LOGIN_OF.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        log::info!(
+            "[codex_pool] signed Codex out: provider={} was picked by hand and its login was refused",
+            provider.id
+        );
+    }
+}
+
 fn read_live_auth() -> Value {
     let path = crate::codex_config::get_codex_auth_path();
     match std::fs::read(&path) {
@@ -875,6 +919,37 @@ mod tests {
             codex_account::inspect(&live).and_then(|l| l.account_key().map(str::to_string)),
             Some("acct-b".to_string())
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_refused_account_picked_by_hand_signs_codex_out() {
+        let home = tempfile::TempDir::new().expect("temp home");
+        std::env::set_var(crate::paths::ENV_TEST_HOME, home.path());
+        let picked = official("picked-signout", login_for("p@x.io", "acct-p"));
+        let path = crate::codex_config::get_codex_auth_path();
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        crate::config::write_json_file(&path, &login_for("other@x.io", "acct-o")).expect("seed");
+        REFRESH_STATE
+            .lock()
+            .unwrap()
+            .entry(picked.id.clone())
+            .or_default()
+            .dead_refresh_token = Some("RRR".into());
+
+        sign_codex_out_for(&picked);
+        let untouched: Value = crate::config::read_json_file(&path).expect("read");
+        assert!(
+            untouched.get("tokens").is_some(),
+            "not picked by hand: Codex keeps its login"
+        );
+
+        super::super::manual_hold::hold("codex", &picked.id);
+        sign_codex_out_for(&picked);
+        let live: Value = crate::config::read_json_file(&path).expect("read");
+        super::super::manual_hold::release("codex");
+        std::env::remove_var(crate::paths::ENV_TEST_HOME);
+        assert!(live.get("tokens").is_none(), "Codex is signed out");
     }
 
     #[test]
