@@ -1173,7 +1173,7 @@
       "keepWarmInterval": "检查间隔（分钟）",
       "keepWarmIntervalDescription": "每隔多久检查一次各账号。只有在账号窗口已结束且未达额度上限时才发送请求，因此每个账号每个窗口大约只花一次请求。范围 15–1440。",
       "codexSharedSession": "切换 Codex 登录的账号（实验性）",
-      "codexSharedSessionDescription": "Codex 窗口会一直使用启动时的账号，所以已打开窗口里的 /status 看不到切换。开启后，Codex 的共享后台服务会始终登录当前使用的账号，服务运行期间启动的每个 Codex 窗口都会随每次切换而变：/status 会显示该账号的邮箱和额度。这用到了一个被 OpenAI 标为不稳定的 Codex 请求，Codex 更新后可能失效。开启前已打开的窗口需要重启一次；关闭此项会关掉连在该服务上的窗口（用 codex resume 可重新打开）。需要让 Codex 经过代理。"
+      "codexSharedSessionDescription": "Codex 窗口会一直使用启动时的账号，所以已打开窗口里的 /status 看不到切换。开启后，在 WSL 里启动的每个 Codex 窗口都会运行在从自己终端启动的独立 Codex 服务上，Switchy 会在每次切换时把它登录到当前使用的账号：/status 显示该账号的邮箱和额度，Orca 也仍能识别该窗口。为此 Switchy 会在 ~/.bashrc 中加入一个 codex shell 函数，因此只对从新终端启动的窗口生效。这用到了一个被 OpenAI 标为不稳定的 Codex 请求，Codex 更新后可能失效。需要让 Codex 经过代理。不支持原生 Windows 上的 Codex。"
     },
     "autoFailover": {
       "info": "请求失败时，按切换顺序依次尝试下一个供应商。连续失败次数过多的供应商会被暂时跳过。",

@@ -67,12 +67,13 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 - **`/status` in an open Codex window shows the account you switched to**
   (experimental, on by default: Settings → Pool → *Switch Codex's signed-in
-  account*). Switchy keeps Codex's own shared background server signed in to
-  the account in use, and Codex windows attach to it by themselves, so
-  `/status` shows the new account's email and limits as soon as you switch,
-  without sending a message. Windows already open when you update need one
-  restart. It relies on a Codex sign-in request OpenAI marks as unstable, so a
-  Codex update can stop it; switching itself keeps working either way.
+  account*). Each Codex window started in WSL runs on its own Codex server,
+  which Switchy signs in to the account in use, so `/status` shows the new
+  account's email and limits as soon as you switch, without sending a
+  message, and Orca still sees the window. Switchy adds a `codex` shell
+  function to `~/.bashrc` for this; it applies to windows started from a new
+  terminal. It relies on a Codex sign-in request OpenAI marks as unstable, so
+  a Codex update can stop it; switching itself keeps working either way.
 
 - **"Degraded" no longer appears on healthy accounts.** Only failures that
   are about the account count against it: a refused login, a server error, a
