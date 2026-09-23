@@ -9,6 +9,13 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
 - Why: keeping the full record private and unchanged means no force-push, no re-sync and valid commit references in this log, while the public copy stays current with one command.
 - Files: `scripts/publish_public.sh`.
 
+## 2026-09-23 — The public repo is a cleaned copy of the private one, rebuilt by a script
+
+- Context: the user wanted Switchy public and shareable under the name `switchy`. The working repo's history carries his email addresses, his name and the session notes.
+- Decision: work continues in `registered2nd/switchy-private` (origin on the workstation and the laptop). `registered2nd/switchy` is public and holds only what `scripts/publish_public.sh` produces: a clone of main with the session logs, briefs, handoff files and old browser snapshots dropped from every commit, and his emails and name replaced. The rewrite is deterministic, so rerunning the script fast-forwards the public branch. Never push the private repo to the public one or add it as a remote there.
+- Why: keeping the full record private and unchanged means no force-push, no re-sync and valid commit references in this log, while the public copy stays current with one command.
+- Files: `scripts/publish_public.sh`.
+
 ## 2026-09-23 — Switchy's interface has its own look; the accent lives under Tailwind's blue-* scale
 
 - Context: the interface still looked like cc-switch (pill app switcher, a Settings tab bar, accordion cards with colored icon tiles, glass panels, blue and green accents). the user asked for a new UI across the main window and every Settings page.
