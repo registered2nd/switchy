@@ -24,8 +24,6 @@ interface KimiFormFieldsProps {
   category?: ProviderCategory;
   shouldShowApiKeyLink: boolean;
   websiteUrl: string;
-  isPartner?: boolean;
-  partnerPromotionKey?: string;
 
   // Base URL
   shouldShowSpeedTest: boolean;
@@ -53,8 +51,6 @@ export function KimiFormFields({
   category,
   shouldShowApiKeyLink,
   websiteUrl,
-  isPartner,
-  partnerPromotionKey,
   shouldShowSpeedTest,
   kimiBaseUrl,
   onBaseUrlChange,
@@ -111,8 +107,6 @@ export function KimiFormFields({
         category={category}
         shouldShowLink={shouldShowApiKeyLink}
         websiteUrl={websiteUrl}
-        isPartner={isPartner}
-        partnerPromotionKey={partnerPromotionKey}
         placeholder={{
           official: t("providerForm.kimiOfficialNoApiKey", {
             defaultValue: "官方供应商使用 kimi login 登录，无需 API Key",

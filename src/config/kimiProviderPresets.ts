@@ -19,8 +19,6 @@ export interface KimiProviderPreset {
   config: string; // 将写入 ~/.kimi-code/config.toml（TOML 字符串）
   credentials: Record<string, any> | null; // 将写入 credentials/kimi-code.json
   isOfficial?: boolean; // 标识是否为官方预设
-  isPartner?: boolean; // 标识是否为商业合作伙伴
-  partnerPromotionKey?: string; // 合作伙伴促销信息的 i18n key
   category?: ProviderCategory; // 分类
   isCustomTemplate?: boolean; // 标识是否为自定义模板
   // 请求地址候选列表（用于地址管理/测速）

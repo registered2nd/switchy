@@ -70,13 +70,12 @@ export function useApiKeyLink({
     return formWebsiteUrl || "";
   }, [currentPresetEntry, formWebsiteUrl]);
 
-  // 提取合作伙伴信息
-  const isPartner = useMemo(() => {
-    return currentPresetEntry?.preset.isPartner ?? false;
-  }, [currentPresetEntry]);
-
+  // Gemini presets name the auth they need (Google sign-in, PackyCode).
   const partnerPromotionKey = useMemo(() => {
-    return currentPresetEntry?.preset.partnerPromotionKey;
+    const preset = currentPresetEntry?.preset as
+      | { partnerPromotionKey?: string }
+      | undefined;
+    return preset?.partnerPromotionKey;
   }, [currentPresetEntry]);
 
   return {
@@ -89,7 +88,6 @@ export function useApiKeyLink({
         ? shouldShowApiKeyLink
         : false,
     websiteUrl: getWebsiteUrl,
-    isPartner,
     partnerPromotionKey,
   };
 }
