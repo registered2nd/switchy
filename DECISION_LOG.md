@@ -2,6 +2,15 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-23 — A provider picked by hand holds for 10 minutes; the saved login of Claude Code and Codex follows the pick
+
+- Context: with Switch automatically on, Enable only put an account first in line. Its first failed request fell through to the next account and the failover switch made that one current, so a pick was undone within seconds and its error never reached the session; rotation could skip it before trying it. Codex's `auth.json` kept the login it started with, so its `/status` never showed the pick.
+- Decision:
+  1. **A manual pick (window or tray) holds its app for 10 minutes.** While it holds, the proxy serves only that provider: no failover, no rotation, and automatic switches (failover, recovery) do not move the app. Errors from it reach the client. When the hold ends, automatic switching resumes.
+  2. **Every switch under the proxy writes the account's login to the app's saved login**: Claude Code's (entry above) and Codex's `auth.json` on Windows and in the WSL mirror, after filing a login Codex renewed on its own with its account. Running Codex sessions keep the login they started with, as with the proxy off.
+- Why: the user — a manual pick is an override the pool must respect, and `/status` must show it; automatic choice is for when no one has picked.
+- Files: `src-tauri/src/proxy/manual_hold.rs`; `select_providers` in `proxy/provider_router.rs`; `do_switch` in `proxy/failover_switch.rs`; `swap_codex_login` in `services/provider/mod.rs`.
+
 ## 2026-09-23 — A Claude switch changes only the keys the provider owns; an Official account owns only the connection keys, superseding point 4 of the 2026-09-22 three-way merge entry
 
 - Context: each Official Claude card stores an old copy of the user's whole `settings.json` (hooks, plugins, permissions, model, telemetry `env`), and the three copies differ. A hot switch applied the difference between the outgoing and incoming provider's settings, so switching from the account whose copy held Orca's hooks to one whose copy did not removed Orca's hooks from the live file (07:13 on 2026-09-23).

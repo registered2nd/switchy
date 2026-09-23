@@ -26,7 +26,7 @@ Settings → Pool holds everything the pool runs on:
 
 - **Local proxy.** Routing, switching and rotation all need it running.
 - **Route through the proxy.** The apps whose requests go through the proxy.
-- **Switch automatically.** Serves an app from its switching order instead of the one provider you picked: it starts at the top and moves to the next when a request fails. *Enable* on a card puts that account first in the order.
+- **Switch automatically.** Serves an app from its switching order instead of the one provider you picked: it starts at the top and moves to the next when a request fails. *Enable* on a card (or picking an account in the tray) holds that account for 10 minutes: requests go only to it, with no failover or rotation, so a broken account shows its error. After that, automatic switching resumes.
 - **Rotate accounts before the limit.** Moves an account whose usage has reached the threshold to the back of the order until its limit resets.
 - **Keep accounts warm.** Opens each account's session window in advance.
 - **Global Outbound Proxy.** The proxy Switchy itself uses to reach the services.

@@ -55,6 +55,14 @@ impl ProviderRouter {
             super::codex_pool::file_live_login(&self.db);
         }
 
+        // A provider picked by hand is served alone while its hold lasts: no
+        // failover, no rotation, so its errors reach the client.
+        if let Some(held_id) = super::manual_hold::held(app_type) {
+            if let Some(provider) = self.db.get_provider_by_id(&held_id, app_type)? {
+                return Ok(vec![provider]);
+            }
+        }
+
         // Check whether auto failover is on for this app (read from the proxy_config table)
         let auto_failover_enabled = match self.db.get_proxy_config_for_app(app_type).await {
             Ok(config) => config.auto_failover_enabled,
@@ -409,6 +417,42 @@ mod tests {
         // queue order.
         assert_eq!(providers[0].id, "a");
         assert_eq!(providers[1].id, "b");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn a_provider_picked_by_hand_is_served_alone_while_held() {
+        let _home = TempHome::new();
+        let db = Arc::new(Database::memory().unwrap());
+        for id in ["a", "b"] {
+            db.save_provider(
+                "claude",
+                &Provider::with_id(id.to_string(), id.to_uppercase(), json!({}), None),
+            )
+            .unwrap();
+            db.add_to_failover_queue("claude", id).unwrap();
+        }
+        db.set_current_provider("claude", "b").unwrap();
+        let mut config = db.get_proxy_config_for_app("claude").await.unwrap();
+        config.auto_failover_enabled = true;
+        db.update_proxy_config_for_app(config).await.unwrap();
+        let router = ProviderRouter::new(db.clone());
+
+        super::super::manual_hold::hold("claude", "b");
+        let providers = router.select_providers("claude", None).await.unwrap();
+        assert_eq!(
+            providers.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+            vec!["b"],
+            "no failover while the pick holds"
+        );
+
+        super::super::manual_hold::release("claude");
+        let providers = router.select_providers("claude", None).await.unwrap();
+        assert_eq!(
+            providers.len(),
+            2,
+            "automatic switching resumes after the hold"
+        );
     }
 
     #[tokio::test]

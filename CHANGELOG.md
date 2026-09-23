@@ -36,6 +36,17 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ### Fixed
 
+- **An account you pick by hand stays picked.** With Switch automatically on,
+  Enable (or the tray) now holds that account for 10 minutes: requests go
+  only to it, with no failover or rotation, so if it is broken you see its
+  error. After 10 minutes automatic switching takes over again. Before, the
+  first failed request moved you to another account within seconds.
+
+- **Codex's `/status` shows the account you enabled.** Switching a Codex
+  account with the proxy on now also writes its login to Codex's saved login,
+  in Windows and WSL. Sessions already running keep the login they started
+  with.
+
 - **"Degraded" no longer appears on healthy accounts.** Only failures that
   are about the account count against it: a refused login, a server error, a
   timeout or a dropped connection. A request that is too long, or a rate limit

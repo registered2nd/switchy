@@ -106,6 +106,15 @@ impl FailoverSwitchManager {
             return Ok(false);
         }
 
+        if let Some(held_id) = super::manual_hold::held(app_type) {
+            if held_id != provider_id {
+                log::info!(
+                    "[Failover] {app_type} is held on {held_id} after a manual pick; not switching"
+                );
+                return Ok(false);
+            }
+        }
+
         log::info!("[FO-001] Switch: {app_type} → {provider_name}");
 
         let mut switched = false;
@@ -124,7 +133,15 @@ impl FailoverSwitchManager {
                     return Ok(false);
                 }
 
-                // Claude Code's saved login follows the account the pool moved to.
+                // The app's saved login follows the account the pool moved to.
+                if app_type == "codex" {
+                    for warning in crate::services::provider::ProviderService::swap_codex_login(
+                        app_state.inner(),
+                        provider_id,
+                    ) {
+                        log::warn!("[Failover] Codex login swap: {warning}");
+                    }
+                }
                 if app_type == "claude" {
                     if let Ok(Some(provider)) =
                         app_state.db.get_provider_by_id(provider_id, app_type)
