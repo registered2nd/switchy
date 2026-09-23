@@ -22,7 +22,6 @@ export interface UseSettingsResult {
   settings: SettingsFormState | null;
   isLoading: boolean;
   isSaving: boolean;
-  isPortable: boolean;
   appConfigDir?: string;
   claudeMirrorDir?: string;
   codexMirrorDir?: string;
@@ -110,7 +109,6 @@ export function useSettings(): UseSettingsResult {
 
   // 3️⃣ 元数据管理
   const {
-    isPortable,
     requiresRestart,
     isLoading: isMetadataLoading,
     acknowledgeRestart,
@@ -161,8 +159,7 @@ export function useSettings(): UseSettingsResult {
         const sanitizedOpencodeDir = sanitizeDir(
           mergedSettings.opencodeConfigDir,
         );
-        const { webdavSync: _ignoredWebdavSync, ...restSettings } =
-          mergedSettings;
+        const restSettings = mergedSettings;
 
         const payload: Settings = {
           ...restSettings,
@@ -192,36 +189,6 @@ export function useSettings(): UseSettingsResult {
               t("settings.autoLaunchFailed", {
                 defaultValue: "设置开机自启失败",
               }),
-            );
-          }
-        }
-
-        // Claude Code 初次安装确认：开=写入 hasCompletedOnboarding=true；关=删除该字段
-        // 仅在本次更新包含 skipClaudeOnboarding 时触发，避免其它自动保存误触发
-        const nextSkipClaudeOnboarding = updates.skipClaudeOnboarding;
-        if (
-          nextSkipClaudeOnboarding !== undefined &&
-          nextSkipClaudeOnboarding !== (data?.skipClaudeOnboarding ?? false)
-        ) {
-          try {
-            if (nextSkipClaudeOnboarding) {
-              await settingsApi.applyClaudeOnboardingSkip();
-            } else {
-              await settingsApi.clearClaudeOnboardingSkip();
-            }
-          } catch (error) {
-            console.warn(
-              "[useSettings] Failed to sync Claude onboarding skip",
-              error,
-            );
-            toast.error(
-              nextSkipClaudeOnboarding
-                ? t("notifications.skipClaudeOnboardingFailed", {
-                    defaultValue: "跳过 Claude Code 初次安装确认失败",
-                  })
-                : t("notifications.clearClaudeOnboardingSkipFailed", {
-                    defaultValue: "恢复 Claude Code 初次安装确认失败",
-                  }),
             );
           }
         }
@@ -294,8 +261,7 @@ export function useSettings(): UseSettingsResult {
         const previousGeminiDir = sanitizeDir(data?.geminiConfigDir);
         const previousKimiDir = sanitizeDir(data?.kimiConfigDir);
         const previousOpencodeDir = sanitizeDir(data?.opencodeConfigDir);
-        const { webdavSync: _ignoredWebdavSync, ...restSettings } =
-          mergedSettings;
+        const restSettings = mergedSettings;
 
         const payload: Settings = {
           ...restSettings,
@@ -325,58 +291,6 @@ export function useSettings(): UseSettingsResult {
             toast.error(
               t("settings.autoLaunchFailed", {
                 defaultValue: "设置开机自启失败",
-              }),
-            );
-          }
-        }
-
-        // Claude Code 初次安装确认：开=写入 hasCompletedOnboarding=true；关=删除该字段
-        const prevSkipClaudeOnboarding = data?.skipClaudeOnboarding ?? false;
-        const nextSkipClaudeOnboarding = payload.skipClaudeOnboarding ?? false;
-        if (nextSkipClaudeOnboarding !== prevSkipClaudeOnboarding) {
-          try {
-            if (nextSkipClaudeOnboarding) {
-              await settingsApi.applyClaudeOnboardingSkip();
-            } else {
-              await settingsApi.clearClaudeOnboardingSkip();
-            }
-          } catch (error) {
-            console.warn(
-              "[useSettings] Failed to sync Claude onboarding skip",
-              error,
-            );
-            toast.error(
-              nextSkipClaudeOnboarding
-                ? t("notifications.skipClaudeOnboardingFailed", {
-                    defaultValue: "跳过 Claude Code 初次安装确认失败",
-                  })
-                : t("notifications.clearClaudeOnboardingSkipFailed", {
-                    defaultValue: "恢复 Claude Code 初次安装确认失败",
-                  }),
-            );
-          }
-        }
-
-        // 只在 Claude 插件集成状态真正改变时调用系统 API
-        if (
-          payload.enableClaudePluginIntegration !== undefined &&
-          payload.enableClaudePluginIntegration !==
-            data?.enableClaudePluginIntegration
-        ) {
-          try {
-            if (payload.enableClaudePluginIntegration) {
-              await settingsApi.applyClaudePluginConfig({ official: false });
-            } else {
-              await settingsApi.applyClaudePluginConfig({ official: true });
-            }
-          } catch (error) {
-            console.warn(
-              "[useSettings] Failed to sync Claude plugin config",
-              error,
-            );
-            toast.error(
-              t("notifications.syncClaudePluginFailed", {
-                defaultValue: "同步 Claude 插件失败",
               }),
             );
           }
@@ -474,7 +388,6 @@ export function useSettings(): UseSettingsResult {
     settings,
     isLoading,
     isSaving: saveMutation.isPending,
-    isPortable,
     appConfigDir,
     claudeMirrorDir,
     codexMirrorDir,

@@ -1,14 +1,15 @@
 use serde_json::json;
 
 use switchy_lib::{
-    get_claude_settings_path, read_json_file, write_codex_live_atomic, AppError, AppType, McpApps,
-    McpServer, MultiAppConfig, Provider, ProviderMeta, ProviderService,
+    get_claude_settings_path, read_json_file, write_codex_live_atomic, AppError, AppType, Provider,
+    ProviderMeta, ProviderService,
 };
 
 #[path = "support.rs"]
 mod support;
 use support::{
     create_test_state, create_test_state_with_config, ensure_test_home, reset_test_fs, test_mutex,
+    TestConfig,
 };
 
 fn sanitize_provider_name(name: &str) -> String {
@@ -27,7 +28,7 @@ fn migrate_legacy_common_config_usage_marks_historical_provider_enabled() {
     reset_test_fs();
     let _home = ensure_test_home();
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Claude)
@@ -96,156 +97,12 @@ fn migrate_legacy_common_config_usage_marks_historical_provider_enabled() {
 }
 
 #[test]
-fn provider_service_switch_codex_updates_live_and_config() {
-    let _guard = test_mutex().lock().expect("acquire test mutex");
-    reset_test_fs();
-    let _home = ensure_test_home();
-
-    let legacy_auth = json!({ "OPENAI_API_KEY": "legacy-key" });
-    let legacy_config = r#"[mcp_servers.legacy]
-type = "stdio"
-command = "echo"
-"#;
-    write_codex_live_atomic(&legacy_auth, Some(legacy_config))
-        .expect("seed existing codex live config");
-
-    let mut initial_config = MultiAppConfig::default();
-    {
-        let manager = initial_config
-            .get_manager_mut(&AppType::Codex)
-            .expect("codex manager");
-        manager.current = "old-provider".to_string();
-        manager.providers.insert(
-            "old-provider".to_string(),
-            Provider::with_id(
-                "old-provider".to_string(),
-                "Legacy".to_string(),
-                json!({
-                    "auth": {"OPENAI_API_KEY": "stale"},
-                    "config": "stale-config"
-                }),
-                None,
-            ),
-        );
-        manager.providers.insert(
-            "new-provider".to_string(),
-            Provider::with_id(
-                "new-provider".to_string(),
-                "Latest".to_string(),
-                json!({
-                    "auth": {"OPENAI_API_KEY": "fresh-key"},
-                    "config": r#"[mcp_servers.latest]
-type = "stdio"
-command = "say"
-"#
-                }),
-                None,
-            ),
-        );
-    }
-
-    // 使用新的统一 MCP 结构（v3.7.0+）
-    let servers = initial_config
-        .mcp
-        .servers
-        .get_or_insert_with(Default::default);
-    servers.insert(
-        "echo-server".into(),
-        McpServer {
-            id: "echo-server".into(),
-            name: "Echo Server".into(),
-            server: json!({
-                "type": "stdio",
-                "command": "echo"
-            }),
-            apps: McpApps {
-                claude: false,
-                codex: true,
-                gemini: false,
-                opencode: false,
-                kimi: false,
-            },
-            description: None,
-            homepage: None,
-            docs: None,
-            tags: Vec::new(),
-        },
-    );
-
-    let state = create_test_state_with_config(&initial_config).expect("create test state");
-
-    ProviderService::switch(&state, AppType::Codex, "new-provider")
-        .expect("switch provider should succeed");
-
-    let auth_value: serde_json::Value =
-        read_json_file(&switchy_lib::get_codex_auth_path()).expect("read auth.json");
-    assert_eq!(
-        auth_value.get("OPENAI_API_KEY").and_then(|v| v.as_str()),
-        Some("fresh-key"),
-        "live auth.json should reflect new provider"
-    );
-
-    let config_text =
-        std::fs::read_to_string(switchy_lib::get_codex_config_path()).expect("read config.toml");
-    assert!(
-        config_text.contains("mcp_servers.echo-server"),
-        "config.toml should contain synced MCP servers"
-    );
-
-    let current_id = state
-        .db
-        .get_current_provider(AppType::Codex.as_str())
-        .expect("read current provider after switch");
-    assert_eq!(
-        current_id.as_deref(),
-        Some("new-provider"),
-        "current provider updated"
-    );
-
-    let providers = state
-        .db
-        .get_all_providers(AppType::Codex.as_str())
-        .expect("read providers after switch");
-
-    let new_provider = providers.get("new-provider").expect("new provider exists");
-    let new_config_text = new_provider
-        .settings_config
-        .get("config")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    // provider 存储的是原始配置，不包含 MCP 同步后的内容
-    assert!(
-        new_config_text.contains("mcp_servers.latest"),
-        "provider config should contain original MCP servers"
-    );
-    // live 文件额外包含同步的 MCP 服务器
-    assert!(
-        config_text.contains("mcp_servers.echo-server"),
-        "live config should include synced MCP servers"
-    );
-
-    let legacy = providers
-        .get("old-provider")
-        .expect("legacy provider still exists");
-    let legacy_auth_value = legacy
-        .settings_config
-        .get("auth")
-        .and_then(|v| v.get("OPENAI_API_KEY"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    assert_eq!(
-        legacy_auth_value, "legacy-key",
-        "previous provider should be backfilled with live auth"
-    );
-}
-
-#[test]
 fn sync_current_provider_for_app_keeps_live_takeover_and_updates_restore_backup() {
     let _guard = test_mutex().lock().expect("acquire test mutex");
     reset_test_fs();
     let _home = ensure_test_home();
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Claude)
@@ -423,7 +280,7 @@ fn switch_packycode_gemini_updates_security_selected_type() {
     reset_test_fs();
     let home = ensure_test_home();
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Gemini)
@@ -476,7 +333,7 @@ fn packycode_partner_meta_triggers_security_flag_even_without_keywords() {
     reset_test_fs();
     let home = ensure_test_home();
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Gemini)
@@ -531,7 +388,7 @@ fn switch_google_official_gemini_sets_oauth_security() {
     reset_test_fs();
     let home = ensure_test_home();
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Gemini)
@@ -603,7 +460,7 @@ fn provider_service_switch_claude_updates_live_and_state() {
     )
     .expect("seed claude live config");
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Claude)
@@ -686,7 +543,7 @@ fn provider_service_switch_missing_provider_returns_error() {
     match err {
         AppError::Message(msg) => {
             assert!(
-                msg.contains("不存在") || msg.contains("not found"),
+                msg.to_lowercase().contains("not found"),
                 "expected provider not found message, got {msg}"
             );
         }
@@ -700,7 +557,7 @@ fn provider_service_switch_codex_missing_auth_returns_error() {
     reset_test_fs();
     let _home = ensure_test_home();
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Codex)
@@ -737,7 +594,7 @@ fn provider_service_delete_codex_removes_provider_and_files() {
     reset_test_fs();
     let home = ensure_test_home();
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Codex)
@@ -790,8 +647,8 @@ fn provider_service_delete_codex_removes_provider_and_files() {
         !providers.contains_key("to-delete"),
         "provider entry should be removed"
     );
-    // v3.7.0+ 不再使用供应商特定文件（如 auth-*.json, config-*.toml）
-    // 删除供应商只影响数据库记录，不清理这些旧格式文件
+    // v3.7.0+ no longer uses provider-specific files (such as auth-*.json, config-*.toml)
+    // Deleting a provider only affects the database record; these legacy files are not cleaned up
 }
 
 #[test]
@@ -800,7 +657,7 @@ fn provider_service_delete_claude_removes_provider_files() {
     reset_test_fs();
     let home = ensure_test_home();
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Claude)
@@ -850,8 +707,8 @@ fn provider_service_delete_claude_removes_provider_files() {
         !providers.contains_key("delete"),
         "claude provider should be removed"
     );
-    // v3.7.0+ 不再使用供应商特定文件（如 settings-*.json）
-    // 删除供应商只影响数据库记录，不清理这些旧格式文件
+    // v3.7.0+ no longer uses provider-specific files (such as settings-*.json)
+    // Deleting a provider only affects the database record; these legacy files are not cleaned up
 }
 
 #[test]
@@ -860,7 +717,7 @@ fn provider_service_delete_current_provider_returns_error() {
     reset_test_fs();
     let _home = ensure_test_home();
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Claude)
@@ -883,24 +740,11 @@ fn provider_service_delete_current_provider_returns_error() {
 
     let err = ProviderService::delete(&app_state, AppType::Claude, "keep")
         .expect_err("deleting current provider should fail");
-    match err {
-        AppError::Localized { zh, .. } => assert!(
-            zh.contains("不能删除当前正在使用的供应商")
-                || zh.contains("无法删除当前正在使用的供应商"),
-            "unexpected message: {zh}"
-        ),
-        AppError::Config(msg) => assert!(
-            msg.contains("不能删除当前正在使用的供应商")
-                || msg.contains("无法删除当前正在使用的供应商"),
-            "unexpected message: {msg}"
-        ),
-        AppError::Message(msg) => assert!(
-            msg.contains("不能删除当前正在使用的供应商")
-                || msg.contains("无法删除当前正在使用的供应商"),
-            "unexpected message: {msg}"
-        ),
-        other => panic!("expected Config/Message error, got {other:?}"),
-    }
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("in use") || msg.contains("current"),
+        "unexpected message: {msg}"
+    );
 }
 
 fn codex_key_provider(id: &str, sort_index: Option<usize>) -> Provider {
@@ -1001,4 +845,116 @@ fn enabling_a_provider_with_switch_automatically_off_leaves_the_switching_order_
     ProviderService::switch(&state, AppType::Codex, "b").expect("enable b");
 
     assert_eq!(codex_switching_order(&state), vec!["a"]);
+}
+
+#[test]
+fn provider_service_switch_codex_updates_live_and_config() {
+    let _guard = test_mutex().lock().expect("acquire test mutex");
+    reset_test_fs();
+    let _home = ensure_test_home();
+
+    let legacy_auth = json!({ "OPENAI_API_KEY": "legacy-key" });
+    let legacy_config = r#"[mcp_servers.legacy]
+type = "stdio"
+command = "echo"
+"#;
+    write_codex_live_atomic(&legacy_auth, Some(legacy_config))
+        .expect("seed existing codex live config");
+
+    let mut initial_config = TestConfig::default();
+    {
+        let manager = initial_config
+            .get_manager_mut(&AppType::Codex)
+            .expect("codex manager");
+        manager.current = "old-provider".to_string();
+        manager.providers.insert(
+            "old-provider".to_string(),
+            Provider::with_id(
+                "old-provider".to_string(),
+                "Legacy".to_string(),
+                json!({
+                    "auth": {"OPENAI_API_KEY": "stale"},
+                    "config": "stale-config"
+                }),
+                None,
+            ),
+        );
+        manager.providers.insert(
+            "new-provider".to_string(),
+            Provider::with_id(
+                "new-provider".to_string(),
+                "Latest".to_string(),
+                json!({
+                    "auth": {"OPENAI_API_KEY": "fresh-key"},
+                    "config": r#"[mcp_servers.latest]
+type = "stdio"
+command = "say"
+"#
+                }),
+                None,
+            ),
+        );
+    }
+
+    let state = create_test_state_with_config(&initial_config).expect("create test state");
+
+    ProviderService::switch(&state, AppType::Codex, "new-provider")
+        .expect("switch provider should succeed");
+
+    let auth_value: serde_json::Value =
+        read_json_file(&switchy_lib::get_codex_auth_path()).expect("read auth.json");
+    assert_eq!(
+        auth_value.get("OPENAI_API_KEY").and_then(|v| v.as_str()),
+        Some("fresh-key"),
+        "live auth.json should reflect new provider"
+    );
+
+    let config_text =
+        std::fs::read_to_string(switchy_lib::get_codex_config_path()).expect("read config.toml");
+    assert!(
+        config_text.contains("mcp_servers.latest"),
+        "live config.toml should hold the new provider's config"
+    );
+
+    let current_id = state
+        .db
+        .get_current_provider(AppType::Codex.as_str())
+        .expect("read current provider after switch");
+    assert_eq!(
+        current_id.as_deref(),
+        Some("new-provider"),
+        "current provider updated"
+    );
+
+    let providers = state
+        .db
+        .get_all_providers(AppType::Codex.as_str())
+        .expect("read providers after switch");
+
+    let new_provider = providers.get("new-provider").expect("new provider exists");
+    let new_config_text = new_provider
+        .settings_config
+        .get("config")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    // The provider stores the original config, without the content synced from MCP
+    assert!(
+        new_config_text.contains("mcp_servers.latest"),
+        "provider config should contain original MCP servers"
+    );
+    // The live file also contains the synced MCP servers
+
+    let legacy = providers
+        .get("old-provider")
+        .expect("legacy provider still exists");
+    let legacy_auth_value = legacy
+        .settings_config
+        .get("auth")
+        .and_then(|v| v.get("OPENAI_API_KEY"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    assert_eq!(
+        legacy_auth_value, "legacy-key",
+        "previous provider should be backfilled with live auth"
+    );
 }

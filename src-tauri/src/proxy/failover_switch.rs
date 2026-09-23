@@ -1,9 +1,9 @@
-//! 故障转移切换模块
+//! Failover switching
 //!
-//! 处理故障转移成功后的供应商切换逻辑，包括：
-//! - 去重控制（避免多个请求同时触发）
-//! - 托盘菜单更新
-//! - 前端事件发射
+//! Switches the provider after a successful failover, including:
+//! - deduplication (so concurrent requests don't all trigger it)
+//! - tray menu update
+//! - frontend event emission
 
 use crate::database::Database;
 use crate::error::AppError;
@@ -12,12 +12,12 @@ use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tokio::sync::RwLock;
 
-/// 故障转移切换管理器
+/// Failover switch manager
 ///
-/// 负责处理故障转移成功后的供应商切换，确保 UI 能够直观反映当前使用的供应商。
+/// Switches the provider after a successful failover so the UI shows the provider actually in use.
 #[derive(Clone)]
 pub struct FailoverSwitchManager {
-    /// 正在处理中的切换（key = "app_type:provider_id"）
+    /// Switches in progress (key = "app_type:provider_id")
     pending_switches: Arc<RwLock<HashSet<String>>>,
     db: Arc<Database>,
 }
@@ -30,14 +30,14 @@ impl FailoverSwitchManager {
         }
     }
 
-    /// 尝试执行故障转移切换
+    /// Attempts a failover switch
     ///
-    /// 如果相同的切换已在进行中，则跳过；否则执行切换逻辑。
+    /// Skips if the same switch is already in progress; otherwise performs it.
     ///
     /// # Returns
-    /// - `Ok(true)` - 切换成功执行
-    /// - `Ok(false)` - 切换已在进行中，跳过
-    /// - `Err(e)` - 切换过程中发生错误
+    /// - `Ok(true)` - the switch was performed
+    /// - `Ok(false)` - the switch was already in progress; skipped
+    /// - `Err(e)` - an error occurred during the switch
     pub async fn try_switch(
         &self,
         app_handle: Option<&tauri::AppHandle>,
@@ -47,22 +47,24 @@ impl FailoverSwitchManager {
     ) -> Result<bool, AppError> {
         let switch_key = format!("{app_type}:{provider_id}");
 
-        // 去重检查：如果相同切换已在进行中，跳过
+        // Deduplicate: skip if the same switch is already in progress
         {
             let mut pending = self.pending_switches.write().await;
             if pending.contains(&switch_key) {
-                log::debug!("[Failover] 切换已在进行中，跳过: {app_type} -> {provider_id}");
+                log::debug!(
+                    "[Failover] Switch already in progress, skipping: {app_type} -> {provider_id}"
+                );
                 return Ok(false);
             }
             pending.insert(switch_key.clone());
         }
 
-        // 执行切换（确保最后清理 pending 标记）
+        // Perform the switch (always clearing the pending marker afterwards)
         let result = self
             .do_switch(app_handle, app_type, provider_id, provider_name)
             .await;
 
-        // 清理 pending 标记
+        // Clear the pending marker
         {
             let mut pending = self.pending_switches.write().await;
             pending.remove(&switch_key);
@@ -78,22 +80,22 @@ impl FailoverSwitchManager {
         provider_id: &str,
         provider_name: &str,
     ) -> Result<bool, AppError> {
-        // 检查该应用是否已被代理接管（enabled=true）
-        // 只有被接管的应用才允许执行故障转移切换
+        // Check whether the proxy has taken over this app (enabled=true)
+        // Only taken-over apps may perform a failover switch
         let app_enabled = match self.db.get_proxy_config_for_app(app_type).await {
             Ok(config) => config.enabled,
             Err(e) => {
-                log::warn!("[FO-002] 无法读取 {app_type} 配置: {e}，跳过切换");
+                log::warn!("[FO-002] Cannot read {app_type} config: {e}; skipping switch");
                 return Ok(false);
             }
         };
 
         if !app_enabled {
-            log::debug!("[Failover] {app_type} 未启用代理，跳过切换");
+            log::debug!("[Failover] {app_type} is not proxied; skipping switch");
             return Ok(false);
         }
 
-        log::info!("[FO-001] 切换: {app_type} → {provider_name}");
+        log::info!("[FO-001] Switch: {app_type} → {provider_name}");
 
         let mut switched = false;
 
@@ -113,20 +115,20 @@ impl FailoverSwitchManager {
                 if let Ok(new_menu) = crate::tray::create_tray_menu(app, app_state.inner()) {
                     if let Some(tray) = app.tray_by_id("main") {
                         if let Err(e) = tray.set_menu(Some(new_menu)) {
-                            log::error!("[Failover] 更新托盘菜单失败: {e}");
+                            log::error!("[Failover] Failed to update tray menu: {e}");
                         }
                     }
                 }
             }
 
-            // 发射事件到前端
+            // Emit event to the frontend
             let event_data = serde_json::json!({
                 "appType": app_type,
                 "providerId": provider_id,
-                "source": "failover"  // 标识来源是故障转移
+                "source": "failover"  // marks the source as failover
             });
             if let Err(e) = app.emit("provider-switched", event_data) {
-                log::error!("[Failover] 发射事件失败: {e}");
+                log::error!("[Failover] Failed to emit event: {e}");
             }
         }
 

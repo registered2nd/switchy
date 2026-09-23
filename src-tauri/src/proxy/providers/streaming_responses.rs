@@ -1,12 +1,12 @@
-//! OpenAI Responses API 流式转换模块
+//! OpenAI Responses API streaming conversion
 //!
-//! 实现 Responses API SSE → Anthropic SSE 格式转换。
+//! Converts Responses API SSE to Anthropic SSE.
 //!
-//! Responses API 使用命名事件 (named events) 的生命周期模型：
+//! The Responses API uses a lifecycle of named events:
 //! response.created → output_item.added → content_part.added →
 //! output_text.delta → content_part.done → output_item.done → response.completed
 //!
-//! 与 Chat Completions 的 delta chunk 模型完全不同，需要独立的状态机处理。
+//! This differs entirely from the Chat Completions delta-chunk model and needs its own state machine.
 
 use super::transform_responses::{build_anthropic_usage_from_responses, map_responses_stop_reason};
 use crate::proxy::sse::strip_sse_field;
@@ -92,10 +92,10 @@ fn resolve_content_index(
     }
 }
 
-/// 创建从 Responses API SSE 到 Anthropic SSE 的转换流
+/// Creates a stream that converts Responses API SSE to Anthropic SSE
 ///
-/// 状态机跟踪: message_id, current_model, has_sent_message_start, item/content index map
-/// SSE 解析支持 named events (event: + data: 行)
+/// The state machine tracks message_id, current_model, has_sent_message_start and the item/content index map.
+/// SSE parsing supports named events (event: + data: lines).
 pub fn create_anthropic_sse_stream_from_responses<E: std::error::Error + Send + 'static>(
     stream: impl Stream<Item = Result<Bytes, E>> + Send + 'static,
 ) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send {
@@ -121,7 +121,7 @@ pub fn create_anthropic_sse_stream_from_responses<E: std::error::Error + Send + 
                     let text = String::from_utf8_lossy(&bytes);
                     buffer.push_str(&text);
 
-                    // SSE 事件由 \n\n 分隔
+                    // SSE events are separated by \n\n
                     while let Some(pos) = buffer.find("\n\n") {
                         let block = buffer[..pos].to_string();
                         buffer = buffer[pos + 2..].to_string();
@@ -130,7 +130,7 @@ pub fn create_anthropic_sse_stream_from_responses<E: std::error::Error + Send + 
                             continue;
                         }
 
-                        // 解析 SSE 块：提取 event: 和 data: 行
+                        // Parse the SSE block: extract the event: and data: lines
                         let mut event_type: Option<String> = None;
                         let mut data_parts: Vec<String> = Vec::new();
 
@@ -149,7 +149,7 @@ pub fn create_anthropic_sse_stream_from_responses<E: std::error::Error + Send + 
                         let data_str = data_parts.join("\n");
                         let event_name = event_type.as_deref().unwrap_or("");
 
-                        // 解析 JSON 数据
+                        // Parse the JSON data
                         let data: Value = match serde_json::from_str(&data_str) {
                             Ok(v) => v,
                             Err(_) => continue,
@@ -198,7 +198,7 @@ pub fn create_anthropic_sse_stream_from_responses<E: std::error::Error + Send + 
                             // response.content_part.added → content_block_start (text)
                             // ================================================
                             "response.content_part.added" => {
-                                // 确保 message_start 已发送
+                                // Make sure message_start has been sent
                                 if !has_sent_message_start {
                                     let start_event = json!({
                                         "type": "message_start",
@@ -372,7 +372,7 @@ pub fn create_anthropic_sse_stream_from_responses<E: std::error::Error + Send + 
                                                 fallback_open_index = None;
                                             }
                                         }
-                                        // 确保 message_start 已发送
+                                        // Make sure message_start has been sent
                                         if !has_sent_message_start {
                                             let start_event = json!({
                                                 "type": "message_start",
@@ -959,13 +959,13 @@ mod tests {
             "event: response.content_part.added\n",
             "data: {\"type\":\"response.content_part.added\",\"part\":{\"type\":\"output_text\",\"text\":\"\"},\"output_index\":0,\"content_index\":0}\n\n",
             "event: response.output_text.delta\n",
-            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"你\",\"output_index\":0,\"content_index\":0}\n\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hé\",\"output_index\":0,\"content_index\":0}\n\n",
             "event: response.content_part.done\n",
             "data: {\"type\":\"response.content_part.done\",\"output_index\":0,\"content_index\":0}\n\n",
             "event: response.content_part.added\n",
             "data: {\"type\":\"response.content_part.added\",\"part\":{\"type\":\"output_text\",\"text\":\"\"},\"output_index\":0,\"content_index\":1}\n\n",
             "event: response.output_text.delta\n",
-            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"好\",\"output_index\":0,\"content_index\":1}\n\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"llö\",\"output_index\":0,\"content_index\":1}\n\n",
             "event: response.content_part.done\n",
             "data: {\"type\":\"response.content_part.done\",\"output_index\":0,\"content_index\":1}\n\n",
             "event: response.output_text.done\n",
@@ -1027,6 +1027,6 @@ mod tests {
 
         assert_eq!(text_starts, 1);
         assert_eq!(text_stops, 1);
-        assert_eq!(text_deltas, vec!["你".to_string(), "好".to_string()]);
+        assert_eq!(text_deltas, vec!["hé".to_string(), "llö".to_string()]);
     }
 }

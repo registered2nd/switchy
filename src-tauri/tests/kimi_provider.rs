@@ -2,12 +2,14 @@ use serde_json::json;
 
 use switchy_lib::{
     get_kimi_config_path, get_kimi_credentials_path, read_kimi_live, write_kimi_live_atomic,
-    AppType, MultiAppConfig, Provider, ProviderService,
+    AppType, Provider, ProviderService,
 };
 
 #[path = "support.rs"]
 mod support;
-use support::{create_test_state_with_config, ensure_test_home, reset_test_fs, test_mutex};
+use support::{
+    create_test_state_with_config, ensure_test_home, reset_test_fs, test_mutex, TestConfig,
+};
 
 const OFFICIAL_CONFIG: &str = r#"default_model = "kimi-code/k3"
 
@@ -59,7 +61,7 @@ fn switching_kimi_writes_config_and_credentials_and_backfills_the_outgoing_login
     });
     write_kimi_live_atomic(Some(&refreshed), OFFICIAL_CONFIG).expect("seed live kimi");
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Kimi)
@@ -124,7 +126,7 @@ fn kimi_provider_without_config_is_rejected() {
     reset_test_fs();
     let _home = ensure_test_home();
 
-    let mut config = MultiAppConfig::default();
+    let mut config = TestConfig::default();
     {
         let manager = config
             .get_manager_mut(&AppType::Kimi)

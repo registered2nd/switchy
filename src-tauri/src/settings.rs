@@ -8,7 +8,7 @@ use std::sync::{OnceLock, RwLock};
 use crate::app_config::AppType;
 use crate::error::AppError;
 
-/// 自定义端点配置（历史兼容，实际存储在 provider.meta.custom_endpoints）
+/// Custom endpoint config (legacy; actually stored in provider.meta.custom_endpoints)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomEndpoint {
@@ -22,7 +22,7 @@ fn default_true() -> bool {
     true
 }
 
-/// 主页面显示的应用配置
+/// Which apps are shown on the main page
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VisibleApps {
@@ -68,25 +68,25 @@ impl VisibleApps {
     }
 }
 
-/// 应用设置结构
+/// App settings
 ///
-/// 存储设备级别设置，保存在本地 `~/.switchy/settings.json`，不随数据库同步。
-/// 这确保了云同步场景下多设备可以独立运作。
+/// Holds device-level settings, saved locally in `~/.switchy/settings.json` and not synced with the database,
+/// so several devices sharing synced data can each keep their own.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
-    // ===== 设备级 UI 设置 =====
+    // ===== Device-level UI settings =====
     #[serde(default = "default_show_in_tray")]
     pub show_in_tray: bool,
     #[serde(default = "default_minimize_to_tray_on_close")]
     pub minimize_to_tray_on_close: bool,
-    /// 是否开机自启
+    /// Launch at login
     #[serde(default)]
     pub launch_on_startup: bool,
-    /// 静默启动（程序启动时不显示主窗口，仅托盘运行）
+    /// Silent start (no main window at startup; run in the tray only)
     #[serde(default)]
     pub silent_startup: bool,
-    /// 是否在主页面启用本地代理功能（默认关闭）
+    /// Enable the local proxy on the main page (off by default)
     #[serde(default)]
     pub enable_local_proxy: bool,
     /// User has confirmed the local proxy first-run notice
@@ -107,11 +107,11 @@ pub struct AppSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
 
-    // ===== 主页面显示的应用 =====
+    // ===== Apps shown on the main page =====
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible_apps: Option<VisibleApps>,
 
-    // ===== 设备级目录覆盖 =====
+    // ===== Device-level directory overrides =====
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_config_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -129,27 +129,27 @@ pub struct AppSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openclaw_config_dir: Option<String>,
 
-    // ===== 当前供应商 ID（设备级）=====
-    /// 当前 Claude 供应商 ID（本地存储，优先于数据库 is_current）
+    // ===== Current provider IDs (device-level) =====
+    /// Current Claude provider ID (stored locally; takes precedence over the database is_current)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_claude: Option<String>,
-    /// 当前 Codex 供应商 ID（本地存储，优先于数据库 is_current）
+    /// Current Codex provider ID (stored locally; takes precedence over the database is_current)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_codex: Option<String>,
-    /// 当前 Gemini 供应商 ID（本地存储，优先于数据库 is_current）
+    /// Current Gemini provider ID (stored locally; takes precedence over the database is_current)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_gemini: Option<String>,
-    /// 当前 Kimi 供应商 ID（本地存储，优先于数据库 is_current）
+    /// Current Kimi provider ID (stored locally; takes precedence over the database is_current)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_kimi: Option<String>,
-    /// 当前 OpenCode 供应商 ID（本地存储，对 OpenCode 可能无意义，但保持结构一致）
+    /// Current OpenCode provider ID (stored locally; may be meaningless for OpenCode but kept for a uniform structure)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_opencode: Option<String>,
-    /// 当前 OpenClaw 供应商 ID（本地存储，对 OpenClaw 可能无意义，但保持结构一致）
+    /// Current OpenClaw provider ID (stored locally; may be meaningless for OpenClaw but kept for a uniform structure)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_openclaw: Option<String>,
 
-    // ===== 备份策略设置 =====
+    // ===== Backup policy =====
     /// Auto-backup interval in hours (default 24, 0 = disabled)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_interval_hours: Option<u32>,
@@ -157,8 +157,8 @@ pub struct AppSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_retain_count: Option<u32>,
 
-    // ===== 终端设置 =====
-    /// 首选终端应用（可选，默认使用系统默认终端）
+    // ===== Terminal =====
+    /// Preferred terminal app (optional; defaults to the system terminal)
     /// - macOS: "terminal" | "iterm2" | "warp" | "alacritty" | "kitty" | "ghostty"
     /// - Windows: "cmd" | "powershell" | "wt" (Windows Terminal)
     /// - Linux: "gnome-terminal" | "konsole" | "xfce4-terminal" | "alacritty" | "kitty" | "ghostty"
@@ -212,7 +212,7 @@ impl Default for AppSettings {
 
 impl AppSettings {
     fn settings_path() -> Option<PathBuf> {
-        // settings.json 保留用于旧版本迁移和无数据库场景
+        // settings.json is kept for migrating old versions and for running without a database
         Some(
             crate::config::get_home_dir()
                 .join(crate::paths::APP_DIR)
@@ -297,7 +297,7 @@ impl AppSettings {
                 }
                 Err(err) => {
                     log::warn!(
-                        "解析设置文件失败，将使用默认设置。路径: {}, 错误: {}",
+                        "Failed to parse the settings file; using defaults. Path: {}, error: {}",
                         path.display(),
                         err
                     );
@@ -314,7 +314,9 @@ fn save_settings_file(settings: &AppSettings) -> Result<(), AppError> {
     let mut normalized = settings.clone();
     normalized.normalize_paths();
     let Some(path) = AppSettings::settings_path() else {
-        return Err(AppError::Config("无法获取用户主目录".to_string()));
+        return Err(AppError::Config(
+            "Could not get the user home directory".to_string(),
+        ));
     };
 
     if let Some(parent) = path.parent() {
@@ -375,7 +377,7 @@ pub fn get_settings() -> AppSettings {
     settings_store()
         .read()
         .unwrap_or_else(|e| {
-            log::warn!("设置锁已毒化，使用恢复值: {e}");
+            log::warn!("Settings lock poisoned; using the recovered value: {e}");
             e.into_inner()
         })
         .clone()
@@ -390,7 +392,7 @@ pub fn update_settings(mut new_settings: AppSettings) -> Result<(), AppError> {
     save_settings_file(&new_settings)?;
 
     let mut guard = settings_store().write().unwrap_or_else(|e| {
-        log::warn!("设置锁已毒化，使用恢复值: {e}");
+        log::warn!("Settings lock poisoned; using the recovered value: {e}");
         e.into_inner()
     });
     *guard = new_settings;
@@ -402,7 +404,7 @@ where
     F: FnOnce(&mut AppSettings),
 {
     let mut guard = settings_store().write().unwrap_or_else(|e| {
-        log::warn!("设置锁已毒化，使用恢复值: {e}");
+        log::warn!("Settings lock poisoned; using the recovered value: {e}");
         e.into_inner()
     });
     let mut next = guard.clone();
@@ -413,12 +415,12 @@ where
     Ok(())
 }
 
-/// 从文件重新加载设置到内存缓存
-/// 用于导入配置等场景，确保内存缓存与文件同步
+/// Reload settings from the file into the in-memory cache
+/// Used after a config import and similar, to keep the cache in step with the file
 pub fn reload_settings() -> Result<(), AppError> {
     let fresh_settings = AppSettings::load_from_file();
     let mut guard = settings_store().write().unwrap_or_else(|e| {
-        log::warn!("设置锁已毒化，使用恢复值: {e}");
+        log::warn!("Settings lock poisoned; using the recovered value: {e}");
         e.into_inner()
     });
     *guard = fresh_settings;
@@ -519,12 +521,12 @@ pub fn get_openclaw_override_dir() -> Option<PathBuf> {
         .map(|p| resolve_override_path(p))
 }
 
-// ===== 当前供应商管理函数 =====
+// ===== Current provider =====
 
-/// 获取指定应用类型的当前供应商 ID（从本地 settings 读取）
+/// Get the current provider ID for an app type (from local settings)
 ///
-/// 这是设备级别的设置，不随数据库同步。
-/// 如果本地没有设置，调用者应该 fallback 到数据库的 `is_current` 字段。
+/// This is a device-level setting and is not synced with the database.
+/// If it is not set locally, callers should fall back to the database `is_current` field.
 pub fn get_current_provider(app_type: &AppType) -> Option<String> {
     let settings = settings_store().read().ok()?;
     match app_type {
@@ -537,10 +539,10 @@ pub fn get_current_provider(app_type: &AppType) -> Option<String> {
     }
 }
 
-/// 设置指定应用类型的当前供应商 ID（保存到本地 settings）
+/// Set the current provider ID for an app type (saved to local settings)
 ///
-/// 这是设备级别的设置，不随数据库同步。
-/// 传入 `None` 会清除当前供应商设置。
+/// This is a device-level setting and is not synced with the database.
+/// Passing `None` clears the current provider.
 pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(), AppError> {
     let id_owned = id.map(|s| s.to_string());
     mutate_settings(|settings| match app_type {
@@ -553,49 +555,49 @@ pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(), 
     })
 }
 
-/// 获取有效的当前供应商 ID（验证存在性）
+/// Get the effective current provider ID (checked to exist)
 ///
-/// 逻辑：
-/// 1. 从本地 settings 读取当前供应商 ID
-/// 2. 验证该 ID 在数据库中存在
-/// 3. 如果不存在则清理本地 settings，fallback 到数据库的 is_current
+/// Logic:
+/// 1. read the current provider ID from local settings
+/// 2. check that the ID exists in the database
+/// 3. if not, clear it from local settings and fall back to the database is_current
 ///
-/// 这确保了返回的 ID 一定是有效的（在数据库中存在）。
-/// 多设备云同步场景下，配置导入后本地 ID 可能失效，此函数会自动修复。
+/// So the returned ID is always valid (exists in the database).
+/// When data is synced across devices, an import can invalidate the local ID; this repairs it.
 pub fn get_effective_current_provider(
     db: &crate::database::Database,
     app_type: &AppType,
 ) -> Result<Option<String>, AppError> {
-    // 1. 从本地 settings 读取
+    // 1. Read from local settings
     if let Some(local_id) = get_current_provider(app_type) {
-        // 2. 验证该 ID 在数据库中存在
+        // 2. Check the ID exists in the database
         let providers = db.get_all_providers(app_type.as_str())?;
         if providers.contains_key(&local_id) {
-            // 存在，直接返回
+            // It exists; return it
             return Ok(Some(local_id));
         }
 
-        // 3. 不存在，清理本地 settings
+        // 3. It does not exist; clear local settings
         log::warn!(
-            "本地 settings 中的供应商 {} ({}) 在数据库中不存在，将清理并 fallback 到数据库",
+            "Provider {} ({}) in local settings does not exist in the database; clearing it and falling back to the database",
             local_id,
             app_type.as_str()
         );
         let _ = set_current_provider(app_type, None);
     }
 
-    // Fallback 到数据库的 is_current
+    // Fall back to the database is_current
     db.get_current_provider(app_type.as_str())
 }
 
-// ===== 备份策略管理函数 =====
+// ===== Backup policy =====
 
 /// Get the effective auto-backup interval in hours (default 24)
 pub fn effective_backup_interval_hours() -> u32 {
     settings_store()
         .read()
         .unwrap_or_else(|e| {
-            log::warn!("设置锁已毒化，使用恢复值: {e}");
+            log::warn!("Settings lock poisoned; using the recovered value: {e}");
             e.into_inner()
         })
         .backup_interval_hours
@@ -607,7 +609,7 @@ pub fn effective_backup_retain_count() -> usize {
     settings_store()
         .read()
         .unwrap_or_else(|e| {
-            log::warn!("设置锁已毒化，使用恢复值: {e}");
+            log::warn!("Settings lock poisoned; using the recovered value: {e}");
             e.into_inner()
         })
         .backup_retain_count
@@ -615,17 +617,16 @@ pub fn effective_backup_retain_count() -> usize {
         .unwrap_or(10)
 }
 
-// ===== 终端设置管理函数 =====
+// ===== Terminal =====
 
-/// 获取首选终端应用
+/// Get the preferred terminal app
 pub fn get_preferred_terminal() -> Option<String> {
     settings_store()
         .read()
         .unwrap_or_else(|e| {
-            log::warn!("设置锁已毒化，使用恢复值: {e}");
+            log::warn!("Settings lock poisoned; using the recovered value: {e}");
             e.into_inner()
         })
         .preferred_terminal
         .clone()
 }
-

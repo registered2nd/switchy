@@ -1,6 +1,6 @@
-//! 使用统计服务
+//! Usage statistics service
 //!
-//! 提供使用量数据的聚合查询功能
+//! Aggregate queries over usage data
 
 use crate::database::{lock_conn, Database};
 use crate::error::AppError;
@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-/// 使用量汇总
+/// Usage summary
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageSummary {
@@ -24,7 +24,7 @@ pub struct UsageSummary {
     pub success_rate: f32,
 }
 
-/// 每日统计
+/// Daily stats
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyStats {
@@ -38,7 +38,7 @@ pub struct DailyStats {
     pub total_cache_read_tokens: u64,
 }
 
-/// Provider 统计
+/// Per-provider stats
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStats {
@@ -51,7 +51,7 @@ pub struct ProviderStats {
     pub avg_latency_ms: u64,
 }
 
-/// 模型统计
+/// Per-model stats
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelStats {
@@ -62,7 +62,7 @@ pub struct ModelStats {
     pub avg_cost_per_request: String,
 }
 
-/// 请求日志过滤器
+/// Request log filter
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogFilters {
@@ -74,7 +74,7 @@ pub struct LogFilters {
     pub end_date: Option<i64>,
 }
 
-/// 分页请求日志响应
+/// Paginated request log response
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaginatedLogs {
@@ -84,7 +84,7 @@ pub struct PaginatedLogs {
     pub page_size: u32,
 }
 
-/// 请求日志详情
+/// Request log details
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestLogDetail {
@@ -116,7 +116,7 @@ pub struct RequestLogDetail {
 }
 
 impl Database {
-    /// 获取使用量汇总
+    /// Get the usage summary
     pub fn get_usage_summary(
         &self,
         start_date: Option<i64>,
@@ -224,7 +224,7 @@ impl Database {
         Ok(result)
     }
 
-    /// 获取每日趋势（滑动窗口，<=24h 按小时，>24h 按天，窗口与汇总一致）
+    /// Get the daily trend (sliding window: hourly for <=24h, daily for >24h; same window as the summary)
     pub fn get_daily_trends(
         &self,
         start_date: Option<i64>,
@@ -251,7 +251,7 @@ impl Database {
             ((duration as f64) / bucket_seconds as f64).ceil() as i64
         };
 
-        // 固定 24 小时窗口为 24 个小时桶，避免浮点误差
+        // A fixed 24-hour window is 24 hourly buckets, which avoids floating-point error
         if bucket_seconds == 60 * 60 {
             bucket_count = 24;
         }
@@ -397,7 +397,7 @@ impl Database {
         Ok(stats)
     }
 
-    /// 获取 Provider 统计
+    /// Get per-provider stats
     pub fn get_provider_stats(&self) -> Result<Vec<ProviderStats>, AppError> {
         let conn = lock_conn!(self.conn);
 
@@ -468,7 +468,7 @@ impl Database {
         Ok(stats)
     }
 
-    /// 获取模型统计
+    /// Get per-model stats
     pub fn get_model_stats(&self) -> Result<Vec<ModelStats>, AppError> {
         let conn = lock_conn!(self.conn);
 
@@ -523,7 +523,7 @@ impl Database {
         Ok(stats)
     }
 
-    /// 获取请求日志列表（分页）
+    /// Get the request log list (paginated)
     pub fn get_request_logs(
         &self,
         filters: &LogFilters,
@@ -566,7 +566,7 @@ impl Database {
             format!("WHERE {}", conditions.join(" AND "))
         };
 
-        // 获取总数
+        // Get the total count
         let count_sql = format!(
             "SELECT COUNT(*) FROM proxy_request_logs l
              LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
@@ -577,7 +577,7 @@ impl Database {
             row.get::<_, i64>(0).map(|v| v as u32)
         })?;
 
-        // 获取数据
+        // Get the data
         let offset = page * page_size;
         params.push(Box::new(page_size as i64));
         params.push(Box::new(offset as i64));
@@ -651,7 +651,7 @@ impl Database {
         })
     }
 
-    /// 获取单个请求详情
+    /// Get a single request's details
     pub fn get_request_detail(
         &self,
         request_id: &str,
@@ -715,7 +715,7 @@ impl Database {
         }
     }
 
-    /// 检查 Provider 使用限额
+    /// Check a provider's usage limits
     pub fn check_provider_limits(
         &self,
         provider_id: &str,
@@ -723,7 +723,7 @@ impl Database {
     ) -> Result<ProviderLimitStatus, AppError> {
         let conn = lock_conn!(self.conn);
 
-        // 获取 provider 的限额设置
+        // Get the provider's limit settings
         let (limit_daily, limit_monthly) = conn
             .query_row(
                 "SELECT meta FROM providers WHERE id = ? AND app_type = ?",
@@ -748,7 +748,7 @@ impl Database {
             })
             .unwrap_or((None, None));
 
-        // 计算今日使用量 (detail logs + rollup)
+        // Compute today's usage (detail logs + rollup)
         let daily_usage: f64 = conn
             .query_row(
                 "SELECT COALESCE(SUM(cost), 0) FROM (
@@ -767,7 +767,7 @@ impl Database {
             )
             .unwrap_or(0.0);
 
-        // 计算本月使用量 (detail logs + rollup)
+        // Compute this month's usage (detail logs + rollup)
         let monthly_usage: f64 = conn
             .query_row(
                 "SELECT COALESCE(SUM(cost), 0) FROM (
@@ -805,7 +805,7 @@ impl Database {
     }
 }
 
-/// Provider 限额状态
+/// Provider limit status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderLimitStatus {
@@ -858,10 +858,10 @@ impl Database {
 
         let million = rust_decimal::Decimal::from(1_000_000u64);
 
-        // 与 CostCalculator::calculate 保持一致的计算逻辑：
-        // 1. input_cost 需要扣除 cache_read_tokens（避免缓存部分被重复计费）
-        // 2. 各项成本是基础成本（不含倍率）
-        // 3. 倍率只作用于最终总价
+        // Same calculation as CostCalculator::calculate:
+        // 1. input_cost excludes cache_read_tokens (so cached tokens are not billed twice)
+        // 2. Each cost is a base cost (without the multiplier)
+        // 3. The multiplier applies only to the final total
         let billable_input_tokens =
             (log.input_tokens as u64).saturating_sub(log.cache_read_tokens as u64);
         let input_cost =
@@ -874,7 +874,7 @@ impl Database {
         let cache_creation_cost = rust_decimal::Decimal::from(log.cache_creation_tokens as u64)
             * pricing.cache_creation
             / million;
-        // 总成本 = 基础成本之和 × 倍率
+        // Total cost = sum of base costs x multiplier
         let base_total = input_cost + output_cost + cache_read_cost + cache_creation_cost;
         let total_cost = base_total * multiplier;
 
@@ -901,7 +901,7 @@ impl Database {
                 log.request_id
             ],
         )
-        .map_err(|e| AppError::Database(format!("更新请求成本失败: {e}")))?;
+        .map_err(|e| AppError::Database(format!("Failed to update request cost: {e}")))?;
 
         Ok(())
     }
@@ -924,7 +924,7 @@ impl Database {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|e| AppError::Database(format!("查询 provider meta 失败: {e}")))?;
+            .map_err(|e| AppError::Database(format!("Failed to query provider meta: {e}")))?;
 
         let multiplier = meta_json
             .and_then(|meta| serde_json::from_str::<Value>(&meta).ok())
@@ -955,13 +955,15 @@ impl Database {
 
         let pricing = PricingInfo {
             input: rust_decimal::Decimal::from_str(&input)
-                .map_err(|e| AppError::Database(format!("解析输入价格失败: {e}")))?,
+                .map_err(|e| AppError::Database(format!("Failed to parse input price: {e}")))?,
             output: rust_decimal::Decimal::from_str(&output)
-                .map_err(|e| AppError::Database(format!("解析输出价格失败: {e}")))?,
-            cache_read: rust_decimal::Decimal::from_str(&cache_read)
-                .map_err(|e| AppError::Database(format!("解析缓存读取价格失败: {e}")))?,
-            cache_creation: rust_decimal::Decimal::from_str(&cache_creation)
-                .map_err(|e| AppError::Database(format!("解析缓存写入价格失败: {e}")))?,
+                .map_err(|e| AppError::Database(format!("Failed to parse output price: {e}")))?,
+            cache_read: rust_decimal::Decimal::from_str(&cache_read).map_err(|e| {
+                AppError::Database(format!("Failed to parse cache read price: {e}"))
+            })?,
+            cache_creation: rust_decimal::Decimal::from_str(&cache_creation).map_err(|e| {
+                AppError::Database(format!("Failed to parse cache write price: {e}"))
+            })?,
         };
 
         cache.insert(model.to_string(), pricing.clone());
@@ -973,8 +975,8 @@ pub(crate) fn find_model_pricing_row(
     conn: &Connection,
     model_id: &str,
 ) -> Result<Option<(String, String, String, String)>, AppError> {
-    // 清洗模型名称：去前缀(/)、去后缀(:)、@ 替换为 -
-    // 例如 moonshotai/gpt-5.2-codex@low:v2 → gpt-5.2-codex-low
+    // Clean the model name: drop the prefix (/) and suffix (:), replace @ with -
+    // e.g. moonshotai/gpt-5.2-codex@low:v2 -> gpt-5.2-codex-low
     let cleaned = model_id
         .rsplit_once('/')
         .map_or(model_id, |(_, r)| r)
@@ -984,7 +986,7 @@ pub(crate) fn find_model_pricing_row(
         .trim()
         .replace('@', "-");
 
-    // 精确匹配清洗后的名称
+    // Exact match on the cleaned name
     let exact = conn
         .query_row(
             "SELECT input_cost_per_million, output_cost_per_million,
@@ -1002,10 +1004,10 @@ pub(crate) fn find_model_pricing_row(
             },
         )
         .optional()
-        .map_err(|e| AppError::Database(format!("查询模型定价失败: {e}")))?;
+        .map_err(|e| AppError::Database(format!("Failed to query model pricing: {e}")))?;
 
     if exact.is_none() {
-        log::warn!("模型 {model_id}（清洗后: {cleaned}）未找到定价信息，成本将记录为 0");
+        log::warn!("No pricing found for model {model_id} (cleaned: {cleaned}); cost will be recorded as 0");
     }
 
     Ok(exact)
@@ -1019,7 +1021,7 @@ mod tests {
     fn test_get_usage_summary() -> Result<(), AppError> {
         let db = Database::memory()?;
 
-        // 插入测试数据
+        // Insert test data
         {
             let conn = lock_conn!(db.conn);
             conn.execute(
@@ -1051,7 +1053,7 @@ mod tests {
     fn test_get_model_stats() -> Result<(), AppError> {
         let db = Database::memory()?;
 
-        // 插入测试数据
+        // Insert test data
         {
             let conn = lock_conn!(db.conn);
             conn.execute(
@@ -1088,7 +1090,7 @@ mod tests {
         let db = Database::memory()?;
         let conn = lock_conn!(db.conn);
 
-        // 准备额外定价数据，覆盖前缀/后缀清洗场景
+        // Add extra pricing data covering the prefix/suffix cleaning cases
         conn.execute(
             "INSERT OR REPLACE INTO model_pricing (
                 model_id, display_name, input_cost_per_million, output_cost_per_million,
@@ -1104,35 +1106,38 @@ mod tests {
             ],
         )?;
 
-        // 测试精确匹配（seed_model_pricing 已预置 claude-sonnet-4-5-20250929）
+        // Exact match (seed_model_pricing already has claude-sonnet-4-5-20250929)
         let result = find_model_pricing_row(&conn, "claude-sonnet-4-5-20250929")?;
         assert!(
             result.is_some(),
-            "应该能精确匹配 claude-sonnet-4-5-20250929"
+            "should match claude-sonnet-4-5-20250929 exactly"
         );
 
-        // 清洗：去除前缀和冒号后缀
+        // Cleaning: strip the prefix and the colon suffix
         let result = find_model_pricing_row(&conn, "anthropic/claude-haiku-4.5")?;
         assert!(
             result.is_some(),
-            "带前缀的模型 anthropic/claude-haiku-4.5 应能匹配到 claude-haiku-4.5"
+            "prefixed model anthropic/claude-haiku-4.5 should match claude-haiku-4.5"
         );
         let result = find_model_pricing_row(&conn, "moonshotai/kimi-k2-0905:exa")?;
         assert!(
             result.is_some(),
-            "带前缀+冒号后缀的模型应清洗后匹配到 kimi-k2-0905"
+            "a model with a prefix and colon suffix should match kimi-k2-0905 after cleaning"
         );
 
-        // 清洗：@ 替换为 -（seed_model_pricing 已预置 gpt-5.2-codex-low）
+        // Cleaning: @ becomes - (seed_model_pricing already has gpt-5.2-codex-low)
         let result = find_model_pricing_row(&conn, "gpt-5.2-codex@low")?;
         assert!(
             result.is_some(),
-            "带 @ 分隔符的模型 gpt-5.2-codex@low 应能匹配到 gpt-5.2-codex-low"
+            "model gpt-5.2-codex@low with the @ separator should match gpt-5.2-codex-low"
         );
 
-        // 测试不存在的模型
+        // A model that does not exist
         let result = find_model_pricing_row(&conn, "unknown-model-123")?;
-        assert!(result.is_none(), "不应该匹配不存在的模型");
+        assert!(
+            result.is_none(),
+            "should not match a model that does not exist"
+        );
 
         Ok(())
     }

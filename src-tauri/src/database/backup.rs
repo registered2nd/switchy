@@ -1,6 +1,6 @@
-//! 数据库备份和恢复
+//! Database backup and restore
 //!
-//! 提供 SQL 导出/导入和二进制快照备份功能。
+//! SQL export/import and binary snapshot backups.
 
 use super::{lock_conn, Database};
 use crate::config::get_app_config_dir;
@@ -13,7 +13,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
-const SWITCHY_SQL_EXPORT_HEADER: &str = "-- Switchy SQLite 导出";
+const SWITCHY_SQL_EXPORT_HEADER: &str = "-- Switchy SQLite export";
+/// Prefix shared by every Switchy export, including those from older versions.
+const SWITCHY_SQL_EXPORT_PREFIX: &str = "-- Switchy SQLite";
 
 /// A database backup entry for the UI
 #[derive(Debug, serde::Serialize)]
@@ -25,13 +27,13 @@ pub struct BackupEntry {
 }
 
 impl Database {
-    /// 导出为 SQLite 兼容的 SQL 文本（内存字符串，完整导出）
+    /// Export as SQLite-compatible SQL text (full export, as an in-memory string)
     pub fn export_sql_string(&self) -> Result<String, AppError> {
         let snapshot = self.snapshot_to_memory()?;
         Self::dump_sql(&snapshot, &[])
     }
 
-    /// 导出为 SQLite 兼容的 SQL 文本
+    /// Export as SQLite-compatible SQL text
     pub fn export_sql(&self, target_path: &Path) -> Result<(), AppError> {
         let dump = self.export_sql_string()?;
 
@@ -42,11 +44,11 @@ impl Database {
         crate::config::atomic_write(target_path, dump.as_bytes())
     }
 
-    /// 从 SQL 文件导入，返回生成的备份 ID（若无备份则为空字符串）
+    /// Import from an SQL file; returns the ID of the backup taken (empty string if none)
     pub fn import_sql(&self, source_path: &Path) -> Result<String, AppError> {
         if !source_path.exists() {
             return Err(AppError::InvalidInput(format!(
-                "SQL 文件不存在: {}",
+                "SQL file does not exist: {}",
                 source_path.display()
             )));
         }
@@ -56,7 +58,7 @@ impl Database {
         self.import_sql_string(sql_content)
     }
 
-    /// 从 SQL 字符串导入，返回生成的备份 ID（若无备份则为空字符串）
+    /// Import from an SQL string; returns the ID of the backup taken (empty string if none)
     pub fn import_sql_string(&self, sql_raw: &str) -> Result<String, AppError> {
         self.import_sql_string_inner(sql_raw, &[])
     }
@@ -69,7 +71,7 @@ impl Database {
         let sql_content = sql_raw.trim_start_matches('\u{feff}');
         Self::validate_switchy_sql_export(sql_content)?;
 
-        // 导入前备份现有数据库
+        // Back up the current database before importing
         let backup_path = self.backup_database_file()?;
 
         let local_snapshot = if preserve_tables.is_empty() {
@@ -78,9 +80,9 @@ impl Database {
             Some(self.snapshot_to_memory()?)
         };
 
-        // 在临时数据库执行导入，确保失败不会污染主库
+        // Import into a temporary database so a failure cannot corrupt the main one
         let temp_file = NamedTempFile::new().map_err(|e| AppError::IoContext {
-            context: "创建临时数据库文件失败".to_string(),
+            context: "Failed to create temporary database file".to_string(),
             source: e,
         })?;
         let temp_path = temp_file.path().to_path_buf();
@@ -89,9 +91,9 @@ impl Database {
 
         temp_conn
             .execute_batch(sql_content)
-            .map_err(|e| AppError::Database(format!("执行 SQL 导入失败: {e}")))?;
+            .map_err(|e| AppError::Database(format!("SQL import failed: {e}")))?;
 
-        // 补齐缺失表/索引并进行基础校验
+        // Add missing tables/indexes and run basic validation
         Self::create_tables_on_conn(&temp_conn)?;
         Self::apply_schema_migrations_on_conn(&temp_conn)?;
         Self::validate_basic_state(&temp_conn)?;
@@ -99,7 +101,7 @@ impl Database {
             Self::restore_tables(local_snapshot, &temp_conn, preserve_tables)?;
         }
 
-        // 使用 Backup 将临时库原子写回主库
+        // Copy the temporary database back into the main one atomically via Backup
         {
             let mut main_conn = lock_conn!(self.conn);
             let backup = Backup::new(&temp_conn, &mut main_conn)
@@ -116,7 +118,7 @@ impl Database {
         Ok(backup_id)
     }
 
-    /// 创建内存快照以避免长时间持有数据库锁
+    /// Take an in-memory snapshot to avoid holding the database lock for long
     pub(crate) fn snapshot_to_memory(&self) -> Result<Connection, AppError> {
         let conn = lock_conn!(self.conn);
         let mut snapshot =
@@ -135,7 +137,7 @@ impl Database {
 
     fn validate_switchy_sql_export(sql: &str) -> Result<(), AppError> {
         let trimmed = sql.trim_start();
-        if trimmed.starts_with(SWITCHY_SQL_EXPORT_HEADER) {
+        if trimmed.starts_with(SWITCHY_SQL_EXPORT_PREFIX) {
             return Ok(());
         }
 
@@ -163,7 +165,7 @@ impl Database {
 
             target_conn
                 .execute(&format!("DELETE FROM \"{table}\""), [])
-                .map_err(|e| AppError::Database(format!("清空表 {table} 失败: {e}")))?;
+                .map_err(|e| AppError::Database(format!("Failed to clear table {table}: {e}")))?;
 
             let placeholders = (1..=columns.len())
                 .map(|idx| format!("?{idx}"))
@@ -178,10 +180,10 @@ impl Database {
 
             let mut stmt = source_conn
                 .prepare(&format!("SELECT * FROM \"{table}\""))
-                .map_err(|e| AppError::Database(format!("读取表 {table} 失败: {e}")))?;
+                .map_err(|e| AppError::Database(format!("Failed to read table {table}: {e}")))?;
             let mut rows = stmt
                 .query([])
-                .map_err(|e| AppError::Database(format!("查询表 {table} 数据失败: {e}")))?;
+                .map_err(|e| AppError::Database(format!("Failed to query table {table}: {e}")))?;
 
             while let Some(row) = rows.next().map_err(|e| AppError::Database(e.to_string()))? {
                 let mut values = Vec::with_capacity(columns.len());
@@ -194,7 +196,9 @@ impl Database {
 
                 target_conn
                     .execute(&insert_sql, rusqlite::params_from_iter(values.iter()))
-                    .map_err(|e| AppError::Database(format!("恢复表 {table} 数据失败: {e}")))?;
+                    .map_err(|e| {
+                        AppError::Database(format!("Failed to restore table {table}: {e}"))
+                    })?;
             }
         }
 
@@ -263,7 +267,7 @@ impl Database {
         Ok(())
     }
 
-    /// 生成一致性快照备份，返回备份文件路径（不存在主库时返回 None）
+    /// Take a consistent snapshot backup; returns its path (None when there is no main database)
     pub(crate) fn backup_database_file(&self) -> Result<Option<PathBuf>, AppError> {
         let db_path = get_app_config_dir().join(crate::paths::DB_FILE);
         if !db_path.exists() {
@@ -272,7 +276,7 @@ impl Database {
 
         let backup_dir = db_path
             .parent()
-            .ok_or_else(|| AppError::Config("无效的数据库路径".to_string()))?
+            .ok_or_else(|| AppError::Config("Invalid database path".to_string()))?
             .join("backups");
 
         fs::create_dir_all(&backup_dir).map_err(|e| AppError::io(&backup_dir, e))?;
@@ -302,7 +306,7 @@ impl Database {
         Ok(Some(backup_path))
     }
 
-    /// 清理旧的数据库备份，保留最新的 N 个
+    /// Delete old database backups, keeping the newest N
     fn cleanup_db_backups(dir: &Path) -> Result<(), AppError> {
         let retain = crate::settings::effective_backup_retain_count();
         let entries = match fs::read_dir(dir) {
@@ -329,13 +333,17 @@ impl Database {
 
         for entry in sorted.into_iter().take(remove_count) {
             if let Err(err) = fs::remove_file(entry.path()) {
-                log::warn!("删除旧数据库备份失败 {}: {}", entry.path().display(), err);
+                log::warn!(
+                    "Failed to delete old database backup {}: {}",
+                    entry.path().display(),
+                    err
+                );
             }
         }
         Ok(())
     }
 
-    /// 基础状态校验
+    /// Basic state validation
     fn validate_basic_state(conn: &Connection) -> Result<(), AppError> {
         let provider_count: i64 = conn
             .query_row("SELECT COUNT(*) FROM providers", [], |row| row.get(0))
@@ -346,13 +354,13 @@ impl Database {
 
         if provider_count == 0 && mcp_count == 0 {
             return Err(AppError::Config(
-                "导入的 SQL 未包含有效的供应商或 MCP 数据".to_string(),
+                "The imported SQL contains no valid provider or MCP data".to_string(),
             ));
         }
         Ok(())
     }
 
-    /// 导出数据库为 SQL 文本
+    /// Dump the database as SQL text
     fn dump_sql(conn: &Connection, skip_tables: &[&str]) -> Result<String, AppError> {
         let mut output = String::new();
         let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -361,13 +369,13 @@ impl Database {
             .unwrap_or(0);
 
         output.push_str(&format!(
-            "-- Switchy SQLite 导出\n-- 生成时间: {timestamp}\n-- user_version: {user_version}\n"
+            "{SWITCHY_SQL_EXPORT_HEADER}\n-- Generated: {timestamp}\n-- user_version: {user_version}\n"
         ));
         output.push_str("PRAGMA foreign_keys=OFF;\n");
         output.push_str(&format!("PRAGMA user_version={user_version};\n"));
         output.push_str("BEGIN TRANSACTION;\n");
 
-        // 导出 schema
+        // Export schema
         let mut stmt = conn
             .prepare(
                 "SELECT type, name, tbl_name, sql
@@ -386,7 +394,7 @@ impl Database {
             let name: String = row.get(1).map_err(|e| AppError::Database(e.to_string()))?;
             let sql: String = row.get(3).map_err(|e| AppError::Database(e.to_string()))?;
 
-            // 跳过 SQLite 内部对象（如 sqlite_sequence）
+            // Skip SQLite internal objects (such as sqlite_sequence)
             if name.starts_with("sqlite_") {
                 continue;
             }
@@ -399,7 +407,7 @@ impl Database {
             }
         }
 
-        // 导出数据
+        // Export data
         for table in tables {
             if skip_tables.iter().any(|t| *t == table) {
                 continue;
@@ -441,7 +449,7 @@ impl Database {
         Ok(output)
     }
 
-    /// 获取表的列名列表
+    /// List a table's column names
     fn get_table_columns(conn: &Connection, table: &str) -> Result<Vec<String>, AppError> {
         let mut stmt = conn
             .prepare(&format!("PRAGMA table_info(\"{table}\")"))
@@ -457,15 +465,16 @@ impl Database {
         Ok(columns)
     }
 
-    /// 格式化 SQL 值
+    /// Format an SQL value
     fn format_sql_value(value: ValueRef<'_>) -> Result<String, AppError> {
         match value {
             ValueRef::Null => Ok("NULL".to_string()),
             ValueRef::Integer(i) => Ok(i.to_string()),
             ValueRef::Real(f) => Ok(f.to_string()),
             ValueRef::Text(t) => {
-                let text = std::str::from_utf8(t)
-                    .map_err(|e| AppError::Database(format!("文本字段不是有效的 UTF-8: {e}")))?;
+                let text = std::str::from_utf8(t).map_err(|e| {
+                    AppError::Database(format!("Text field is not valid UTF-8: {e}"))
+                })?;
                 let escaped = text.replace('\'', "''");
                 Ok(format!("'{escaped}'"))
             }

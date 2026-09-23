@@ -1,9 +1,9 @@
 //! Codex (OpenAI) Provider Adapter
 //!
-//! 仅透传模式，支持直连 OpenAI API
+//! Passthrough only; supports direct connections to the OpenAI API
 //!
-//! ## 客户端检测
-//! 支持检测官方 Codex 客户端 (codex_vscode, codex_cli_rs)
+//! ## Client detection
+//! Detects the official Codex clients (codex_vscode, codex_cli_rs)
 
 use super::{AuthInfo, AuthStrategy, ProviderAdapter};
 use crate::provider::Provider;
@@ -11,12 +11,12 @@ use crate::proxy::error::ProxyError;
 use regex::Regex;
 use std::sync::LazyLock;
 
-/// 官方 Codex 客户端 User-Agent 正则
+/// User-Agent regex for the official Codex clients
 #[allow(dead_code)]
 static CODEX_CLIENT_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(codex_vscode|codex_cli_rs)/[\d.]+").unwrap());
 
-/// Codex 适配器
+/// Codex adapter
 pub struct CodexAdapter;
 
 impl CodexAdapter {
@@ -24,31 +24,31 @@ impl CodexAdapter {
         Self
     }
 
-    /// 检测是否为官方 Codex 客户端
+    /// Whether the request comes from an official Codex client
     ///
-    /// 匹配 User-Agent 模式: `^(codex_vscode|codex_cli_rs)/[\d.]+`
+    /// Matches the User-Agent pattern: `^(codex_vscode|codex_cli_rs)/[\d.]+`
     #[allow(dead_code)]
     pub fn is_official_client(user_agent: &str) -> bool {
         CODEX_CLIENT_REGEX.is_match(user_agent)
     }
 
-    /// 从 Provider 配置中提取 API Key
+    /// Extracts the API key from the provider config
     fn extract_key(&self, provider: &Provider) -> Option<String> {
-        // 1. 尝试从 env 中获取
+        // 1. Try env
         if let Some(env) = provider.settings_config.get("env") {
             if let Some(key) = env.get("OPENAI_API_KEY").and_then(|v| v.as_str()) {
                 return Some(key.to_string());
             }
         }
 
-        // 2. 尝试从 auth 中获取 (Codex CLI 格式)
+        // 2. Try auth (Codex CLI format)
         if let Some(auth) = provider.settings_config.get("auth") {
             if let Some(key) = auth.get("OPENAI_API_KEY").and_then(|v| v.as_str()) {
                 return Some(key.to_string());
             }
         }
 
-        // 3. 尝试直接获取
+        // 3. Try a top-level field
         if let Some(key) = provider
             .settings_config
             .get("apiKey")
@@ -58,7 +58,7 @@ impl CodexAdapter {
             return Some(key.to_string());
         }
 
-        // 4. 尝试从 config 对象中获取
+        // 4. Try the config object
         if let Some(config) = provider.settings_config.get("config") {
             if let Some(key) = config
                 .get("api_key")
@@ -90,7 +90,7 @@ impl ProviderAdapter for CodexAdapter {
             return Ok(crate::proxy::codex_pool::CHATGPT_CODEX_BASE_URL.to_string());
         }
 
-        // 1. 尝试直接获取 base_url 字段
+        // 1. Try the base_url field directly
         if let Some(url) = provider
             .settings_config
             .get("base_url")
@@ -99,7 +99,7 @@ impl ProviderAdapter for CodexAdapter {
             return Ok(url.trim_end_matches('/').to_string());
         }
 
-        // 2. 尝试 baseURL
+        // 2. Try baseURL
         if let Some(url) = provider
             .settings_config
             .get("baseURL")
@@ -108,13 +108,13 @@ impl ProviderAdapter for CodexAdapter {
             return Ok(url.trim_end_matches('/').to_string());
         }
 
-        // 3. 尝试从 config 对象中获取
+        // 3. Try the config object
         if let Some(config) = provider.settings_config.get("config") {
             if let Some(url) = config.get("base_url").and_then(|v| v.as_str()) {
                 return Ok(url.trim_end_matches('/').to_string());
             }
 
-            // 尝试解析 TOML 字符串格式
+            // Try parsing it as a TOML string
             if let Some(config_str) = config.as_str() {
                 if let Some(start) = config_str.find("base_url = \"") {
                     let rest = &config_str[start + 12..];
@@ -149,32 +149,32 @@ impl ProviderAdapter for CodexAdapter {
         let base_trimmed = base_url.trim_end_matches('/');
         let endpoint_trimmed = endpoint.trim_start_matches('/');
 
-        // OpenAI/Codex 的 base_url 可能是：
-        // - 纯 origin: https://api.openai.com  (需要自动补 /v1)
-        // - 已含 /v1: https://api.openai.com/v1 (直接拼接)
-        // - 自定义前缀: https://xxx/openai (不添加 /v1，直接拼接)
+        // An OpenAI/Codex base_url can be:
+        // - a bare origin: https://api.openai.com  (/v1 added automatically)
+        // - already ending in /v1: https://api.openai.com/v1 (joined as-is)
+        // - a custom prefix: https://xxx/openai (no /v1 added, joined as-is)
 
-        // 检查 base_url 是否已经包含 /v1
+        // Does base_url already contain /v1?
         let already_has_v1 = base_trimmed.ends_with("/v1");
 
-        // 检查是否是纯 origin（没有路径部分）
+        // Is it a bare origin (no path)?
         let origin_only = match base_trimmed.split_once("://") {
             Some((_scheme, rest)) => !rest.contains('/'),
             None => !base_trimmed.contains('/'),
         };
 
         let mut url = if already_has_v1 {
-            // 已经有 /v1，直接拼接
+            // Already has /v1; join as-is
             format!("{base_trimmed}/{endpoint_trimmed}")
         } else if origin_only {
-            // 纯 origin，添加 /v1
+            // Bare origin; add /v1
             format!("{base_trimmed}/v1/{endpoint_trimmed}")
         } else {
-            // 自定义前缀，不添加 /v1，直接拼接
+            // Custom prefix; join as-is without /v1
             format!("{base_trimmed}/{endpoint_trimmed}")
         };
 
-        // 去除重复的 /v1/v1（可能由 base_url 与 endpoint 都带版本导致）
+        // Collapse a duplicated /v1/v1 (when both base_url and endpoint carry the version)
         while url.contains("/v1/v1") {
             url = url.replace("/v1/v1", "/v1");
         }
@@ -296,12 +296,12 @@ mod tests {
     #[test]
     fn test_build_url_dedup_v1() {
         let adapter = CodexAdapter::new();
-        // base_url 已包含 /v1，endpoint 也包含 /v1
+        // base_url already contains /v1, and so does endpoint
         let url = adapter.build_url("https://www.packyapi.com/v1", "/v1/responses");
         assert_eq!(url, "https://www.packyapi.com/v1/responses");
     }
 
-    // 官方客户端检测测试
+    // Official client detection tests
     #[test]
     fn test_is_official_client_vscode() {
         assert!(CodexAdapter::is_official_client("codex_vscode/1.0.0"));
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_is_official_client_partial_match() {
-        // 必须从开头匹配
+        // Must match from the start
         assert!(!CodexAdapter::is_official_client("some codex_vscode/1.0.0"));
         assert!(!CodexAdapter::is_official_client(
             "prefix_codex_cli_rs/1.0.0"

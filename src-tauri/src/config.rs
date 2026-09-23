@@ -5,19 +5,20 @@ use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
 
-/// 获取用户主目录，带回退和日志
+/// Get the user's home directory, with fallback and logging
 ///
-/// ## Windows 注意事项
+/// ## Windows notes
 ///
-/// - `dirs::home_dir()` 在 Windows 上使用 `SHGetKnownFolderPath(FOLDERID_Profile)`，
-///   返回的是真实用户目录（类似 `C:\\Users\\Alice`）。
-/// - 不要直接使用 `HOME` 环境变量：它可能由 Git/Cygwin/MSYS 等第三方工具注入，
-///   且不一定等于用户目录，可能导致 `.switchy/switchy.db` 路径变化，从而“看起来像数据丢失”。
+/// - On Windows, `dirs::home_dir()` uses `SHGetKnownFolderPath(FOLDERID_Profile)`,
+///   which returns the real user directory (like `C:\\Users\\Alice`).
+/// - Do not use the `HOME` environment variable directly: third-party tools such as Git/Cygwin/MSYS
+///   may inject it and it need not equal the user directory, so the `.switchy/switchy.db` path could move
+///   and "look like data loss".
 ///
-/// ## 测试隔离
+/// ## Test isolation
 ///
-/// 为了让 Windows CI/本地测试能稳定隔离真实用户数据，可通过 `SWITCHY_TEST_HOME`
-/// 显式覆盖 home dir（仅用于测试/调试场景）。
+/// So that Windows CI and local tests reliably stay away from real user data, `SWITCHY_TEST_HOME`
+/// explicitly overrides the home dir (for testing/debugging only).
 pub fn get_home_dir() -> PathBuf {
     if let Ok(home) = std::env::var(crate::paths::ENV_TEST_HOME) {
         let trimmed = home.trim();
@@ -27,12 +28,12 @@ pub fn get_home_dir() -> PathBuf {
     }
 
     dirs::home_dir().unwrap_or_else(|| {
-        log::warn!("无法获取用户主目录，回退到当前目录");
+        log::warn!("Could not get the user home directory; falling back to the current directory");
         PathBuf::from(".")
     })
 }
 
-/// 获取 Claude Code 配置目录路径
+/// Get the Claude Code config directory path
 pub fn get_claude_config_dir() -> PathBuf {
     if let Some(custom) = crate::settings::get_claude_override_dir() {
         return custom;
@@ -41,16 +42,16 @@ pub fn get_claude_config_dir() -> PathBuf {
     get_home_dir().join(".claude")
 }
 
-/// 默认 Claude MCP 配置文件路径 (~/.claude.json)
+/// Default Claude MCP config file path (~/.claude.json)
 pub fn get_default_claude_mcp_path() -> PathBuf {
     get_home_dir().join(".claude.json")
 }
 
-/// 由 Claude 配置*目录*推导其 `.claude.json` 路径。
+/// Derive the `.claude.json` path from a Claude config *directory*.
 ///
-/// 该文件是配置目录的**同级兄弟**，不是目录内部的文件：`~/.claude` 目录
-/// 对应 `~/.claude.json`。目录内部若也存在一个 `.claude.json`，那是另一套
-/// 独立的配置，不是本机 CLI 正在读写的那个 —— 按存在与否去挑文件会写错对象。
+/// The file is a **sibling** of the config directory, not a file inside it: the `~/.claude` directory
+/// maps to `~/.claude.json`. A `.claude.json` inside the directory is a separate, independent
+/// config, not the one the local CLI reads and writes; picking a file by whether it exists writes to the wrong one.
 pub fn claude_config_json_for_dir(dir: &Path) -> Option<PathBuf> {
     let file_name = dir
         .file_name()
@@ -64,10 +65,10 @@ pub fn claude_config_json_for_dir(dir: &Path) -> Option<PathBuf> {
     Some(parent.join(format!("{file_name}.json")))
 }
 
-/// 获取 Claude Code 主配置文件 `.claude.json` 的路径。
+/// Get the path of Claude Code's main config file `.claude.json`.
 ///
-/// 所有需要读写 `oauthAccount` / `mcpServers` 等根级字段的调用方都必须走这里，
-/// 否则不同模块会各自挑中不同的文件，互相看不见对方的写入。
+/// Every caller that reads or writes root-level fields such as `oauthAccount` / `mcpServers` must go through here;
+/// otherwise modules pick different files and cannot see each other's writes.
 pub fn get_claude_config_json_path() -> PathBuf {
     if let Some(custom_dir) = crate::settings::get_claude_override_dir() {
         if let Some(path) = claude_config_json_for_dir(&custom_dir) {
@@ -77,28 +78,28 @@ pub fn get_claude_config_json_path() -> PathBuf {
     get_default_claude_mcp_path()
 }
 
-/// 获取 Claude MCP 配置文件路径，若设置了目录覆盖则与覆盖目录同级
+/// Get the Claude MCP config file path; with a directory override it sits next to the override directory
 pub fn get_claude_mcp_path() -> PathBuf {
     get_claude_config_json_path()
 }
 
-/// 获取 Claude Code 主配置文件路径
+/// Get the Claude Code main settings file path
 pub fn get_claude_settings_path() -> PathBuf {
     let dir = get_claude_config_dir();
     let settings = dir.join("settings.json");
     if settings.exists() {
         return settings;
     }
-    // 兼容旧版命名：若存在旧文件则继续使用
+    // Legacy name: keep using the old file if it exists
     let legacy = dir.join("claude.json");
     if legacy.exists() {
         return legacy;
     }
-    // 默认新建：回落到标准文件名 settings.json（不再生成 claude.json）
+    // Default for new setups: the standard settings.json (claude.json is no longer created)
     settings
 }
 
-/// 获取应用配置目录路径 (~/.switchy)
+/// Get the app config directory path (~/.switchy)
 pub fn get_app_config_dir() -> PathBuf {
     if let Some(custom) = crate::app_store::get_app_config_dir_override() {
         return custom;
@@ -107,12 +108,12 @@ pub fn get_app_config_dir() -> PathBuf {
     get_home_dir().join(crate::paths::APP_DIR)
 }
 
-/// 获取应用配置文件路径
+/// Get the app config file path
 pub fn get_app_config_path() -> PathBuf {
     get_app_config_dir().join("config.json")
 }
 
-/// 清理供应商名称，确保文件名安全
+/// Sanitise a provider name so it is safe as a file name
 #[allow(dead_code)]
 pub fn sanitize_provider_name(name: &str) -> String {
     name.chars()
@@ -124,7 +125,7 @@ pub fn sanitize_provider_name(name: &str) -> String {
         .to_lowercase()
 }
 
-/// 获取供应商配置文件路径
+/// Get a provider config file path
 #[allow(dead_code)]
 pub fn get_provider_config_path(provider_id: &str, provider_name: Option<&str>) -> PathBuf {
     let base_name = provider_name
@@ -134,10 +135,13 @@ pub fn get_provider_config_path(provider_id: &str, provider_name: Option<&str>) 
     get_claude_config_dir().join(format!("settings-{base_name}.json"))
 }
 
-/// 读取 JSON 配置文件
+/// Read a JSON config file
 pub fn read_json_file<T: for<'a> Deserialize<'a>>(path: &Path) -> Result<T, AppError> {
     if !path.exists() {
-        return Err(AppError::Config(format!("文件不存在: {}", path.display())));
+        return Err(AppError::Config(format!(
+            "File does not exist: {}",
+            path.display()
+        )));
     }
 
     let content = fs::read_to_string(path).map_err(|e| AppError::io(path, e))?;
@@ -145,9 +149,9 @@ pub fn read_json_file<T: for<'a> Deserialize<'a>>(path: &Path) -> Result<T, AppE
     serde_json::from_str(&content).map_err(|e| AppError::json(path, e))
 }
 
-/// 写入 JSON 配置文件
+/// Write a JSON config file
 pub fn write_json_file<T: Serialize>(path: &Path, data: &T) -> Result<(), AppError> {
-    // 确保目录存在
+    // Make sure the directory exists
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
     }
@@ -158,7 +162,7 @@ pub fn write_json_file<T: Serialize>(path: &Path, data: &T) -> Result<(), AppErr
     atomic_write(path, json.as_bytes())
 }
 
-/// 原子写入文本文件（用于 TOML/纯文本）
+/// Atomically write a text file (for TOML/plain text)
 pub fn write_text_file(path: &Path, data: &str) -> Result<(), AppError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
@@ -166,7 +170,7 @@ pub fn write_text_file(path: &Path, data: &str) -> Result<(), AppError> {
     atomic_write(path, data.as_bytes())
 }
 
-/// 原子写入：写入临时文件后 rename 替换，避免半写状态
+/// Atomic write: write a temp file, then rename it over the target, so no half-written state is visible
 pub fn atomic_write(path: &Path, data: &[u8]) -> Result<(), AppError> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
@@ -174,11 +178,11 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> Result<(), AppError> {
 
     let parent = path
         .parent()
-        .ok_or_else(|| AppError::Config("无效的路径".to_string()))?;
+        .ok_or_else(|| AppError::Config("Invalid path".to_string()))?;
     let mut tmp = parent.to_path_buf();
     let file_name = path
         .file_name()
-        .ok_or_else(|| AppError::Config("无效的文件名".to_string()))?
+        .ok_or_else(|| AppError::Config("Invalid file name".to_string()))?
         .to_string_lossy()
         .to_string();
     let ts = std::time::SystemTime::now()
@@ -204,11 +208,15 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> Result<(), AppError> {
 
     #[cfg(windows)]
     {
-        // std 的 fs::rename 在 Windows 上走 MoveFileExW + MOVEFILE_REPLACE_EXISTING，
-        // 目标存在时会直接替换。不能先 remove_file：那会让文件短暂消失，
-        // 监听该文件的进程（如运行中的 Claude Code）会看到 delete + create 而非一次 modify。
+        // On Windows, std's fs::rename uses MoveFileExW + MOVEFILE_REPLACE_EXISTING,
+        // which replaces an existing target directly. Do not remove_file first: the file would briefly vanish,
+        // and a process watching it (such as a running Claude Code) would see delete + create instead of one modify.
         fs::rename(&tmp, path).map_err(|e| AppError::IoContext {
-            context: format!("原子替换失败: {} -> {}", tmp.display(), path.display()),
+            context: format!(
+                "Atomic replace failed: {} -> {}",
+                tmp.display(),
+                path.display()
+            ),
             source: e,
         })?;
     }
@@ -216,7 +224,11 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> Result<(), AppError> {
     #[cfg(not(windows))]
     {
         fs::rename(&tmp, path).map_err(|e| AppError::IoContext {
-            context: format!("原子替换失败: {} -> {}", tmp.display(), path.display()),
+            context: format!(
+                "Atomic replace failed: {} -> {}",
+                tmp.display(),
+                path.display()
+            ),
             source: e,
         })?;
     }
@@ -258,7 +270,7 @@ mod tests {
     }
 }
 
-/// 删除文件
+/// Delete a file
 pub fn delete_file(path: &Path) -> Result<(), AppError> {
     if path.exists() {
         fs::remove_file(path).map_err(|e| AppError::io(path, e))?;
@@ -266,14 +278,14 @@ pub fn delete_file(path: &Path) -> Result<(), AppError> {
     Ok(())
 }
 
-/// 检查 Claude Code 配置状态
+/// Check the Claude Code config status
 #[derive(Serialize, Deserialize)]
 pub struct ConfigStatus {
     pub exists: bool,
     pub path: String,
 }
 
-/// 获取 Claude Code 配置状态
+/// Get the Claude Code config status
 pub fn get_claude_config_status() -> ConfigStatus {
     let path = get_claude_settings_path();
     ConfigStatus {

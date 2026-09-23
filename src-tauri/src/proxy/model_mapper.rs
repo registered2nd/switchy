@@ -1,11 +1,11 @@
-//! 模型映射模块
+//! Model mapping
 //!
-//! 在请求转发前，根据 Provider 配置替换请求中的模型名称
+//! Rewrites the model name in a request from the provider's config before forwarding
 
 use crate::provider::Provider;
 use serde_json::Value;
 
-/// 模型映射配置
+/// Model mapping config
 pub struct ModelMapping {
     pub haiku_model: Option<String>,
     pub sonnet_model: Option<String>,
@@ -15,7 +15,7 @@ pub struct ModelMapping {
 }
 
 impl ModelMapping {
-    /// 从 Provider 配置中提取模型映射
+    /// Extract the model mapping from the provider config
     pub fn from_provider(provider: &Provider) -> Self {
         let env = provider.settings_config.get("env");
 
@@ -48,7 +48,7 @@ impl ModelMapping {
         }
     }
 
-    /// 检查是否配置了任何模型映射
+    /// Whether any model mapping is configured
     pub fn has_mapping(&self) -> bool {
         self.haiku_model.is_some()
             || self.sonnet_model.is_some()
@@ -57,18 +57,18 @@ impl ModelMapping {
             || self.reasoning_model.is_some()
     }
 
-    /// 根据原始模型名称获取映射后的模型
+    /// Get the mapped model for the original model name
     pub fn map_model(&self, original_model: &str, has_thinking: bool) -> String {
         let model_lower = original_model.to_lowercase();
 
-        // 1. thinking 模式优先使用推理模型
+        // 1. Thinking mode prefers the reasoning model
         if has_thinking {
             if let Some(ref m) = self.reasoning_model {
                 return m.clone();
             }
         }
 
-        // 2. 按模型类型匹配
+        // 2. Match by model type
         if model_lower.contains("haiku") {
             if let Some(ref m) = self.haiku_model {
                 return m.clone();
@@ -85,17 +85,17 @@ impl ModelMapping {
             }
         }
 
-        // 3. 默认模型
+        // 3. Default model
         if let Some(ref m) = self.default_model {
             return m.clone();
         }
 
-        // 4. 无映射，保持原样
+        // 4. No mapping: keep as is
         original_model.to_string()
     }
 }
 
-/// 检测请求是否启用了 thinking 模式
+/// Whether the request has thinking mode enabled
 pub fn has_thinking_enabled(body: &Value) -> bool {
     match body
         .get("thinking")
@@ -107,29 +107,29 @@ pub fn has_thinking_enabled(body: &Value) -> bool {
         Some("disabled") | None => false,
         Some(other) => {
             log::warn!(
-                "[ModelMapper] 未知 thinking.type='{other}'，按 disabled 处理以避免误路由 reasoning 模型"
+                "[ModelMapper] Unknown thinking.type='{other}', treating as disabled to avoid routing to the reasoning model"
             );
             false
         }
     }
 }
 
-/// 对请求体应用模型映射
+/// Apply model mapping to the request body
 ///
-/// 返回 (映射后的请求体, 原始模型名, 映射后模型名)
+/// Returns (mapped request body, original model name, mapped model name)
 pub fn apply_model_mapping(
     mut body: Value,
     provider: &Provider,
 ) -> (Value, Option<String>, Option<String>) {
     let mapping = ModelMapping::from_provider(provider);
 
-    // 如果没有配置映射，直接返回
+    // No mapping configured: return as is
     if !mapping.has_mapping() {
         let original = body.get("model").and_then(|m| m.as_str()).map(String::from);
         return (body, original, None);
     }
 
-    // 提取原始模型名
+    // Extract the original model name
     let original_model = body.get("model").and_then(|m| m.as_str()).map(String::from);
 
     if let Some(ref original) = original_model {
@@ -137,7 +137,7 @@ pub fn apply_model_mapping(
         let mapped = mapping.map_model(original, has_thinking);
 
         if mapped != *original {
-            log::debug!("[ModelMapper] 模型映射: {original} → {mapped}");
+            log::debug!("[ModelMapper] Model mapped: {original} → {mapped}");
             body["model"] = serde_json::json!(mapped);
             return (body, Some(original.clone()), Some(mapped));
         }

@@ -1,6 +1,6 @@
-//! 流式响应转换模块
+//! Streaming response conversion
 //!
-//! 实现 OpenAI SSE → Anthropic SSE 格式转换
+//! Converts OpenAI SSE to Anthropic SSE
 
 use crate::proxy::sse::strip_sse_field;
 use bytes::Bytes;
@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 
-/// OpenAI 流式响应数据结构
+/// OpenAI streaming response chunk
 #[derive(Debug, Deserialize)]
 struct OpenAIStreamChunk {
     id: String,
@@ -31,7 +31,7 @@ struct Delta {
     #[serde(default)]
     content: Option<String>,
     #[serde(default)]
-    reasoning: Option<String>, // OpenRouter 的推理内容
+    reasoning: Option<String>, // OpenRouter reasoning content
     #[serde(default)]
     tool_calls: Option<Vec<DeltaToolCall>>,
 }
@@ -55,7 +55,7 @@ struct DeltaFunction {
     arguments: Option<String>,
 }
 
-/// OpenAI 流式响应的 usage 信息（完整版）
+/// Usage info in an OpenAI streaming response (full form)
 #[derive(Debug, Deserialize)]
 struct Usage {
     #[serde(default)]
@@ -87,7 +87,7 @@ struct ToolBlockState {
     pending_args: String,
 }
 
-/// 创建 Anthropic SSE 流
+/// Creates the Anthropic SSE stream
 pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
     stream: impl Stream<Item = Result<Bytes, E>> + Send + 'static,
 ) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send {
@@ -173,7 +173,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                             has_sent_message_start = true;
                                         }
 
-                                        // 处理 reasoning（thinking）
+                                        // Handle reasoning (thinking)
                                         if let Some(reasoning) = &choice.delta.reasoning {
                                             if current_non_tool_block_type != Some("thinking") {
                                                 if let Some(index) = current_non_tool_block_index.take() {
@@ -217,7 +217,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                             }
                                         }
 
-                                        // 处理文本内容
+                                        // Handle text content
                                         if let Some(content) = &choice.delta.content {
                                             if !content.is_empty() {
                                                 if current_non_tool_block_type != Some("text") {
@@ -264,7 +264,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                             }
                                         }
 
-                                        // 处理工具调用
+                                        // Handle tool calls
                                         if let Some(tool_calls) = &choice.delta.tool_calls {
                                             if let Some(index) = current_non_tool_block_index.take() {
                                                 let event = json!({
@@ -393,7 +393,7 @@ pub fn create_anthropic_sse_stream<E: std::error::Error + Send + 'static>(
                                             }
                                         }
 
-                                        // 处理 finish_reason
+                                        // Handle finish_reason
                                         if let Some(finish_reason) = &choice.finish_reason {
                                             if let Some(index) = current_non_tool_block_index.take() {
                                                 let event = json!({
@@ -550,7 +550,7 @@ fn extract_cache_read_tokens(usage: &Usage) -> Option<u32> {
         .filter(|&v| v > 0)
 }
 
-/// 映射停止原因
+/// Maps the stop reason
 fn map_stop_reason(finish_reason: Option<&str>) -> Option<String> {
     finish_reason.map(|r| {
         match r {

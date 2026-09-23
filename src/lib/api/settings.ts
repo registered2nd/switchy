@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Settings, WebDavSyncSettings, RemoteSnapshotInfo } from "@/types";
+import type { Settings } from "@/types";
 import type { AppId } from "./types";
 
 export interface ConfigTransferResult {
@@ -7,15 +7,6 @@ export interface ConfigTransferResult {
   message: string;
   filePath?: string;
   backupId?: string;
-}
-
-export interface WebDavTestResult {
-  success: boolean;
-  message?: string;
-}
-
-export interface WebDavSyncResult {
-  status: string;
 }
 
 export const settingsApi = {
@@ -29,14 +20,6 @@ export const settingsApi = {
 
   async restart(): Promise<boolean> {
     return await invoke("restart_app");
-  },
-
-  async checkUpdates(): Promise<void> {
-    await invoke("check_for_updates");
-  },
-
-  async isPortable(): Promise<boolean> {
-    return await invoke("is_portable_mode");
   },
 
   async getConfigDir(appId: AppId): Promise<string> {
@@ -83,21 +66,6 @@ export const settingsApi = {
     return await invoke("set_app_config_dir_override", { path });
   },
 
-  async applyClaudePluginConfig(options: {
-    official: boolean;
-  }): Promise<boolean> {
-    const { official } = options;
-    return await invoke("apply_claude_plugin_config", { official });
-  },
-
-  async applyClaudeOnboardingSkip(): Promise<boolean> {
-    return await invoke("apply_claude_onboarding_skip");
-  },
-
-  async clearClaudeOnboardingSkip(): Promise<boolean> {
-    return await invoke("clear_claude_onboarding_skip");
-  },
-
   async saveFileDialog(defaultName: string): Promise<string | null> {
     return await invoke("save_file_dialog", { defaultName });
   },
@@ -112,42 +80,6 @@ export const settingsApi = {
 
   async importConfigFromFile(filePath: string): Promise<ConfigTransferResult> {
     return await invoke("import_config_from_file", { filePath });
-  },
-
-  // ─── WebDAV sync ──────────────────────────────────────────
-
-  async webdavTestConnection(
-    settings: WebDavSyncSettings,
-    preserveEmptyPassword = true,
-  ): Promise<WebDavTestResult> {
-    return await invoke("webdav_test_connection", {
-      settings,
-      preserveEmptyPassword,
-    });
-  },
-
-  async webdavSyncUpload(): Promise<WebDavSyncResult> {
-    return await invoke("webdav_sync_upload");
-  },
-
-  async webdavSyncDownload(): Promise<WebDavSyncResult> {
-    return await invoke("webdav_sync_download");
-  },
-
-  async webdavSyncSaveSettings(
-    settings: WebDavSyncSettings,
-    passwordTouched = false,
-  ): Promise<{ success: boolean }> {
-    return await invoke("webdav_sync_save_settings", {
-      settings,
-      passwordTouched,
-    });
-  },
-
-  async webdavSyncFetchRemoteInfo(): Promise<
-    RemoteSnapshotInfo | { empty: true }
-  > {
-    return await invoke("webdav_sync_fetch_remote_info");
   },
 
   async syncCurrentProvidersLive(): Promise<void> {
@@ -179,25 +111,6 @@ export const settingsApi = {
 
   async getAutoLaunchStatus(): Promise<boolean> {
     return await invoke("get_auto_launch_status");
-  },
-
-  async getToolVersions(
-    tools?: string[],
-    wslShellByTool?: Record<
-      string,
-      { wslShell?: string | null; wslShellFlag?: string | null }
-    >,
-  ): Promise<
-    Array<{
-      name: string;
-      version: string | null;
-      latest_version: string | null;
-      error: string | null;
-      env_type: "windows" | "wsl" | "macos" | "linux" | "unknown";
-      wsl_distro: string | null;
-    }>
-  > {
-    return await invoke("get_tool_versions", { tools, wslShellByTool });
   },
 
   async getRectifierConfig(): Promise<RectifierConfig> {

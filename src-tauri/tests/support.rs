@@ -1,9 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use switchy_lib::{update_settings, AppSettings, AppState, Database, MultiAppConfig, ProxyService};
+use indexmap::IndexMap;
+use std::collections::HashMap;
+use switchy_lib::{
+    update_settings, AppSettings, AppState, AppType, Database, Provider, ProxyService,
+};
 
-/// 为测试设置隔离的 HOME 目录，避免污染真实用户数据。
+/// Set up an isolated HOME directory for tests so real user data is not touched.
 pub fn ensure_test_home() -> &'static Path {
     static HOME: OnceLock<PathBuf> = OnceLock::new();
     HOME.get_or_init(|| {
@@ -12,8 +16,8 @@ pub fn ensure_test_home() -> &'static Path {
             let _ = std::fs::remove_dir_all(&base);
         }
         std::fs::create_dir_all(&base).expect("create test home");
-        // Windows 上 `dirs::home_dir()` 不受 HOME/USERPROFILE 影响（走 Known Folder API），
-        // 用 SWITCHY_TEST_HOME 显式覆盖，以确保测试不会污染真实用户目录。
+        // On Windows, `dirs::home_dir()` ignores HOME/USERPROFILE (it uses the Known Folder API),
+        // so SWITCHY_TEST_HOME overrides it explicitly to keep tests out of the real user directory.
         std::env::set_var("SWITCHY_TEST_HOME", &base);
         std::env::set_var("HOME", &base);
         #[cfg(windows)]
@@ -23,7 +27,7 @@ pub fn ensure_test_home() -> &'static Path {
     .as_path()
 }
 
-/// 清理测试目录中生成的配置文件与缓存。
+/// Remove config files and caches generated in the test directory.
 pub fn reset_test_fs() {
     let home = ensure_test_home();
     for sub in [
@@ -47,17 +51,17 @@ pub fn reset_test_fs() {
         let _ = std::fs::remove_file(&claude_json);
     }
 
-    // 重置内存中的设置缓存，确保测试环境不受上一次调用影响
+    // Reset the in-memory settings cache so the test environment is not affected by the previous call
     let _ = update_settings(AppSettings::default());
 }
 
-/// 全局互斥锁，避免多测试并发写入相同的 HOME 目录。
+/// Global mutex so concurrent tests do not write to the same HOME directory.
 pub fn test_mutex() -> &'static Mutex<()> {
     static MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
     MUTEX.get_or_init(|| Mutex::new(()))
 }
 
-/// 创建测试用的 AppState，包含一个空的数据库
+/// Create a test AppState with an empty database
 #[allow(dead_code)]
 pub fn create_test_state() -> Result<AppState, Box<dyn std::error::Error>> {
     let db = Arc::new(Database::init()?);
@@ -65,13 +69,48 @@ pub fn create_test_state() -> Result<AppState, Box<dyn std::error::Error>> {
     Ok(AppState { db, proxy_service })
 }
 
-/// 创建测试用的 AppState，并从 MultiAppConfig 迁移数据
+/// Providers per app for a test database: each app's providers in order and
+/// the current one.
+#[derive(Default)]
+#[allow(dead_code)]
+pub struct TestManager {
+    pub providers: IndexMap<String, Provider>,
+    pub current: String,
+}
+
+#[derive(Default)]
+#[allow(dead_code)]
+pub struct TestConfig {
+    managers: HashMap<String, TestManager>,
+}
+
+#[allow(dead_code)]
+impl TestConfig {
+    pub fn get_manager_mut(&mut self, app: &AppType) -> Option<&mut TestManager> {
+        Some(self.managers.entry(app.as_str().to_string()).or_default())
+    }
+
+    pub fn get_manager(&self, app: &AppType) -> Option<&TestManager> {
+        self.managers.get(app.as_str())
+    }
+}
+
+/// A test `AppState` whose database holds `config`'s providers.
 #[allow(dead_code)]
 pub fn create_test_state_with_config(
-    config: &MultiAppConfig,
+    config: &TestConfig,
 ) -> Result<AppState, Box<dyn std::error::Error>> {
     let db = Arc::new(Database::init()?);
-    db.migrate_from_json(config)?;
+    for (app, manager) in &config.managers {
+        for (index, provider) in manager.providers.values().enumerate() {
+            let mut provider = provider.clone();
+            provider.sort_index.get_or_insert(index);
+            db.save_provider(app, &provider)?;
+        }
+        if !manager.current.is_empty() {
+            db.set_current_provider(app, &manager.current)?;
+        }
+    }
     let proxy_service = ProxyService::new(db.clone());
     Ok(AppState { db, proxy_service })
 }

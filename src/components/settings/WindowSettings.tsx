@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import type { SettingsFormState } from "@/hooks/useSettings";
-import { AppWindow, MonitorUp, Power, EyeOff } from "lucide-react";
+import { AppWindow, Power, EyeOff } from "lucide-react";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -47,24 +47,6 @@ export function WindowSettings({ settings, onChange }: WindowSettingsProps) {
             </motion.div>
           )}
         </AnimatePresence>
-
-        <ToggleRow
-          icon={<MonitorUp className="h-4 w-4 text-purple-500" />}
-          title={t("settings.enableClaudePluginIntegration")}
-          description={t("settings.enableClaudePluginIntegrationDescription")}
-          checked={!!settings.enableClaudePluginIntegration}
-          onCheckedChange={(value) =>
-            onChange({ enableClaudePluginIntegration: value })
-          }
-        />
-
-        <ToggleRow
-          icon={<MonitorUp className="h-4 w-4 text-cyan-500" />}
-          title={t("settings.skipClaudeOnboarding")}
-          description={t("settings.skipClaudeOnboardingDescription")}
-          checked={!!settings.skipClaudeOnboarding}
-          onCheckedChange={(value) => onChange({ skipClaudeOnboarding: value })}
-        />
 
         <ToggleRow
           icon={<AppWindow className="h-4 w-4 text-blue-500" />}

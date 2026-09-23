@@ -1,26 +1,26 @@
 //! Claude (Anthropic) Provider Adapter
 //!
-//! 支持透传模式和 OpenAI 格式转换模式
+//! Supports passthrough mode and OpenAI format conversion mode
 //!
-//! ## API 格式
-//! - **anthropic** (默认): Anthropic Messages API 格式，直接透传
-//! - **openai_chat**: OpenAI Chat Completions 格式，需要 Anthropic ↔ OpenAI 转换
-//! - **openai_responses**: OpenAI Responses API 格式，需要 Anthropic ↔ Responses 转换
+//! ## API formats
+//! - **anthropic** (default): Anthropic Messages API format, passed through as-is
+//! - **openai_chat**: OpenAI Chat Completions format, needs Anthropic ↔ OpenAI conversion
+//! - **openai_responses**: OpenAI Responses API format, needs Anthropic ↔ Responses conversion
 //!
-//! ## 认证模式
-//! - **Claude**: Anthropic 官方 API (x-api-key + anthropic-version)
-//! - **ClaudeAuth**: 中转服务 (仅 Bearer 认证，无 x-api-key)
-//! - **OpenRouter**: 已支持 Claude Code 兼容接口，默认透传
+//! ## Auth modes
+//! - **Claude**: official Anthropic API (x-api-key + anthropic-version)
+//! - **ClaudeAuth**: relay service (Bearer auth only, no x-api-key)
+//! - **OpenRouter**: supports the Claude Code compatible endpoint; passed through by default
 //! - **GitHubCopilot**: GitHub Copilot (OAuth + Copilot Token)
 
 use super::{AuthInfo, AuthStrategy, ProviderAdapter, ProviderType};
 use crate::provider::Provider;
 use crate::proxy::error::ProxyError;
 
-/// 获取 Claude 供应商的 API 格式
+/// Returns the API format of a Claude provider
 ///
-/// 供 handler/forwarder 外部使用的公开函数。
-/// 优先级：meta.apiFormat > settings_config.api_format > openrouter_compat_mode > 默认 "anthropic"
+/// Public so the handler and forwarder can use it.
+/// Priority: meta.apiFormat > settings_config.api_format > openrouter_compat_mode > default "anthropic"
 pub fn get_claude_api_format(provider: &Provider) -> &'static str {
     // 1) Preferred: meta.apiFormat (SSOT, never written to Claude Code config)
     if let Some(meta) = provider.meta.as_ref() {
@@ -89,7 +89,7 @@ pub fn transform_claude_request_for_api_format(
     }
 }
 
-/// Claude 适配器
+/// Claude adapter
 pub struct ClaudeAdapter;
 
 impl ClaudeAdapter {
@@ -97,25 +97,25 @@ impl ClaudeAdapter {
         Self
     }
 
-    /// 获取供应商类型
+    /// Returns the provider type
     ///
-    /// 根据 base_url 和 auth_mode 检测具体的供应商类型：
-    /// - GitHubCopilot: meta.provider_type 为 github_copilot 或 base_url 包含 githubcopilot.com
-    /// - OpenRouter: base_url 包含 openrouter.ai
-    /// - ClaudeAuth: auth_mode 为 bearer_only
-    /// - Claude: 默认 Anthropic 官方
+    /// Detects the concrete provider type from base_url and auth_mode:
+    /// - GitHubCopilot: meta.provider_type is github_copilot, or base_url contains githubcopilot.com
+    /// - OpenRouter: base_url contains openrouter.ai
+    /// - ClaudeAuth: auth_mode is bearer_only
+    /// - Claude: default, official Anthropic
     pub fn provider_type(&self, provider: &Provider) -> ProviderType {
-        // 检测 GitHub Copilot
+        // Detect GitHub Copilot
         if self.is_github_copilot(provider) {
             return ProviderType::GitHubCopilot;
         }
 
-        // 检测 OpenRouter
+        // Detect OpenRouter
         if self.is_openrouter(provider) {
             return ProviderType::OpenRouter;
         }
 
-        // 检测 ClaudeAuth (仅 Bearer 认证)
+        // Detect ClaudeAuth (Bearer auth only)
         if self.is_bearer_only_mode(provider) {
             return ProviderType::ClaudeAuth;
         }
@@ -123,16 +123,16 @@ impl ClaudeAdapter {
         ProviderType::Claude
     }
 
-    /// 检测是否为 GitHub Copilot 供应商
+    /// Whether this is a GitHub Copilot provider
     fn is_github_copilot(&self, provider: &Provider) -> bool {
-        // 方式1: 检查 meta.provider_type
+        // Option 1: check meta.provider_type
         if let Some(meta) = provider.meta.as_ref() {
             if meta.provider_type.as_deref() == Some("github_copilot") {
                 return true;
             }
         }
 
-        // 方式2: 检查 base_url（兼容旧数据的 fallback，后续应优先依赖 providerType）
+        // Option 2: check base_url (fallback for old data; rely on providerType going forward)
         if let Ok(base_url) = self.extract_base_url(provider) {
             if base_url.contains("githubcopilot.com") {
                 return true;
@@ -142,7 +142,7 @@ impl ClaudeAdapter {
         false
     }
 
-    /// 检测是否使用 OpenRouter
+    /// Whether the provider uses OpenRouter
     fn is_openrouter(&self, provider: &Provider) -> bool {
         if let Ok(base_url) = self.extract_base_url(provider) {
             return base_url.contains("openrouter.ai");
@@ -150,19 +150,19 @@ impl ClaudeAdapter {
         false
     }
 
-    /// 获取 API 格式
+    /// Returns the API format
     ///
-    /// 从 provider.meta.api_format 读取格式设置：
-    /// - "anthropic" (默认): Anthropic Messages API 格式，直接透传
-    /// - "openai_chat": OpenAI Chat Completions 格式，需要格式转换
-    /// - "openai_responses": OpenAI Responses API 格式，需要格式转换
+    /// Reads the format from provider.meta.api_format:
+    /// - "anthropic" (default): Anthropic Messages API format, passed through as-is
+    /// - "openai_chat": OpenAI Chat Completions format, needs conversion
+    /// - "openai_responses": OpenAI Responses API format, needs conversion
     fn get_api_format(&self, provider: &Provider) -> &'static str {
         get_claude_api_format(provider)
     }
 
-    /// 检测是否为仅 Bearer 认证模式
+    /// Whether this is Bearer-only auth mode
     fn is_bearer_only_mode(&self, provider: &Provider) -> bool {
-        // 检查 settings_config 中的 auth_mode
+        // Check auth_mode in settings_config
         if let Some(auth_mode) = provider
             .settings_config
             .get("auth_mode")
@@ -173,7 +173,7 @@ impl ClaudeAdapter {
             }
         }
 
-        // 检查 env 中的 AUTH_MODE
+        // Check AUTH_MODE in env
         if let Some(env) = provider.settings_config.get("env") {
             if let Some(auth_mode) = env.get("AUTH_MODE").and_then(|v| v.as_str()) {
                 if auth_mode == "bearer_only" {
@@ -185,16 +185,16 @@ impl ClaudeAdapter {
         false
     }
 
-    /// 从 Provider 配置中提取 API Key
+    /// Extracts the API key from the provider config
     fn extract_key(&self, provider: &Provider) -> Option<String> {
         if let Some(env) = provider.settings_config.get("env") {
-            // Anthropic 标准 key
+            // Standard Anthropic keys
             if let Some(key) = env
                 .get("ANTHROPIC_AUTH_TOKEN")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
             {
-                log::debug!("[Claude] 使用 ANTHROPIC_AUTH_TOKEN");
+                log::debug!("[Claude] Using ANTHROPIC_AUTH_TOKEN");
                 return Some(key.to_string());
             }
             if let Some(key) = env
@@ -202,7 +202,7 @@ impl ClaudeAdapter {
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
             {
-                log::debug!("[Claude] 使用 ANTHROPIC_API_KEY");
+                log::debug!("[Claude] Using ANTHROPIC_API_KEY");
                 return Some(key.to_string());
             }
             // OpenRouter key
@@ -211,21 +211,21 @@ impl ClaudeAdapter {
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
             {
-                log::debug!("[Claude] 使用 OPENROUTER_API_KEY");
+                log::debug!("[Claude] Using OPENROUTER_API_KEY");
                 return Some(key.to_string());
             }
-            // 备选 OpenAI key (用于 OpenRouter)
+            // Fallback OpenAI key (for OpenRouter)
             if let Some(key) = env
                 .get("OPENAI_API_KEY")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
             {
-                log::debug!("[Claude] 使用 OPENAI_API_KEY");
+                log::debug!("[Claude] Using OPENAI_API_KEY");
                 return Some(key.to_string());
             }
         }
 
-        // 尝试直接获取
+        // Try a top-level key
         if let Some(key) = provider
             .settings_config
             .get("apiKey")
@@ -233,11 +233,11 @@ impl ClaudeAdapter {
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
         {
-            log::debug!("[Claude] 使用 apiKey/api_key");
+            log::debug!("[Claude] Using apiKey/api_key");
             return Some(key.to_string());
         }
 
-        log::warn!("[Claude] 未找到有效的 API Key");
+        log::warn!("[Claude] No valid API key found");
         None
     }
 }
@@ -265,14 +265,14 @@ impl ProviderAdapter for ClaudeAdapter {
             return Ok(crate::proxy::claude_pool::ANTHROPIC_BASE_URL.to_string());
         }
 
-        // 1. 从 env 中获取
+        // 1. From env
         if let Some(env) = provider.settings_config.get("env") {
             if let Some(url) = env.get("ANTHROPIC_BASE_URL").and_then(|v| v.as_str()) {
                 return Ok(url.trim_end_matches('/').to_string());
             }
         }
 
-        // 2. 尝试直接获取
+        // 2. Try a top-level field
         if let Some(url) = provider
             .settings_config
             .get("base_url")
@@ -310,10 +310,10 @@ impl ProviderAdapter for ClaudeAdapter {
 
         let provider_type = self.provider_type(provider);
 
-        // GitHub Copilot 使用特殊的认证策略
-        // 实际的 token 会在代理请求时动态获取
+        // GitHub Copilot uses its own auth strategy;
+        // the real token is fetched when the request is proxied
         if provider_type == ProviderType::GitHubCopilot {
-            // 返回一个占位符，实际 token 由 CopilotAuthManager 动态提供
+            // Return a placeholder; CopilotAuthManager supplies the real token
             return Some(AuthInfo::new(
                 "copilot_placeholder".to_string(),
                 AuthStrategy::GitHubCopilot,
@@ -332,11 +332,11 @@ impl ProviderAdapter for ClaudeAdapter {
 
     fn build_url(&self, base_url: &str, endpoint: &str) -> String {
         // NOTE:
-        // 过去 OpenRouter 只有 OpenAI Chat Completions 兼容接口，需要把 Claude 的 `/v1/messages`
-        // 映射到 `/v1/chat/completions`，并做 Anthropic ↔ OpenAI 的格式转换。
+        // OpenRouter used to offer only an OpenAI Chat Completions compatible endpoint, so Claude's `/v1/messages`
+        // was mapped to `/v1/chat/completions` with Anthropic ↔ OpenAI conversion.
         //
-        // 现在 OpenRouter 已推出 Claude Code 兼容接口，因此默认直接透传 endpoint。
-        // 如需回退旧逻辑，可在 forwarder 中根据 needs_transform 改写 endpoint。
+        // OpenRouter now has a Claude Code compatible endpoint, so the endpoint is passed through by default.
+        // To restore the old behaviour, rewrite the endpoint in the forwarder based on needs_transform.
         //
         let mut base = format!(
             "{}/{}",
@@ -344,7 +344,7 @@ impl ProviderAdapter for ClaudeAdapter {
             endpoint.trim_start_matches('/')
         );
 
-        // 去除重复的 /v1/v1（可能由 base_url 与 endpoint 都带版本导致）
+        // Collapse a duplicated /v1/v1 (when both base_url and endpoint carry the version)
         while base.contains("/v1/v1") {
             base = base.replace("/v1/v1", "/v1");
         }
@@ -354,7 +354,7 @@ impl ProviderAdapter for ClaudeAdapter {
 
     fn get_auth_headers(&self, auth: &AuthInfo) -> Vec<(http::HeaderName, http::HeaderValue)> {
         use http::{HeaderName, HeaderValue};
-        // 注意：anthropic-version 由 forwarder.rs 统一处理（透传客户端值或设置默认值）
+        // Note: anthropic-version is handled in forwarder.rs (client value passed through, or a default set)
         let bearer = format!("Bearer {}", auth.api_key);
         match auth.strategy {
             AuthStrategy::Anthropic | AuthStrategy::ClaudeAuth | AuthStrategy::Bearer => {
@@ -364,7 +364,7 @@ impl ProviderAdapter for ClaudeAdapter {
                 )]
             }
             AuthStrategy::GitHubCopilot => {
-                // 生成请求追踪 ID
+                // Generate a request trace ID
                 let request_id = uuid::Uuid::new_v4().to_string();
                 vec![
                     (
@@ -391,7 +391,7 @@ impl ProviderAdapter for ClaudeAdapter {
                         HeaderName::from_static("x-github-api-version"),
                         HeaderValue::from_static(super::copilot_auth::COPILOT_API_VERSION),
                     ),
-                    // 26-04-01新增的copilot关键 headers
+                    // Key Copilot headers added on 26-04-01
                     (
                         HeaderName::from_static("openai-intent"),
                         HeaderValue::from_static("conversation-agent"),
@@ -423,15 +423,15 @@ impl ProviderAdapter for ClaudeAdapter {
     }
 
     fn needs_transform(&self, provider: &Provider) -> bool {
-        // GitHub Copilot 总是需要格式转换 (Anthropic → OpenAI)
+        // GitHub Copilot always needs conversion (Anthropic → OpenAI)
         if self.is_github_copilot(provider) {
             return true;
         }
 
-        // 根据 api_format 配置决定是否需要格式转换
-        // - "anthropic" (默认): 直接透传，无需转换
-        // - "openai_chat": 需要 Anthropic ↔ OpenAI Chat Completions 格式转换
-        // - "openai_responses": 需要 Anthropic ↔ OpenAI Responses API 格式转换
+        // api_format decides whether conversion is needed:
+        // - "anthropic" (default): passthrough, no conversion
+        // - "openai_chat": Anthropic ↔ OpenAI Chat Completions conversion
+        // - "openai_responses": Anthropic ↔ OpenAI Responses API conversion
         matches!(
             self.get_api_format(provider),
             "openai_chat" | "openai_responses"
@@ -594,7 +594,7 @@ mod tests {
     fn test_provider_type_detection() {
         let adapter = ClaudeAdapter::new();
 
-        // Anthropic 官方
+        // Official Anthropic
         let anthropic = create_provider(json!({
             "env": {
                 "ANTHROPIC_BASE_URL": "https://api.anthropic.com",

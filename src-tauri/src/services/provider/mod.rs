@@ -977,11 +977,11 @@ impl ProviderService {
 
     /// Get current provider ID
     ///
-    /// 使用有效的当前供应商 ID（验证过存在性）。
-    /// 优先从本地 settings 读取，验证后 fallback 到数据库的 is_current 字段。
-    /// 这确保了云同步场景下多设备可以独立选择供应商，且返回的 ID 一定有效。
+    /// Use the effective current provider ID (checked to exist).
+    /// Reads local settings first; after validation, falls back to the database's is_current field.
+    /// With cloud sync, each device can then pick its own provider, and the returned ID is always valid.
     ///
-    /// 对于累加模式应用（OpenCode, OpenClaw），不存在"当前供应商"概念，直接返回空字符串。
+    /// Additive-mode apps (OpenCode, OpenClaw) have no "current provider", so an empty string is returned.
     pub fn current(state: &AppState, app_type: AppType) -> Result<String, AppError> {
         // Additive mode apps have no "current" provider concept
         if app_type.is_additive_mode() {
@@ -1197,9 +1197,9 @@ impl ProviderService {
         let is_current = effective_current.as_deref() == Some(provider.id.as_str());
 
         if is_current {
-            // 如果 Claude 代理接管处于激活状态，并且代理服务正在运行：
-            // - 不直接走普通 Live 写入逻辑
-            // - 改为更新 Live 备份，并在 Claude 下同步代理安全的 Live 配置
+            // If Claude proxy takeover is active and the proxy service is running:
+            // - skip the normal live write
+            // - update the live backup instead, and for Claude sync the proxy-safe live config
             let has_live_backup =
                 futures::executor::block_on(state.db.get_live_backup(app_type.as_str()))
                     .ok()
@@ -1217,7 +1217,7 @@ impl ProviderService {
                     &provider,
                     existing_provider.as_ref(),
                 ))
-                .map_err(|e| AppError::Message(format!("更新 Live 备份失败: {e}")))?;
+                .map_err(|e| AppError::Message(format!("Failed to update the live backup: {e}")))?;
 
                 if matches!(app_type, AppType::Claude) {
                     futures::executor::block_on(
@@ -1228,7 +1228,9 @@ impl ProviderService {
                                 existing_provider.as_ref(),
                             ),
                     )
-                    .map_err(|e| AppError::Message(format!("同步 Claude Live 配置失败: {e}")))?;
+                    .map_err(|e| {
+                        AppError::Message(format!("Failed to sync the Claude live config: {e}"))
+                    })?;
                 }
             } else {
                 write_live_with_common_config(state.db.as_ref(), &app_type, &provider)?;
@@ -1240,8 +1242,8 @@ impl ProviderService {
 
     /// Delete a provider
     ///
-    /// 同时检查本地 settings 和数据库的当前供应商，防止删除任一端正在使用的供应商。
-    /// 对于累加模式应用（OpenCode, OpenClaw），可以随时删除任意供应商，同时从 live 配置中移除。
+    /// Checks both local settings and the database's current provider, so a provider in use on either side cannot be deleted.
+    /// Additive-mode apps (OpenCode, OpenClaw) can delete any provider at any time; it is also removed from the live config.
     pub fn delete(state: &AppState, app_type: AppType, id: &str) -> Result<(), AppError> {
         // Additive mode apps - no current provider concept
         if app_type.is_additive_mode() {
@@ -1296,7 +1298,7 @@ impl ProviderService {
 
         if local_current.as_deref() == Some(id) || db_current.as_deref() == Some(id) {
             return Err(AppError::Message(
-                "无法删除当前正在使用的供应商".to_string(),
+                "Cannot delete the provider currently in use".to_string(),
             ));
         }
 
@@ -1387,7 +1389,7 @@ impl ProviderService {
         let providers = state.db.get_all_providers(app_type.as_str())?;
         let _provider = providers
             .get(id)
-            .ok_or_else(|| AppError::Message(format!("供应商 {id} 不存在")))?;
+            .ok_or_else(|| AppError::Message(format!("Provider {id} not found")))?;
 
         // OMO providers are switched through their own exclusive path.
         if matches!(app_type, AppType::OpenCode) && _provider.category.as_deref() == Some("omo") {
@@ -1422,7 +1424,7 @@ impl ProviderService {
         if should_hot_switch {
             // Proxy takeover mode: hot-switch only, don't write Live config
             log::info!(
-                "代理接管模式：热切换 {} 的目标供应商为 {}",
+                "Proxy takeover mode: hot-switching the target provider of {} to {}",
                 app_type.as_str(),
                 id
             );
@@ -1432,7 +1434,7 @@ impl ProviderService {
                     .proxy_service
                     .hot_switch_provider(app_type.as_str(), id),
             )
-            .map_err(|e| AppError::Message(format!("热切换失败: {e}")))?;
+            .map_err(|e| AppError::Message(format!("Hot switch failed: {e}")))?;
 
             // Note: No Live config write, no MCP sync
             // The proxy server will route requests to the new provider via is_current
@@ -1470,7 +1472,7 @@ impl ProviderService {
     ) -> Result<SwitchResult, AppError> {
         let provider = providers
             .get(id)
-            .ok_or_else(|| AppError::Message(format!("供应商 {id} 不存在")))?;
+            .ok_or_else(|| AppError::Message(format!("Provider {id} not found")))?;
 
         // OMO ↔ OMO Slim are mutually exclusive; activating one removes the other's config file.
         if matches!(app_type, AppType::OpenCode) {
@@ -1660,7 +1662,7 @@ impl ProviderService {
                 provider,
                 None,
             ))
-            .map_err(|e| AppError::Message(format!("更新 Live 备份失败: {e}")))?;
+            .map_err(|e| AppError::Message(format!("Failed to update the live backup: {e}")))?;
             return Ok(());
         }
 
@@ -2100,7 +2102,6 @@ impl ProviderService {
         .await
     }
 
-
     fn validate_provider_settings(app_type: &AppType, provider: &Provider) -> Result<(), AppError> {
         match app_type {
             AppType::Claude => {
@@ -2496,21 +2497,21 @@ pub struct ProviderSortUpdate {
 }
 
 // ============================================================================
-// 统一供应商（Universal Provider）服务方法
+// Universal provider service methods
 // ============================================================================
 
 use crate::provider::UniversalProvider;
 use std::collections::HashMap;
 
 impl ProviderService {
-    /// 获取所有统一供应商
+    /// Get all universal providers
     pub fn list_universal(
         state: &AppState,
     ) -> Result<HashMap<String, UniversalProvider>, AppError> {
         state.db.get_all_universal_providers()
     }
 
-    /// 获取单个统一供应商
+    /// Get a single universal provider
     pub fn get_universal(
         state: &AppState,
         id: &str,
@@ -2518,26 +2519,26 @@ impl ProviderService {
         state.db.get_universal_provider(id)
     }
 
-    /// 添加或更新统一供应商（不自动同步，需手动调用 sync_universal_to_apps）
+    /// Add or update a universal provider (no automatic sync; call sync_universal_to_apps manually)
     pub fn upsert_universal(
         state: &AppState,
         provider: UniversalProvider,
     ) -> Result<bool, AppError> {
-        // 保存统一供应商
+        // Save the universal provider
         state.db.save_universal_provider(&provider)?;
 
         Ok(true)
     }
 
-    /// 删除统一供应商
+    /// Delete a universal provider
     pub fn delete_universal(state: &AppState, id: &str) -> Result<bool, AppError> {
-        // 获取统一供应商（用于删除生成的子供应商）
+        // Get the universal provider (to delete the child providers it generated)
         let provider = state.db.get_universal_provider(id)?;
 
-        // 删除统一供应商
+        // Delete the universal provider
         state.db.delete_universal_provider(id)?;
 
-        // 删除生成的子供应商
+        // Delete the generated child providers
         if let Some(p) = provider {
             if p.apps.claude {
                 let claude_id = format!("universal-claude-{id}");
@@ -2556,16 +2557,16 @@ impl ProviderService {
         Ok(true)
     }
 
-    /// 同步统一供应商到各应用
+    /// Sync a universal provider to each app
     pub fn sync_universal_to_apps(state: &AppState, id: &str) -> Result<bool, AppError> {
         let provider = state
             .db
             .get_universal_provider(id)?
-            .ok_or_else(|| AppError::Message(format!("统一供应商 {id} 不存在")))?;
+            .ok_or_else(|| AppError::Message(format!("Universal provider {id} not found")))?;
 
-        // 同步到 Claude
+        // Sync to Claude
         if let Some(mut claude_provider) = provider.to_claude_provider() {
-            // 合并已有配置
+            // Merge with the existing config
             if let Some(existing) = state.db.get_provider_by_id(&claude_provider.id, "claude")? {
                 let mut merged = existing.settings_config.clone();
                 Self::merge_json(&mut merged, &claude_provider.settings_config);
@@ -2573,14 +2574,14 @@ impl ProviderService {
             }
             state.db.save_provider("claude", &claude_provider)?;
         } else {
-            // 如果禁用了 Claude，删除对应的子供应商
+            // If Claude is disabled, delete the matching child provider
             let claude_id = format!("universal-claude-{id}");
             let _ = state.db.delete_provider("claude", &claude_id);
         }
 
-        // 同步到 Codex
+        // Sync to Codex
         if let Some(mut codex_provider) = provider.to_codex_provider() {
-            // 合并已有配置
+            // Merge with the existing config
             if let Some(existing) = state.db.get_provider_by_id(&codex_provider.id, "codex")? {
                 let mut merged = existing.settings_config.clone();
                 Self::merge_json(&mut merged, &codex_provider.settings_config);
@@ -2592,9 +2593,9 @@ impl ProviderService {
             let _ = state.db.delete_provider("codex", &codex_id);
         }
 
-        // 同步到 Gemini
+        // Sync to Gemini
         if let Some(mut gemini_provider) = provider.to_gemini_provider() {
-            // 合并已有配置
+            // Merge with the existing config
             if let Some(existing) = state.db.get_provider_by_id(&gemini_provider.id, "gemini")? {
                 let mut merged = existing.settings_config.clone();
                 Self::merge_json(&mut merged, &gemini_provider.settings_config);
@@ -2609,7 +2610,7 @@ impl ProviderService {
         Ok(true)
     }
 
-    /// 递归合并 JSON：base 为底，patch 覆盖同名字段
+    /// Merge JSON recursively: base is the bottom layer, patch overrides fields with the same name
     fn merge_json(base: &mut serde_json::Value, patch: &serde_json::Value) {
         use serde_json::Value;
 
@@ -2624,7 +2625,7 @@ impl ProviderService {
                     }
                 }
             }
-            // 其它类型：直接覆盖
+            // Other types: overwrite directly
             (base_val, patch_val) => {
                 *base_val = patch_val.clone();
             }

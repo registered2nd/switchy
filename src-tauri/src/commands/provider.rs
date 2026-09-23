@@ -11,12 +11,12 @@ use crate::services::{
 use crate::store::AppState;
 use std::str::FromStr;
 
-// 常量定义
+// Constants
 const TEMPLATE_TYPE_GITHUB_COPILOT: &str = "github_copilot";
 const TEMPLATE_TYPE_TOKEN_PLAN: &str = "token_plan";
 const COPILOT_UNIT_PREMIUM: &str = "requests";
 
-/// 获取所有供应商
+/// Get all providers
 #[tauri::command]
 pub fn get_providers(
     state: State<'_, AppState>,
@@ -154,12 +154,12 @@ pub fn import_default_config(state: State<'_, AppState>, app: String) -> Result<
 pub async fn queryProviderUsage(
     state: State<'_, AppState>,
     copilot_state: State<'_, CopilotAuthState>,
-    #[allow(non_snake_case)] providerId: String, // 使用 camelCase 匹配前端
+    #[allow(non_snake_case)] providerId: String, // camelCase to match the frontend
     app: String,
 ) -> Result<crate::provider::UsageResult, String> {
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
 
-    // 从数据库读取供应商信息，检查特殊模板类型
+    // Read the provider from the database and check for special template types
     let providers = state
         .db
         .get_all_providers(app_type.as_str())
@@ -172,7 +172,7 @@ pub async fn queryProviderUsage(
         .and_then(|s| s.template_type.as_deref())
         .unwrap_or("");
 
-    // ── GitHub Copilot 专用路径 ──
+    // -- GitHub Copilot path --
     if template_type == TEMPLATE_TYPE_GITHUB_COPILOT {
         let copilot_account_id = provider
             .and_then(|p| p.meta.as_ref())
@@ -208,9 +208,9 @@ pub async fn queryProviderUsage(
         });
     }
 
-    // ── Coding Plan 专用路径 ──
+    // -- Coding Plan path --
     if template_type == TEMPLATE_TYPE_TOKEN_PLAN {
-        // 从供应商配置中提取 API Key 和 Base URL
+        // Extract the API key and base URL from the provider config
         let settings_config = provider
             .map(|p| &p.settings_config)
             .cloned()
@@ -232,7 +232,7 @@ pub async fn queryProviderUsage(
             .await
             .map_err(|e| format!("Failed to query coding plan: {e}"))?;
 
-        // 将 SubscriptionQuota 转换为 UsageResult
+        // Convert SubscriptionQuota into UsageResult
         if !quota.success {
             return Ok(crate::provider::UsageResult {
                 success: false,
@@ -268,7 +268,7 @@ pub async fn queryProviderUsage(
         });
     }
 
-    // ── 通用 JS 脚本路径 ──
+    // -- Generic JS script path --
     ProviderService::query_usage(state.inner(), app_type, &providerId)
         .await
         .map_err(|e| e.to_string())
@@ -471,5 +471,5 @@ pub fn get_opencode_live_provider_ids() -> Result<Vec<String>, String> {
 }
 
 // ============================================================================
-// OpenClaw 专属命令 → 已迁移至 commands/openclaw.rs
+// OpenClaw commands -> moved to commands/openclaw.rs
 // ============================================================================

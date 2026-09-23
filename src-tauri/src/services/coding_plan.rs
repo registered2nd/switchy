@@ -1,12 +1,12 @@
-//! 国产 Token Plan 额度查询服务
+//! Token Plan quota queries for Chinese providers
 //!
-//! 支持 Kimi For Coding、智谱 GLM、MiniMax 的 Token Plan 额度查询。
-//! 复用 subscription 模块的 SubscriptionQuota / QuotaTier 类型。
+//! Supports Token Plan quota queries for Kimi For Coding, Zhipu GLM and MiniMax.
+//! Reuses the SubscriptionQuota / QuotaTier types from the subscription module.
 
 use super::subscription::{CredentialStatus, QuotaTier, SubscriptionQuota};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-// ── 供应商检测 ──────────────────────────────────────────────
+// ── Provider detection ──────────────────────────────────────
 
 enum CodingPlanProvider {
     Kimi,
@@ -46,22 +46,22 @@ fn millis_to_iso8601(ms: i64) -> Option<String> {
     chrono::DateTime::from_timestamp(secs, nsecs).map(|dt| dt.to_rfc3339())
 }
 
-/// 从 JSON 值提取重置时间，兼容字符串和数字格式
-/// - 字符串：直接返回（ISO 8601）
-/// - 数字：自动判断秒/毫秒并转为 ISO 8601
+/// Extract the reset time from a JSON value, accepting string and number formats
+/// - String: returned as is (ISO 8601)
+/// - Number: seconds or milliseconds are detected and converted to ISO 8601
 fn extract_reset_time(value: &serde_json::Value) -> Option<String> {
     if let Some(s) = value.as_str() {
         return Some(s.to_string());
     }
     if let Some(n) = value.as_i64() {
-        // 区分秒和毫秒：秒级时间戳 < 1e12，毫秒 >= 1e12
+        // Seconds vs milliseconds: second timestamps are < 1e12, millisecond ones >= 1e12
         let ms = if n < 1_000_000_000_000 { n * 1000 } else { n };
         return millis_to_iso8601(ms);
     }
     None
 }
 
-/// 解析 JSON 值为 f64，兼容数字和字符串格式（如 `100` 和 `"100"`）
+/// Parse a JSON value as f64, accepting numbers and strings (e.g. `100` and `"100"`)
 fn parse_f64(value: &serde_json::Value) -> Option<f64> {
     value
         .as_f64()
@@ -125,7 +125,7 @@ async fn query_kimi(api_key: &str) -> SubscriptionQuota {
 
     let mut tiers = Vec::new();
 
-    // 5 小时窗口限额（优先显示）
+    // 5-hour window limit (shown first)
     if let Some(limits) = body.get("limits").and_then(|v| v.as_array()) {
         for limit_item in limits {
             if let Some(detail) = limit_item.get("detail") {
@@ -148,7 +148,7 @@ async fn query_kimi(api_key: &str) -> SubscriptionQuota {
         }
     }
 
-    // 总体用量（周限额）
+    // Overall usage (weekly limit)
     if let Some(usage) = body.get("usage") {
         let limit = usage.get("limit").and_then(parse_f64).unwrap_or(1.0);
         let remaining = usage.get("remaining").and_then(parse_f64).unwrap_or(0.0);
@@ -179,15 +179,15 @@ async fn query_kimi(api_key: &str) -> SubscriptionQuota {
     }
 }
 
-// ── 智谱 GLM ────────────────────────────────────────────────
+// ── Zhipu GLM ───────────────────────────────────────────────
 
 async fn query_zhipu(api_key: &str) -> SubscriptionQuota {
     let client = crate::proxy::http_client::get();
 
-    // 统一走 api.z.ai 国际站（中国站 bigmodel.cn 有反爬机制）
+    // Always use the international api.z.ai (the China site bigmodel.cn has anti-scraping measures)
     let resp = client
         .get("https://api.z.ai/api/monitor/usage/quota/limit")
-        .header("Authorization", api_key) // 注意：智谱不加 Bearer 前缀
+        .header("Authorization", api_key) // Note: Zhipu takes no Bearer prefix
         .header("Content-Type", "application/json")
         .header("Accept-Language", "en-US,en")
         .timeout(std::time::Duration::from_secs(10))
@@ -223,7 +223,7 @@ async fn query_zhipu(api_key: &str) -> SubscriptionQuota {
         Err(e) => return make_error(format!("Failed to parse response: {e}")),
     };
 
-    // 检查业务级别错误
+    // Check for business-level errors
     if body.get("success").and_then(|v| v.as_bool()) == Some(false) {
         let msg = body
             .get("msg")
@@ -266,7 +266,7 @@ async fn query_zhipu(api_key: &str) -> SubscriptionQuota {
         }
     }
 
-    // 套餐等级存入 credential_message
+    // The plan tier goes into credential_message
     let level = data
         .get("level")
         .and_then(|v| v.as_str())
@@ -333,7 +333,7 @@ async fn query_minimax(api_key: &str, is_cn: bool) -> SubscriptionQuota {
         Err(e) => return make_error(format!("Failed to parse response: {e}")),
     };
 
-    // 检查业务级别错误
+    // Check for business-level errors
     if let Some(base_resp) = body.get("base_resp") {
         let status_code = base_resp
             .get("status_code")
@@ -351,9 +351,9 @@ async fn query_minimax(api_key: &str, is_cn: bool) -> SubscriptionQuota {
     let mut tiers = Vec::new();
 
     if let Some(model_remains) = body.get("model_remains").and_then(|v| v.as_array()) {
-        // 只取第一个模型（MiniMax-M*，主力编程模型）
+        // Take only the first model (MiniMax-M*, the main coding model)
         if let Some(item) = model_remains.first() {
-            // usage_count 是剩余量（满额=total，用完=0），需反转为已用百分比
+            // usage_count is the remaining amount (full = total, used up = 0); invert it to a used percentage
             let interval_total = item
                 .get("current_interval_total_count")
                 .and_then(|v| v.as_f64())
@@ -372,7 +372,7 @@ async fn query_minimax(api_key: &str, is_cn: bool) -> SubscriptionQuota {
                 });
             }
 
-            // 周额度
+            // Weekly quota
             let weekly_total = item
                 .get("current_weekly_total_count")
                 .and_then(|v| v.as_f64())
@@ -405,7 +405,7 @@ async fn query_minimax(api_key: &str, is_cn: bool) -> SubscriptionQuota {
     }
 }
 
-// ── 公开入口 ────────────────────────────────────────────────
+// ── Public entry point ──────────────────────────────────────
 
 pub async fn get_coding_plan_quota(
     base_url: &str,

@@ -828,15 +828,17 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             }
         }
         AppType::Codex => {
-            let obj = provider
-                .settings_config
-                .as_object()
-                .ok_or_else(|| AppError::Config("Codex 供应商配置必须是 JSON 对象".to_string()))?;
-            let auth = obj
-                .get("auth")
-                .ok_or_else(|| AppError::Config("Codex 供应商配置缺少 'auth' 字段".to_string()))?;
+            let obj = provider.settings_config.as_object().ok_or_else(|| {
+                AppError::Config("Codex provider config must be a JSON object".to_string())
+            })?;
+            let auth = obj.get("auth").ok_or_else(|| {
+                AppError::Config("Codex provider config is missing the 'auth' field".to_string())
+            })?;
             let config_str = obj.get("config").and_then(|v| v.as_str()).ok_or_else(|| {
-                AppError::Config("Codex 供应商配置缺少 'config' 字段或不是字符串".to_string())
+                AppError::Config(
+                    "Codex provider config is missing the 'config' field or it is not a string"
+                        .to_string(),
+                )
             })?;
 
             let auth_path = get_codex_auth_path();
@@ -862,12 +864,14 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             write_gemini_live(provider)?;
         }
         AppType::Kimi => {
-            let obj = provider
-                .settings_config
-                .as_object()
-                .ok_or_else(|| AppError::Config("Kimi 供应商配置必须是 JSON 对象".to_string()))?;
+            let obj = provider.settings_config.as_object().ok_or_else(|| {
+                AppError::Config("Kimi provider config must be a JSON object".to_string())
+            })?;
             let config_str = obj.get("config").and_then(Value::as_str).ok_or_else(|| {
-                AppError::Config("Kimi 供应商配置缺少 'config' 字段或不是字符串".to_string())
+                AppError::Config(
+                    "Kimi provider config is missing the 'config' field or it is not a string"
+                        .to_string(),
+                )
             })?;
             crate::kimi_config::write_kimi_live_atomic(obj.get("credentials"), config_str)?;
         }
@@ -1032,9 +1036,9 @@ pub(crate) fn sync_current_provider_for_app_to_live(
 
 /// Sync current provider to live configuration
 ///
-/// 使用有效的当前供应商 ID（验证过存在性）。
-/// 优先从本地 settings 读取，验证后 fallback 到数据库的 is_current 字段。
-/// 这确保了配置导入后无效 ID 会自动 fallback 到数据库。
+/// Use the effective current provider ID (checked to exist).
+/// Reads local settings first; after validation, falls back to the database's is_current field.
+/// This way an invalid ID left by a config import falls back to the database automatically.
 ///
 /// For additive mode apps (OpenCode), all providers are synced instead of just the current one.
 pub fn sync_current_to_live(state: &AppState) -> Result<(), AppError> {
@@ -1106,7 +1110,10 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             // Read .env file (environment variables)
             let env_path = get_gemini_env_path();
             if !env_path.exists() {
-                return Err(AppError::localized("gemini.env.missing", "Gemini .env file not found"));
+                return Err(AppError::localized(
+                    "gemini.env.missing",
+                    "Gemini .env file not found",
+                ));
             }
 
             let env_map = read_gemini_env()?;
@@ -1172,7 +1179,7 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
     {
         let providers = state.db.get_all_providers(app_type.as_str())?;
         if !providers.is_empty() {
-            return Ok(false); // 已有供应商，跳过
+            return Ok(false); // Provider already exists; skip
         }
     }
 
@@ -1261,7 +1268,7 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
         .db
         .set_current_provider(app_type.as_str(), &provider.id)?;
 
-    Ok(true) // 真正导入了
+    Ok(true) // Actually imported
 }
 
 /// Write Gemini live configuration with authentication handling

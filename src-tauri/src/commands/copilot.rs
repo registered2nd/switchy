@@ -1,6 +1,6 @@
 //! GitHub Copilot Tauri Commands
 //!
-//! 提供 Copilot OAuth 认证相关的 Tauri 命令，支持多账号管理。
+//! Tauri commands for Copilot OAuth authentication, with multi-account support.
 
 use crate::proxy::providers::copilot_auth::{
     CopilotAuthManager, CopilotAuthStatus, CopilotModel, CopilotUsageResponse, GitHubAccount,
@@ -10,14 +10,14 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::sync::RwLock;
 
-/// Copilot 认证状态
+/// Copilot authentication state
 pub struct CopilotAuthState(pub Arc<RwLock<CopilotAuthManager>>);
 
-// ==================== 设备码流程 ====================
+// ==================== Device code flow ====================
 
-/// 启动设备码流程
+/// Start the device code flow
 ///
-/// 返回设备码和用户码，用于 OAuth 认证
+/// Returns the device code and user code for OAuth authentication
 #[tauri::command]
 pub async fn copilot_start_device_flow(
     state: State<'_, CopilotAuthState>,
@@ -29,10 +29,10 @@ pub async fn copilot_start_device_flow(
         .map_err(|e| e.to_string())
 }
 
-/// 轮询 OAuth Token（向后兼容）
+/// Poll for the OAuth token (backward compatible)
 ///
-/// 使用设备码轮询 GitHub，等待用户完成授权
-/// 返回 true 表示授权成功，false 表示等待中
+/// Polls GitHub with the device code until the user finishes authorizing.
+/// Returns true once authorized, false while still waiting.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn copilot_poll_for_auth(
     device_code: String,
@@ -41,7 +41,7 @@ pub async fn copilot_poll_for_auth(
     let auth_manager = state.0.write().await;
     match auth_manager.poll_for_token(&device_code).await {
         Ok(Some(_account)) => {
-            log::info!("[CopilotAuth] 用户已授权");
+            log::info!("[CopilotAuth] User authorized");
             Ok(true)
         }
         Ok(None) => Ok(false),
@@ -49,15 +49,15 @@ pub async fn copilot_poll_for_auth(
             Ok(false)
         }
         Err(e) => {
-            log::error!("[CopilotAuth] 轮询失败: {e}");
+            log::error!("[CopilotAuth] Polling failed: {e}");
             Err(e.to_string())
         }
     }
 }
 
-/// 轮询 OAuth Token（多账号版本）
+/// Poll for the OAuth token (multi-account version)
 ///
-/// 返回新添加的账号信息，如果授权成功
+/// Returns the newly added account once authorization succeeds
 #[tauri::command(rename_all = "camelCase")]
 pub async fn copilot_poll_for_account(
     device_code: String,
@@ -70,15 +70,15 @@ pub async fn copilot_poll_for_account(
             Ok(None)
         }
         Err(e) => {
-            log::error!("[CopilotAuth] 轮询失败: {e}");
+            log::error!("[CopilotAuth] Polling failed: {e}");
             Err(e.to_string())
         }
     }
 }
 
-// ==================== 多账号管理 ====================
+// ==================== Multi-account management ====================
 
-/// 列出所有已认证的账号
+/// List all authenticated accounts
 #[tauri::command]
 pub async fn copilot_list_accounts(
     state: State<'_, CopilotAuthState>,
@@ -87,7 +87,7 @@ pub async fn copilot_list_accounts(
     Ok(auth_manager.list_accounts().await)
 }
 
-/// 移除指定账号
+/// Remove the given account
 #[tauri::command(rename_all = "camelCase")]
 pub async fn copilot_remove_account(
     account_id: String,
@@ -100,7 +100,7 @@ pub async fn copilot_remove_account(
         .map_err(|e| e.to_string())
 }
 
-/// 设置默认账号
+/// Set the default account
 #[tauri::command(rename_all = "camelCase")]
 pub async fn copilot_set_default_account(
     account_id: String,
@@ -113,9 +113,9 @@ pub async fn copilot_set_default_account(
         .map_err(|e| e.to_string())
 }
 
-// ==================== 状态查询 ====================
+// ==================== Status ====================
 
-/// 获取认证状态（包含所有账号）
+/// Get the authentication status (all accounts)
 #[tauri::command]
 pub async fn copilot_get_auth_status(
     state: State<'_, CopilotAuthState>,
@@ -124,25 +124,25 @@ pub async fn copilot_get_auth_status(
     Ok(auth_manager.get_status().await)
 }
 
-/// 检查是否已认证（有任意账号）
+/// Check whether any account is authenticated
 #[tauri::command]
 pub async fn copilot_is_authenticated(state: State<'_, CopilotAuthState>) -> Result<bool, String> {
     let auth_manager = state.0.read().await;
     Ok(auth_manager.is_authenticated().await)
 }
 
-/// 注销所有 Copilot 认证
+/// Sign out of all Copilot accounts
 #[tauri::command]
 pub async fn copilot_logout(state: State<'_, CopilotAuthState>) -> Result<(), String> {
     let auth_manager = state.0.write().await;
     auth_manager.clear_auth().await.map_err(|e| e.to_string())
 }
 
-// ==================== Token 获取 ====================
+// ==================== Token retrieval ====================
 
-/// 获取有效的 Copilot Token（向后兼容：使用第一个账号）
+/// Get a valid Copilot token (backward compatible: uses the first account)
 ///
-/// 内部使用，用于代理请求
+/// Internal; used for proxied requests
 #[tauri::command]
 pub async fn copilot_get_token(state: State<'_, CopilotAuthState>) -> Result<String, String> {
     let auth_manager = state.0.read().await;
@@ -152,7 +152,7 @@ pub async fn copilot_get_token(state: State<'_, CopilotAuthState>) -> Result<Str
         .map_err(|e| e.to_string())
 }
 
-/// 获取指定账号的有效 Copilot Token
+/// Get a valid Copilot token for the given account
 #[tauri::command(rename_all = "camelCase")]
 pub async fn copilot_get_token_for_account(
     account_id: String,
@@ -165,9 +165,9 @@ pub async fn copilot_get_token_for_account(
         .map_err(|e| e.to_string())
 }
 
-// ==================== 模型和使用量 ====================
+// ==================== Models and usage ====================
 
-/// 获取 Copilot 可用模型列表（向后兼容：使用第一个账号）
+/// Get the available Copilot models (backward compatible: uses the first account)
 #[tauri::command]
 pub async fn copilot_get_models(
     state: State<'_, CopilotAuthState>,
@@ -176,7 +176,7 @@ pub async fn copilot_get_models(
     auth_manager.fetch_models().await.map_err(|e| e.to_string())
 }
 
-/// 获取指定账号的 Copilot 可用模型列表
+/// Get the available Copilot models for the given account
 #[tauri::command(rename_all = "camelCase")]
 pub async fn copilot_get_models_for_account(
     account_id: String,
@@ -189,7 +189,7 @@ pub async fn copilot_get_models_for_account(
         .map_err(|e| e.to_string())
 }
 
-/// 获取 Copilot 使用量信息（向后兼容：使用第一个账号）
+/// Get Copilot usage (backward compatible: uses the first account)
 #[tauri::command]
 pub async fn copilot_get_usage(
     state: State<'_, CopilotAuthState>,
@@ -198,7 +198,7 @@ pub async fn copilot_get_usage(
     auth_manager.fetch_usage().await.map_err(|e| e.to_string())
 }
 
-/// 获取指定账号的 Copilot 使用量信息
+/// Get Copilot usage for the given account
 #[tauri::command(rename_all = "camelCase")]
 pub async fn copilot_get_usage_for_account(
     account_id: String,

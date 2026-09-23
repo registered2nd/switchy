@@ -1,12 +1,12 @@
-//! 模型列表获取服务
+//! Model list service
 //!
-//! 通过 OpenAI 兼容的 GET /v1/models 端点获取供应商可用模型列表。
-//! 主要面向第三方聚合站（硅基流动、OpenRouter 等）。
+//! Fetches a provider's available models through the OpenAI-compatible GET /v1/models endpoint.
+//! Mainly for third-party aggregators (SiliconFlow, OpenRouter, etc.).
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-/// 获取到的模型信息
+/// A fetched model
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchedModel {
@@ -14,7 +14,7 @@ pub struct FetchedModel {
     pub owned_by: Option<String>,
 }
 
-/// OpenAI 兼容的 /v1/models 响应格式
+/// OpenAI-compatible /v1/models response
 #[derive(Debug, Deserialize)]
 struct ModelsResponse {
     data: Option<Vec<ModelEntry>>,
@@ -28,9 +28,9 @@ struct ModelEntry {
 
 const FETCH_TIMEOUT_SECS: u64 = 15;
 
-/// 获取供应商的可用模型列表
+/// Get the available models for a provider
 ///
-/// 使用 OpenAI 兼容的 GET /v1/models 端点。
+/// Uses the OpenAI-compatible GET /v1/models endpoint.
 pub async fn fetch_models(
     base_url: &str,
     api_key: &str,
@@ -76,7 +76,7 @@ pub async fn fetch_models(
     Ok(models)
 }
 
-/// 构造 /v1/models 的完整 URL
+/// Build the full /v1/models URL
 fn build_models_url(base_url: &str, is_full_url: bool) -> Result<String, String> {
     let trimmed = base_url.trim().trim_end_matches('/');
 
@@ -85,12 +85,12 @@ fn build_models_url(base_url: &str, is_full_url: bool) -> Result<String, String>
     }
 
     if is_full_url {
-        // 尝试从完整端点 URL 推导 API 根路径
-        // 例如: https://proxy.example.com/v1/chat/completions → https://proxy.example.com/v1/models
+        // Derive the API root from a full endpoint URL
+        // e.g. https://proxy.example.com/v1/chat/completions -> https://proxy.example.com/v1/models
         if let Some(idx) = trimmed.find("/v1/") {
             return Ok(format!("{}/v1/models", &trimmed[..idx]));
         }
-        // 如果没有 /v1/ 路径，直接去掉最后一段路径
+        // Without a /v1/ path, drop the last path segment
         if let Some(idx) = trimmed.rfind('/') {
             let root = &trimmed[..idx];
             if root.contains("://") && root.len() > root.find("://").unwrap() + 3 {
@@ -100,8 +100,8 @@ fn build_models_url(base_url: &str, is_full_url: bool) -> Result<String, String>
         return Err("Cannot derive models endpoint from full URL".to_string());
     }
 
-    // 常规情况: base_url 是 API 根路径
-    // 如果已经包含 /v1 路径，直接追加 /models
+    // Normal case: base_url is the API root
+    // If it already contains /v1, append /models
     if trimmed.ends_with("/v1") {
         return Ok(format!("{trimmed}/models"));
     }

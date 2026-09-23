@@ -45,10 +45,10 @@ use std::sync::Arc;
 #[cfg(target_os = "macos")]
 use tauri::image::Image;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::RunEvent;
 use tauri::Manager;
+use tauri::RunEvent;
 
-/// 更新托盘菜单的Tauri命令
+/// Tauri command that updates the tray menu
 #[tauri::command]
 async fn update_tray_menu(
     app: tauri::AppHandle,
@@ -58,13 +58,13 @@ async fn update_tray_menu(
         Ok(new_menu) => {
             if let Some(tray) = app.tray_by_id("main") {
                 tray.set_menu(Some(new_menu))
-                    .map_err(|e| format!("更新托盘菜单失败: {e}"))?;
+                    .map_err(|e| format!("Failed to update the tray menu: {e}"))?;
                 return Ok(true);
             }
             Ok(false)
         }
         Err(err) => {
-            log::error!("创建托盘菜单失败: {err}");
+            log::error!("Failed to create the tray menu: {err}");
             Ok(false)
         }
     }
@@ -88,7 +88,7 @@ pub fn run() {
     // Before any HTTPS client is built. See `install_rustls_provider`.
     crate::proxy::http_client::install_rustls_provider();
 
-    // 设置 panic hook，在应用崩溃时记录日志到 <app_config_dir>/crash.log（默认 ~/.switchy/crash.log）
+    // Install the panic hook, which logs crashes to <app_config_dir>/crash.log (default ~/.switchy/crash.log)
     panic_hook::setup_panic_hook();
 
     let mut builder = tauri::Builder::default();
@@ -98,7 +98,7 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if crate::lightweight::is_lightweight_mode() {
                 if let Err(e) = crate::lightweight::exit_lightweight_mode(app) {
-                    log::error!("退出轻量模式重建窗口失败: {e}");
+                    log::error!("Failed to rebuild the window when leaving lightweight mode: {e}");
                 }
             }
 
@@ -112,7 +112,7 @@ pub fn run() {
     }
 
     let builder = builder
-        // 拦截窗口关闭：根据设置决定是否最小化到托盘
+        // Intercept window close: minimise to the tray if the setting says so
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let settings = crate::settings::get_settings();
@@ -138,28 +138,28 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .setup(|app| {
-            // 预先刷新 Store 覆盖配置，确保后续路径读取正确（日志/数据库等）
+            // Refresh the Store override first so later path lookups (logs, database, ...) are correct
             app_store::refresh_app_config_dir_override(app.handle());
             panic_hook::init_app_config_dir(crate::config::get_app_config_dir());
 
-            // 初始化日志（单文件输出到 <app_config_dir>/logs/switchy.log）
+            // Initialise logging (a single file at <app_config_dir>/logs/switchy.log)
             {
                 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
                 let log_dir = panic_hook::get_log_dir();
 
-                // 确保日志目录存在
+                // Make sure the log directory exists
                 if let Err(e) = std::fs::create_dir_all(&log_dir) {
-                    eprintln!("创建日志目录失败: {e}");
+                    eprintln!("Failed to create the log directory: {e}");
                 }
 
-                // 启动时删除旧日志文件，实现单文件覆盖效果
+                // Delete the old log file at startup, so there is only ever one file
                 let log_file_path = log_dir.join("switchy.log");
                 let _ = std::fs::remove_file(&log_file_path);
 
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
-                        // 初始化为 Trace，允许后续通过 log::set_max_level() 动态调整级别
+                        // Start at Trace so log::set_max_level() can adjust the level later
                         .level(log::LevelFilter::Trace)
                         .targets([
                             Target::new(TargetKind::Stdout),
@@ -168,25 +168,25 @@ pub fn run() {
                                 file_name: Some("switchy".into()),
                             }),
                         ])
-                        // 单文件模式：启动时删除旧文件，达到大小时轮转
-                        // 注意：KeepSome(n) 内部会做 n-2 运算，n=1 会导致 usize 下溢
-                        // KeepSome(2) 是最小安全值，表示不保留轮转文件
+                        // Single-file mode: the old file is deleted at startup and rotated when it reaches the size limit
+                        // Note: KeepSome(n) computes n-2 internally, so n=1 underflows usize
+                        // KeepSome(2) is the smallest safe value and keeps no rotated files
                         .rotation_strategy(RotationStrategy::KeepSome(2))
-                        // 单文件大小限制 1GB
+                        // 1 GB file size limit
                         .max_file_size(1024 * 1024 * 1024)
                         .timezone_strategy(TimezoneStrategy::UseLocal)
                         .build(),
                 )?;
             }
 
-            // 初始化数据库
+            // Initialise the database
             let app_config_dir = crate::config::get_app_config_dir();
             let db_path = app_config_dir.join(crate::paths::DB_FILE);
-            // 现在创建数据库（包含 Schema 迁移）
+            // Create the database now (including schema migration)
             //
-            // 说明：从 v3.8.* 升级的用户通常会走到这里的 SQLite schema 迁移，
-            // 若迁移失败（数据库损坏/权限不足/user_version 过新等），需要给用户明确提示，
-            // 否则表现可能只是“应用打不开/闪退”。
+            // Users upgrading from v3.8.* usually hit the SQLite schema migration here.
+            // If it fails (corrupt database, missing permissions, user_version too new, ...), tell the user clearly;
+            // otherwise it just looks like "the app won't open / crashes".
             let db = loop {
                 match crate::database::Database::init() {
                     Ok(db) => break Arc::new(db),
@@ -195,25 +195,25 @@ pub fn run() {
 
                         if !show_database_init_error_dialog(app.handle(), &db_path, &e.to_string())
                         {
-                            log::info!("用户选择退出程序");
+                            log::info!("User chose to exit");
                             std::process::exit(1);
                         }
 
-                        log::info!("用户选择重试初始化数据库");
+                        log::info!("User chose to retry database initialisation");
                     }
                 }
             };
 
             let app_state = AppState::new(db);
 
-            // 设置 AppHandle 用于代理故障转移时的 UI 更新
+            // Give the proxy the AppHandle so failover can update the UI
             app_state.proxy_service.set_app_handle(app.handle().clone());
 
             // ============================================================
-            // 按表独立判断的导入逻辑（各类数据独立检查，互不影响）
+            // Per-table import logic (each kind of data is checked independently)
             // ============================================================
 
-            // 2. OMO 配置导入（当数据库中无 OMO provider 时，从本地文件导入）
+            // 2. OMO config import (from the local file when the database has no OMO provider)
             {
                 let has_omo = app_state
                     .db
@@ -264,17 +264,17 @@ pub fn run() {
                 }
             }
 
-            // 迁移旧的 app_config_dir 配置到 Store
+            // Migrate the old app_config_dir setting to the Store
             if let Err(e) = app_store::migrate_app_config_dir_from_settings(app.handle()) {
-                log::warn!("迁移 app_config_dir 失败: {e}");
+                log::warn!("Failed to migrate app_config_dir: {e}");
             }
 
-            // 启动阶段不再无条件保存,避免意外覆盖用户配置。
+            // Startup no longer saves unconditionally, so user config is not overwritten by accident.
 
-            // 创建动态托盘菜单
+            // Build the dynamic tray menu
             let menu = tray::create_tray_menu(app.handle(), &app_state)?;
 
-            // 构建托盘
+            // Build the tray
             let mut tray_builder = TrayIconBuilder::with_id("main")
                 .on_tray_icon_event(|tray, event| match event {
                     // Left-click surfaces the main window (BACKLOG #7). Reuses
@@ -297,7 +297,7 @@ pub fn run() {
                 // (macOS secondary-click) via Tauri default.
                 .show_menu_on_left_click(false);
 
-            // 使用平台对应的托盘图标（macOS 使用模板图标适配深浅色）
+            // Platform tray icon (macOS uses a template icon that adapts to light and dark)
             #[cfg(target_os = "macos")]
             {
                 if let Some(icon) = macos_tray_icon() {
@@ -320,23 +320,23 @@ pub fn run() {
             }
 
             let _tray = tray_builder.build(app)?;
-            // 将同一个实例注入到全局状态，避免重复创建导致的不一致
+            // Register this same instance as global state, so no second copy can drift out of step
             app.manage(app_state);
 
-            // 从数据库加载日志配置并应用
+            // Load the log config from the database and apply it
             {
                 let db = &app.state::<AppState>().db;
                 if let Ok(log_config) = db.get_log_config() {
                     log::set_max_level(log_config.to_level_filter());
                     log::info!(
-                        "已加载日志配置: enabled={}, level={}",
+                        "Loaded log config: enabled={}, level={}",
                         log_config.enabled,
                         log_config.level
                     );
                 }
             }
 
-            // 初始化 CopilotAuthManager
+            // Initialise CopilotAuthManager
             {
                 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
                 use commands::CopilotAuthState;
@@ -348,7 +348,7 @@ pub fn run() {
                 log::info!("✓ CopilotAuthManager initialized");
             }
 
-            // 初始化全局出站代理 HTTP 客户端
+            // Initialise the global outbound-proxy HTTP client
             {
                 let db = &app.state::<AppState>().db;
                 let proxy_url = db.get_global_proxy_url().ok().flatten();
@@ -358,7 +358,7 @@ pub fn run() {
                         "[GlobalProxy] [GP-005] Failed to initialize with saved config: {e}"
                     );
 
-                    // 清除无效的代理配置
+                    // Clear the invalid proxy config
                     if proxy_url.is_some() {
                         log::warn!(
                             "[GlobalProxy] [GP-006] Clearing invalid proxy config from database"
@@ -370,7 +370,7 @@ pub fn run() {
                         }
                     }
 
-                    // 使用直连模式重新初始化
+                    // Re-initialise with a direct connection
                     if let Err(fallback_err) = crate::proxy::http_client::init(None) {
                         log::error!(
                             "[GlobalProxy] [GP-008] Failed to initialize direct connection: {fallback_err}"
@@ -379,34 +379,34 @@ pub fn run() {
                 }
             }
 
-            // 异常退出恢复 + 代理状态自动恢复
+            // Crash recovery and automatic proxy-state restore
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = app_handle.state::<AppState>();
 
-                // 检查是否有 Live 备份（表示上次异常退出时可能处于接管状态）
+                // Any live backup means the last run may have exited abnormally while taken over
                 let has_backups = match state.db.has_any_live_backup().await {
                     Ok(v) => v,
                     Err(e) => {
-                        log::error!("检查 Live 备份失败: {e}");
+                        log::error!("Failed to check live backups: {e}");
                         false
                     }
                 };
-                // 检查 Live 配置是否仍处于被接管状态（包含占位符）
+                // Check whether the live configs are still taken over (contain placeholders)
                 let live_taken_over = state.proxy_service.detect_takeover_in_live_configs();
 
                 if has_backups || live_taken_over {
-                    log::warn!("检测到上次异常退出（存在接管残留），正在恢复 Live 配置...");
+                    log::warn!("Previous run exited abnormally (takeover leftovers found); restoring live configs...");
                     if let Err(e) = state.proxy_service.recover_from_crash().await {
-                        log::error!("恢复 Live 配置失败: {e}");
+                        log::error!("Failed to restore live configs: {e}");
                     } else {
-                        log::info!("Live 配置已恢复");
+                        log::info!("Live configs restored");
                     }
                 }
 
                 initialize_common_config_snippets(&state);
 
-                // 检查 settings 表中的代理状态，自动恢复代理服务
+                // Restore the proxy from the proxy state saved in the settings table
                 restore_proxy_state_on_startup(&state).await;
 
                 // Keep pooled subscription accounts' session windows open, if
@@ -443,7 +443,7 @@ pub fn run() {
             services::credential_mirror::start();
             services::credential_mirror::start_codex();
 
-            // Linux: 禁用 WebKitGTK 硬件加速，防止 EGL 初始化失败导致白屏
+            // Linux: disable WebKitGTK hardware acceleration so an EGL init failure cannot cause a white screen
             #[cfg(target_os = "linux")]
             {
                 if let Some(window) = app.get_webview_window("main") {
@@ -452,27 +452,27 @@ pub fn run() {
                         let wk_webview = webview.inner();
                         if let Some(settings) = WebViewExt::settings(&wk_webview) {
                             SettingsExt::set_hardware_acceleration_policy(&settings, HardwareAccelerationPolicy::Never);
-                            log::info!("已禁用 WebKitGTK 硬件加速");
+                            log::info!("WebKitGTK hardware acceleration disabled");
                         }
                     });
                 }
             }
 
-            // 静默启动：根据设置决定是否显示主窗口
+            // Silent start: show the main window or not, per the setting
             let settings = crate::settings::get_settings();
             if let Some(window) = app.get_webview_window("main") {
                 if settings.silent_startup {
-                    // 静默启动模式：保持窗口隐藏
+                    // Silent start: keep the window hidden
                     let _ = window.hide();
                     #[cfg(target_os = "windows")]
                     let _ = window.set_skip_taskbar(true);
                     #[cfg(target_os = "macos")]
                     tray::apply_tray_policy(app.handle(), false);
-                    log::info!("静默启动模式：主窗口已隐藏");
+                    log::info!("Silent start: main window hidden");
                 } else {
-                    // 正常启动模式：显示窗口
+                    // Normal start: show the window
                     let _ = window.show();
-                    log::info!("正常启动模式：主窗口已显示");
+                    log::info!("Normal start: main window shown");
                 }
             }
 
@@ -703,30 +703,30 @@ pub fn run() {
         .expect("error while running tauri application");
 
     app.run(|app_handle, event| {
-        // 处理退出请求（所有平台）
+        // Handle exit requests (all platforms)
         if let RunEvent::ExitRequested { api, code, .. } = &event {
-            // code 为 None 表示运行时自动触发（如隐藏窗口的 WebView 被回收导致无存活窗口），
-            // 此时应仅阻止退出、保持托盘后台运行；
-            // code 为 Some(_) 表示用户主动调用 app.exit() 退出（如托盘菜单"退出"），
-            // 此时执行清理后退出。
+            // code None means the runtime triggered it (e.g. a hidden window's WebView was reclaimed and no window is left):
+            // just prevent the exit and keep running in the tray.
+            // code Some(_) means the user called app.exit() (e.g. the tray's Quit item):
+            // clean up, then exit.
             if code.is_none() {
-                log::info!("运行时触发退出请求（无存活窗口），阻止退出以保持托盘后台运行");
+                log::info!("Runtime exit request (no live window); preventing exit to keep running in the tray");
                 api.prevent_exit();
                 return;
             }
 
-            log::info!("收到用户主动退出请求 (code={code:?})，开始清理...");
+            log::info!("User exit request (code={code:?}); cleaning up...");
             api.prevent_exit();
 
             let app_handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
                 cleanup_before_exit(&app_handle).await;
-                log::info!("清理完成，退出应用");
+                log::info!("Cleanup done; exiting");
 
-                // 短暂等待确保所有 I/O 操作（如数据库写入）刷新到磁盘
+                // Wait briefly so all I/O (such as database writes) is flushed to disk
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-                // 使用 std::process::exit 避免再次触发 ExitRequested
+                // std::process::exit avoids triggering ExitRequested again
                 std::process::exit(0);
             });
             return;
@@ -735,7 +735,7 @@ pub fn run() {
         #[cfg(target_os = "macos")]
         {
             match event {
-                // macOS 在 Dock 图标被点击并重新激活应用时会触发 Reopen 事件，这里手动恢复主窗口
+                // macOS fires Reopen when the Dock icon reactivates the app; restore the main window here
                 RunEvent::Reopen { .. } => {
                     if let Some(window) = app_handle.get_webview_window("main") {
                         #[cfg(target_os = "windows")]
@@ -748,11 +748,11 @@ pub fn run() {
                         tray::apply_tray_policy(app_handle, true);
                     } else if crate::lightweight::is_lightweight_mode() {
                         if let Err(e) = crate::lightweight::exit_lightweight_mode(app_handle) {
-                            log::error!("退出轻量模式重建窗口失败: {e}");
+                            log::error!("Failed to rebuild the window when leaving lightweight mode: {e}");
                         }
                     }
                 }
-                // 处理通过自定义 URL 协议触发的打开事件（例如 switchy://...）
+                // Handle opens triggered through the custom URL scheme (e.g. switchy://...)
                 RunEvent::Opened { urls } => {
                     if let Some(url) = urls.first() {
                         let url_str = url.to_string();
@@ -764,11 +764,11 @@ pub fn run() {
                             if crate::lightweight::is_lightweight_mode() {
                                 if let Err(e) = crate::lightweight::exit_lightweight_mode(app_handle)
                                 {
-                                    log::error!("退出轻量模式重建窗口失败: {e}");
+                                    log::error!("Failed to rebuild the window when leaving lightweight mode: {e}");
                                 }
                             }
 
-                            // 解析并广播深链接事件，复用与 single_instance 相同的逻辑
+                            // Parse and broadcast the deep link event, with the same logic as single_instance
                             match crate::deeplink::parse_deeplink_url(&url_str) {
                                 Ok(request) => {
                                     log::info!(
@@ -804,7 +804,7 @@ pub fn run() {
                                 }
                             }
 
-                            // 确保主窗口可见
+                            // Make sure the main window is visible
                             if let Some(window) = app_handle.get_webview_window("main") {
                                 let _ = window.unminimize();
                                 let _ = window.show();
@@ -825,23 +825,23 @@ pub fn run() {
 }
 
 // ============================================================
-// 应用退出清理
+// Cleanup on exit
 // ============================================================
 
-/// 应用退出前的清理工作
+/// Cleanup before the app exits
 ///
-/// 在应用退出前检查代理服务器状态，如果正在运行则停止代理并恢复 Live 配置。
-/// 确保 Claude Code/Codex/Gemini 的配置不会处于损坏状态。
-/// 使用 stop_with_restore_keep_state 保留 settings 表中的代理状态，下次启动时自动恢复。
+/// Checks the proxy server before exit; if it is running, stops it and restores the live configs,
+/// so Claude Code/Codex/Gemini configs are never left broken.
+/// stop_with_restore_keep_state keeps the proxy state in the settings table, so the next start restores it.
 pub async fn cleanup_before_exit(app_handle: &tauri::AppHandle) {
     if let Some(state) = app_handle.try_state::<store::AppState>() {
         let proxy_service = &state.proxy_service;
 
-        // 退出时也需要兜底：代理可能已崩溃/未运行，但 Live 接管残留仍在（占位符/备份）。
+        // Also a safety net on exit: the proxy may have crashed or stopped while takeover leftovers (placeholders/backups) remain.
         let has_backups = match state.db.has_any_live_backup().await {
             Ok(v) => v,
             Err(e) => {
-                log::error!("退出时检查 Live 备份失败: {e}");
+                log::error!("Failed to check live backups on exit: {e}");
                 false
             }
         };
@@ -849,37 +849,39 @@ pub async fn cleanup_before_exit(app_handle: &tauri::AppHandle) {
         let needs_restore = has_backups || live_taken_over;
 
         if needs_restore {
-            log::info!("检测到接管残留，开始恢复 Live 配置（保留代理状态）...");
-            // 使用 keep_state 版本，保留 settings 表中的代理状态
+            log::info!("Takeover leftovers found; restoring live configs (keeping proxy state)...");
+            // The keep_state variant keeps the proxy state in the settings table
             if let Err(e) = proxy_service.stop_with_restore_keep_state().await {
-                log::error!("退出时恢复 Live 配置失败: {e}");
+                log::error!("Failed to restore live configs on exit: {e}");
             } else {
-                log::info!("已恢复 Live 配置（代理状态已保留，下次启动将自动恢复）");
+                log::info!(
+                    "Live configs restored (proxy state kept; it is restored at next start)"
+                );
             }
             return;
         }
 
-        // 非接管模式：代理在运行则仅停止代理
+        // Not taken over: just stop the proxy if it is running
         if proxy_service.is_running().await {
-            log::info!("检测到代理服务器正在运行，开始停止...");
+            log::info!("Proxy server is running; stopping it...");
             if let Err(e) = proxy_service.stop().await {
-                log::error!("退出时停止代理失败: {e}");
+                log::error!("Failed to stop the proxy on exit: {e}");
             }
-            log::info!("代理服务器清理完成");
+            log::info!("Proxy server cleanup done");
         }
     }
 }
 
 // ============================================================
-// 启动时恢复代理状态
+// Restore proxy state at startup
 // ============================================================
 
-/// 启动时根据 proxy_config 表中的代理状态自动恢复代理服务
+/// At startup, restore the proxy from the state saved in the proxy_config table
 ///
-/// 检查 `proxy_config.enabled` 字段，如果有任一应用的状态为 `true`，
-/// 则自动启动代理服务并接管对应应用的 Live 配置。
+/// If `proxy_config.enabled` is `true` for any app, start the proxy
+/// and take over that app's live config.
 async fn restore_proxy_state_on_startup(state: &store::AppState) {
-    // 收集需要恢复接管的应用列表（从 proxy_config.enabled 读取）
+    // Collect the apps whose takeover must be restored (from proxy_config.enabled)
     let mut apps_to_restore = Vec::new();
     for app_type in ["claude", "codex", "gemini"] {
         if let Ok(config) = state.db.get_proxy_config_for_app(app_type).await {
@@ -890,13 +892,13 @@ async fn restore_proxy_state_on_startup(state: &store::AppState) {
     }
 
     if apps_to_restore.is_empty() {
-        log::debug!("启动时无需恢复代理状态");
+        log::debug!("No proxy state to restore at startup");
         return;
     }
 
-    log::info!("检测到上次代理状态需要恢复，应用列表: {apps_to_restore:?}");
+    log::info!("Restoring proxy state from the previous run for: {apps_to_restore:?}");
 
-    // 逐个恢复接管状态
+    // Restore takeover one app at a time
     for app_type in apps_to_restore {
         match state
             .proxy_service
@@ -904,17 +906,17 @@ async fn restore_proxy_state_on_startup(state: &store::AppState) {
             .await
         {
             Ok(()) => {
-                log::info!("✓ 已恢复 {app_type} 的代理接管状态");
+                log::info!("✓ Restored proxy takeover for {app_type}");
             }
             Err(e) => {
-                log::error!("✗ 恢复 {app_type} 的代理接管状态失败: {e}");
-                // 失败时清除该应用的状态，避免下次启动再次尝试
+                log::error!("✗ Failed to restore proxy takeover for {app_type}: {e}");
+                // On failure, clear this app's state so the next start does not try again
                 if let Err(clear_err) = state
                     .proxy_service
                     .set_takeover_for_app(app_type, false)
                     .await
                 {
-                    log::error!("清除 {app_type} 代理状态失败: {clear_err}");
+                    log::error!("Failed to clear proxy state for {app_type}: {clear_err}");
                 }
             }
         }
@@ -1002,71 +1004,34 @@ fn initialize_common_config_snippets(state: &store::AppState) {
 }
 
 // ============================================================
-// 迁移错误对话框辅助函数
+// Database error dialog
 // ============================================================
 
-/// 检测是否为中文环境
-fn is_chinese_locale() -> bool {
-    std::env::var("LANG")
-        .or_else(|_| std::env::var("LC_ALL"))
-        .or_else(|_| std::env::var("LC_MESSAGES"))
-        .map(|lang| lang.starts_with("zh"))
-        .unwrap_or(false)
-}
-
-/// 显示数据库初始化/Schema 迁移失败对话框
-/// 返回 true 表示用户选择重试，false 表示用户选择退出
+/// Show the database initialisation / schema migration failure dialog
+/// Returns true if the user chose Retry, false if they chose Exit
 fn show_database_init_error_dialog(
     app: &tauri::AppHandle,
     db_path: &std::path::Path,
     error: &str,
 ) -> bool {
-    let title = if is_chinese_locale() {
-        "数据库初始化失败"
-    } else {
-        "Database Initialization Failed"
-    };
+    let title = "Database Initialization Failed";
 
-    let message = if is_chinese_locale() {
-        format!(
-            "初始化数据库或迁移数据库结构时发生错误：\n\n{error}\n\n\
-            数据库文件路径：\n{db}\n\n\
-            您的数据尚未丢失，应用不会自动删除数据库文件。\n\
-            常见原因包括：数据库版本过新、文件损坏、权限不足、磁盘空间不足等。\n\n\
-            建议：\n\
-            1) 先备份整个配置目录（包含 switchy.db）\n\
-            2) 如果提示“数据库版本过新”，请升级到更新版本\n\
-            3) 如果刚升级出现异常，可回退旧版本导出/备份后再升级\n\n\
-            点击「重试」重新尝试初始化\n\
-            点击「退出」关闭程序",
-            db = db_path.display()
-        )
-    } else {
-        format!(
-            "An error occurred while initializing or migrating the database:\n\n{error}\n\n\
-            Database file path:\n{db}\n\n\
-            Your data is NOT lost - the app will not delete the database automatically.\n\
-            Common causes include: newer database version, corrupted file, permission issues, or low disk space.\n\n\
-            Suggestions:\n\
-            1) Back up the entire config directory (including switchy.db)\n\
-            2) If you see “database version is newer”, please upgrade Switchy\n\
-            3) If this happened right after upgrading, consider rolling back to export/backup then upgrade again\n\n\
-            Click 'Retry' to attempt initialization again\n\
-            Click 'Exit' to close the program",
-            db = db_path.display()
-        )
-    };
+    let message = format!(
+        "An error occurred while initializing or migrating the database:\n\n{error}\n\n\
+        Database file path:\n{db}\n\n\
+        Your data is NOT lost - the app will not delete the database automatically.\n\
+        Common causes include: newer database version, corrupted file, permission issues, or low disk space.\n\n\
+        Suggestions:\n\
+        1) Back up the entire config directory (including switchy.db)\n\
+        2) If you see “database version is newer”, please upgrade Switchy\n\
+        3) If this happened right after upgrading, consider rolling back to export/backup then upgrade again\n\n\
+        Click 'Retry' to attempt initialization again\n\
+        Click 'Exit' to close the program",
+        db = db_path.display()
+    );
 
-    let retry_text = if is_chinese_locale() {
-        "重试"
-    } else {
-        "Retry"
-    };
-    let exit_text = if is_chinese_locale() {
-        "退出"
-    } else {
-        "Exit"
-    };
+    let retry_text = "Retry";
+    let exit_text = "Exit";
 
     app.dialog()
         .message(&message)

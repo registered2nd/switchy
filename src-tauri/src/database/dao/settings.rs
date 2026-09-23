@@ -1,6 +1,6 @@
-//! 通用设置数据访问对象
+//! General settings DAO
 //!
-//! 提供键值对形式的通用设置存储。
+//! Key-value storage for general settings.
 
 use crate::database::{lock_conn, Database};
 use crate::error::AppError;
@@ -13,7 +13,7 @@ impl Database {
         format!("common_config_{app_type}_cleared")
     }
 
-    /// 获取设置值
+    /// Get a setting value
     pub fn get_setting(&self, key: &str) -> Result<Option<String>, AppError> {
         let conn = lock_conn!(self.conn);
         let mut stmt = conn
@@ -33,7 +33,7 @@ impl Database {
         }
     }
 
-    /// 设置值
+    /// Set a setting value
     pub fn set_setting(&self, key: &str, value: &str) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);
         conn.execute(
@@ -44,14 +44,14 @@ impl Database {
         Ok(())
     }
 
-    // --- 通用配置片段 (Common Config Snippet) ---
+    // --- Common Config Snippet ---
 
-    /// 获取通用配置片段
+    /// Get the common config snippet
     pub fn get_config_snippet(&self, app_type: &str) -> Result<Option<String>, AppError> {
         self.get_setting(&format!("common_config_{app_type}"))
     }
 
-    /// 检查通用配置片段是否被用户显式清空
+    /// Check whether the user explicitly cleared the common config snippet
     pub fn is_config_snippet_cleared(&self, app_type: &str) -> Result<bool, AppError> {
         Ok(self
             .get_setting(&Self::config_snippet_cleared_key(app_type))?
@@ -59,7 +59,7 @@ impl Database {
             == Some("true"))
     }
 
-    /// 设置通用配置片段是否被显式清空
+    /// Set whether the common config snippet was explicitly cleared
     pub fn set_config_snippet_cleared(
         &self,
         app_type: &str,
@@ -76,13 +76,13 @@ impl Database {
         }
     }
 
-    /// 当前是否允许从 live 配置自动抽取通用配置片段
+    /// Whether the common config snippet may currently be extracted from the live config
     pub fn should_auto_extract_config_snippet(&self, app_type: &str) -> Result<bool, AppError> {
         Ok(self.get_config_snippet(app_type)?.is_none()
             && !self.is_config_snippet_cleared(app_type)?)
     }
 
-    /// 检查历史通用配置迁移是否已经执行过
+    /// Check whether the legacy common config migration has already run
     pub fn is_legacy_common_config_migrated(&self) -> Result<bool, AppError> {
         Ok(self
             .get_setting(Self::LEGACY_COMMON_CONFIG_MIGRATED_KEY)?
@@ -90,7 +90,7 @@ impl Database {
             == Some("true"))
     }
 
-    /// 标记历史通用配置迁移已经执行完成
+    /// Mark the legacy common config migration as done
     pub fn set_legacy_common_config_migrated(&self, migrated: bool) -> Result<(), AppError> {
         if migrated {
             self.set_setting(Self::LEGACY_COMMON_CONFIG_MIGRATED_KEY, "true")
@@ -105,7 +105,7 @@ impl Database {
         }
     }
 
-    /// 设置通用配置片段
+    /// Set the common config snippet
     pub fn set_config_snippet(
         &self,
         app_type: &str,
@@ -115,7 +115,7 @@ impl Database {
         if let Some(value) = snippet {
             self.set_setting(&key, &value)
         } else {
-            // 如果为 None 则删除
+            // None deletes it
             let conn = lock_conn!(self.conn);
             conn.execute("DELETE FROM settings WHERE key = ?1", params![key])
                 .map_err(|e| AppError::Database(e.to_string()))?;
@@ -123,30 +123,30 @@ impl Database {
         }
     }
 
-    // --- 全局出站代理 ---
+    // --- Global outbound proxy ---
 
-    /// 全局代理 URL 的存储键名
+    /// Storage key for the global proxy URL
     const GLOBAL_PROXY_URL_KEY: &'static str = "global_proxy_url";
 
-    /// 获取全局出站代理 URL
+    /// Get the global outbound proxy URL
     ///
-    /// 返回 None 表示未配置或已清除代理（直连）
-    /// 返回 Some(url) 表示已配置代理
+    /// None means no proxy is configured or it was cleared (direct connection)
+    /// Some(url) means a proxy is configured
     pub fn get_global_proxy_url(&self) -> Result<Option<String>, AppError> {
         self.get_setting(Self::GLOBAL_PROXY_URL_KEY)
     }
 
-    /// 设置全局出站代理 URL
+    /// Set the global outbound proxy URL
     ///
-    /// - 传入非空字符串：启用代理
-    /// - 传入空字符串或 None：清除代理设置（直连）
+    /// - Non-empty string: enable the proxy
+    /// - Empty string or None: clear the proxy setting (direct connection)
     pub fn set_global_proxy_url(&self, url: Option<&str>) -> Result<(), AppError> {
         match url {
             Some(u) if !u.trim().is_empty() => {
                 self.set_setting(Self::GLOBAL_PROXY_URL_KEY, u.trim())
             }
             _ => {
-                // 清除代理设置
+                // Clear the proxy setting
                 let conn = lock_conn!(self.conn);
                 conn.execute(
                     "DELETE FROM settings WHERE key = ?1",
@@ -158,13 +158,16 @@ impl Database {
         }
     }
 
-    // --- 代理接管状态管理（已废弃，使用 proxy_config.enabled 替代）---
+    // --- Proxy takeover state (deprecated, use proxy_config.enabled) ---
 
-    /// 获取指定应用的代理接管状态
+    /// Get an app's proxy takeover state
     ///
-    /// **已废弃**: 请使用 `proxy_config.enabled` 字段替代
-    /// 此方法仅用于数据库迁移时读取旧数据
-    #[deprecated(since = "3.9.0", note = "使用 get_proxy_config_for_app().enabled 替代")]
+    /// **Deprecated**: use the `proxy_config.enabled` field instead
+    /// Only used to read old data during database migration
+    #[deprecated(
+        since = "3.9.0",
+        note = "use get_proxy_config_for_app().enabled instead"
+    )]
     pub fn get_proxy_takeover_enabled(&self, app_type: &str) -> Result<bool, AppError> {
         let key = format!("proxy_takeover_{app_type}");
         match self.get_setting(&key)? {
@@ -173,12 +176,12 @@ impl Database {
         }
     }
 
-    /// 设置指定应用的代理接管状态
+    /// Set an app's proxy takeover state
     ///
-    /// **已废弃**: 请使用 `proxy_config.enabled` 字段替代
+    /// **Deprecated**: use the `proxy_config.enabled` field instead
     #[deprecated(
         since = "3.9.0",
-        note = "使用 update_proxy_config_for_app() 修改 enabled 字段"
+        note = "use update_proxy_config_for_app() to change the enabled field"
     )]
     pub fn set_proxy_takeover_enabled(
         &self,
@@ -190,10 +193,10 @@ impl Database {
         self.set_setting(&key, value)
     }
 
-    /// 检查是否有任一应用开启了代理接管
+    /// Check whether any app has proxy takeover on
     ///
-    /// **已废弃**: 请使用 `is_live_takeover_active()` 替代
-    #[deprecated(since = "3.9.0", note = "使用 is_live_takeover_active() 替代")]
+    /// **Deprecated**: use `is_live_takeover_active()` instead
+    #[deprecated(since = "3.9.0", note = "use is_live_takeover_active() instead")]
     pub fn has_any_proxy_takeover(&self) -> Result<bool, AppError> {
         let conn = lock_conn!(self.conn);
         let count: i64 = conn
@@ -206,12 +209,12 @@ impl Database {
         Ok(count > 0)
     }
 
-    /// 清除所有代理接管状态（将所有 proxy_takeover_* 设置为 false）
+    /// Clear all proxy takeover states (sets every proxy_takeover_* to false)
     ///
-    /// **已废弃**: settings 表不再用于存储代理状态
+    /// **Deprecated**: the settings table no longer stores proxy state
     #[deprecated(
         since = "3.9.0",
-        note = "使用 update_proxy_config_for_app() 清除各应用的 enabled 字段"
+        note = "use update_proxy_config_for_app() to clear each app's enabled field"
     )]
     pub fn clear_all_proxy_takeover(&self) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);
@@ -220,30 +223,31 @@ impl Database {
             [],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
-        log::info!("已清除所有代理接管状态");
+        log::info!("Cleared all proxy takeover states");
         Ok(())
     }
 
-    // --- 整流器配置 ---
+    // --- Rectifier config ---
 
-    /// 获取整流器配置
+    /// Get the rectifier config
     ///
-    /// 返回整流器配置，如果不存在则返回默认值（全部开启）
+    /// Returns the rectifier config, or the default (everything on) when unset
     pub fn get_rectifier_config(&self) -> Result<crate::proxy::types::RectifierConfig, AppError> {
         match self.get_setting("rectifier_config")? {
             Some(json) => serde_json::from_str(&json)
-                .map_err(|e| AppError::Database(format!("解析整流器配置失败: {e}"))),
+                .map_err(|e| AppError::Database(format!("Failed to parse rectifier config: {e}"))),
             None => Ok(crate::proxy::types::RectifierConfig::default()),
         }
     }
 
-    /// 更新整流器配置
+    /// Update the rectifier config
     pub fn set_rectifier_config(
         &self,
         config: &crate::proxy::types::RectifierConfig,
     ) -> Result<(), AppError> {
-        let json = serde_json::to_string(config)
-            .map_err(|e| AppError::Database(format!("序列化整流器配置失败: {e}")))?;
+        let json = serde_json::to_string(config).map_err(|e| {
+            AppError::Database(format!("Failed to serialize rectifier config: {e}"))
+        })?;
         self.set_setting("rectifier_config", &json)
     }
 
@@ -254,8 +258,9 @@ impl Database {
         &self,
     ) -> Result<crate::proxy::account_pool::AccountPoolConfig, AppError> {
         match self.get_setting("account_pool_config")? {
-            Some(json) => serde_json::from_str(&json)
-                .map_err(|e| AppError::Database(format!("解析账号池配置失败: {e}"))),
+            Some(json) => serde_json::from_str(&json).map_err(|e| {
+                AppError::Database(format!("Failed to parse account pool config: {e}"))
+            }),
             None => Ok(crate::proxy::account_pool::AccountPoolConfig::default()),
         }
     }
@@ -264,74 +269,78 @@ impl Database {
         &self,
         config: &crate::proxy::account_pool::AccountPoolConfig,
     ) -> Result<(), AppError> {
-        let json = serde_json::to_string(config)
-            .map_err(|e| AppError::Database(format!("序列化账号池配置失败: {e}")))?;
+        let json = serde_json::to_string(config).map_err(|e| {
+            AppError::Database(format!("Failed to serialize account pool config: {e}"))
+        })?;
         self.set_setting("account_pool_config", &json)
     }
 
-    // --- 优化器配置 ---
+    // --- Optimizer config ---
 
-    /// 获取优化器配置
+    /// Get the optimizer config
     ///
-    /// 返回优化器配置，如果不存在则返回默认值（默认关闭）
+    /// Returns the optimizer config, or the default (off) when unset
     pub fn get_optimizer_config(&self) -> Result<crate::proxy::types::OptimizerConfig, AppError> {
         match self.get_setting("optimizer_config")? {
             Some(json) => serde_json::from_str(&json)
-                .map_err(|e| AppError::Database(format!("解析优化器配置失败: {e}"))),
+                .map_err(|e| AppError::Database(format!("Failed to parse optimizer config: {e}"))),
             None => Ok(crate::proxy::types::OptimizerConfig::default()),
         }
     }
 
-    /// 更新优化器配置
+    /// Update the optimizer config
     pub fn set_optimizer_config(
         &self,
         config: &crate::proxy::types::OptimizerConfig,
     ) -> Result<(), AppError> {
-        let json = serde_json::to_string(config)
-            .map_err(|e| AppError::Database(format!("序列化优化器配置失败: {e}")))?;
+        let json = serde_json::to_string(config).map_err(|e| {
+            AppError::Database(format!("Failed to serialize optimizer config: {e}"))
+        })?;
         self.set_setting("optimizer_config", &json)
     }
 
-    // --- Copilot 优化器配置 ---
+    // --- Copilot optimizer config ---
 
-    /// 获取 Copilot 优化器配置
+    /// Get the Copilot optimizer config
     ///
-    /// 返回配置，如果不存在则返回默认值（默认开启）
+    /// Returns the config, or the default (on) when unset
     pub fn get_copilot_optimizer_config(
         &self,
     ) -> Result<crate::proxy::types::CopilotOptimizerConfig, AppError> {
         match self.get_setting("copilot_optimizer_config")? {
-            Some(json) => serde_json::from_str(&json)
-                .map_err(|e| AppError::Database(format!("解析 Copilot 优化器配置失败: {e}"))),
+            Some(json) => serde_json::from_str(&json).map_err(|e| {
+                AppError::Database(format!("Failed to parse Copilot optimizer config: {e}"))
+            }),
             None => Ok(crate::proxy::types::CopilotOptimizerConfig::default()),
         }
     }
 
-    /// 更新 Copilot 优化器配置
+    /// Update the Copilot optimizer config
     pub fn set_copilot_optimizer_config(
         &self,
         config: &crate::proxy::types::CopilotOptimizerConfig,
     ) -> Result<(), AppError> {
-        let json = serde_json::to_string(config)
-            .map_err(|e| AppError::Database(format!("序列化 Copilot 优化器配置失败: {e}")))?;
+        let json = serde_json::to_string(config).map_err(|e| {
+            AppError::Database(format!("Failed to serialize Copilot optimizer config: {e}"))
+        })?;
         self.set_setting("copilot_optimizer_config", &json)
     }
 
-    // --- 日志配置 ---
+    // --- Log config ---
 
-    /// 获取日志配置
+    /// Get the log config
     pub fn get_log_config(&self) -> Result<crate::proxy::types::LogConfig, AppError> {
         match self.get_setting("log_config")? {
             Some(json) => serde_json::from_str(&json)
-                .map_err(|e| AppError::Database(format!("解析日志配置失败: {e}"))),
+                .map_err(|e| AppError::Database(format!("Failed to parse log config: {e}"))),
             None => Ok(crate::proxy::types::LogConfig::default()),
         }
     }
 
-    /// 更新日志配置
+    /// Update the log config
     pub fn set_log_config(&self, config: &crate::proxy::types::LogConfig) -> Result<(), AppError> {
         let json = serde_json::to_string(config)
-            .map_err(|e| AppError::Database(format!("序列化日志配置失败: {e}")))?;
+            .map_err(|e| AppError::Database(format!("Failed to serialize log config: {e}")))?;
         self.set_setting("log_config", &json)
     }
 }

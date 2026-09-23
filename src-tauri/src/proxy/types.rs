@@ -1,28 +1,28 @@
 use serde::{Deserialize, Serialize};
 
-/// 代理服务器配置
+/// Proxy server config
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyConfig {
-    /// 监听地址
+    /// Listen address
     pub listen_address: String,
-    /// 监听端口
+    /// Listen port
     pub listen_port: u16,
-    /// 最大重试次数
+    /// Maximum retries
     pub max_retries: u8,
-    /// 请求超时时间（秒）- 已废弃，保留兼容
+    /// Request timeout (seconds). Deprecated, kept for compatibility
     pub request_timeout: u64,
-    /// 是否启用日志
+    /// Whether logging is enabled
     pub enable_logging: bool,
-    /// 是否正在接管 Live 配置
+    /// Whether the live config is currently taken over
     #[serde(default)]
     pub live_takeover_active: bool,
-    /// 流式首字超时（秒）- 等待首个数据块的最大时间，范围 1-120 秒，默认 60 秒
+    /// Streaming first-byte timeout (seconds): max wait for the first chunk, range 1-120, default 60
     #[serde(default = "default_streaming_first_byte_timeout")]
     pub streaming_first_byte_timeout: u64,
-    /// 流式静默超时（秒）- 两个数据块之间的最大间隔，范围 60-600 秒，填 0 禁用（防止中途卡住）
+    /// Streaming idle timeout (seconds): max gap between chunks, range 60-600, 0 disables (guards against mid-stream stalls)
     #[serde(default = "default_streaming_idle_timeout")]
     pub streaming_idle_timeout: u64,
-    /// 非流式总超时（秒）- 非流式请求的总超时时间，范围 60-1200 秒，默认 600 秒（10 分钟）
+    /// Non-streaming total timeout (seconds): total timeout for non-streaming requests, range 60-1200, default 600 (10 minutes)
     #[serde(default = "default_non_streaming_timeout")]
     pub non_streaming_timeout: u64,
 }
@@ -43,7 +43,7 @@ impl Default for ProxyConfig {
     fn default() -> Self {
         Self {
             listen_address: "127.0.0.1".to_string(),
-            listen_port: 15721, // 使用较少占用的高位端口
+            listen_port: 15721, // a rarely used high port
             max_retries: 3,
             request_timeout: 600,
             enable_logging: true,
@@ -55,43 +55,43 @@ impl Default for ProxyConfig {
     }
 }
 
-/// 代理服务器状态
+/// Proxy server status
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProxyStatus {
-    /// 是否运行中
+    /// Whether it is running
     pub running: bool,
-    /// 监听地址
+    /// Listen address
     pub address: String,
-    /// 监听端口
+    /// Listen port
     pub port: u16,
-    /// 活跃连接数
+    /// Active connections
     pub active_connections: usize,
-    /// 总请求数
+    /// Total requests
     pub total_requests: u64,
-    /// 成功请求数
+    /// Successful requests
     pub success_requests: u64,
-    /// 失败请求数
+    /// Failed requests
     pub failed_requests: u64,
-    /// 成功率 (0-100)
+    /// Success rate (0-100)
     pub success_rate: f32,
-    /// 运行时间（秒）
+    /// Uptime (seconds)
     pub uptime_seconds: u64,
-    /// 当前使用的Provider名称
+    /// Name of the provider currently in use
     pub current_provider: Option<String>,
-    /// 当前Provider的ID
+    /// ID of the current provider
     pub current_provider_id: Option<String>,
-    /// 最后一次请求时间
+    /// Time of the last request
     pub last_request_at: Option<String>,
-    /// 最后一次错误信息
+    /// Last error message
     pub last_error: Option<String>,
-    /// Provider故障转移次数
+    /// Provider failover count
     pub failover_count: u64,
-    /// 当前活跃的代理目标列表
+    /// Currently active proxy targets
     #[serde(default)]
     pub active_targets: Vec<ActiveTarget>,
 }
 
-/// 活跃的代理目标信息
+/// Active proxy target info
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActiveTarget {
     pub app_type: String, // "Claude" | "Codex" | "Gemini"
@@ -99,7 +99,7 @@ pub struct ActiveTarget {
     pub provider_id: String,
 }
 
-/// 代理服务器信息
+/// Proxy server info
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProxyServerInfo {
     pub address: String,
@@ -107,7 +107,7 @@ pub struct ProxyServerInfo {
     pub started_at: String,
 }
 
-/// 各应用的接管状态（是否改写该应用的 Live 配置指向本地代理）
+/// Per-app takeover state (whether the app's live config is rewritten to point at the local proxy)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProxyTakeoverStatus {
     pub claude: bool,
@@ -117,7 +117,7 @@ pub struct ProxyTakeoverStatus {
     pub openclaw: bool,
 }
 
-/// API 格式类型（预留，当前不需要格式转换）
+/// API format type (reserved; no format conversion needed yet)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum ApiFormat {
@@ -126,7 +126,7 @@ pub enum ApiFormat {
     Gemini,
 }
 
-/// Provider健康状态
+/// Provider health status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderHealth {
     pub provider_id: String,
@@ -139,78 +139,78 @@ pub struct ProviderHealth {
     pub updated_at: String,
 }
 
-/// Live 配置备份记录
+/// Live config backup record
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiveBackup {
-    /// 应用类型 (claude/codex/gemini)
+    /// App type (claude/codex/gemini)
     pub app_type: String,
-    /// 原始配置 JSON
+    /// Original config JSON
     pub original_config: String,
-    /// 备份时间
+    /// Backup time
     pub backed_up_at: String,
 }
 
-/// 全局代理配置（统一字段，三行镜像）
+/// Global proxy config (unified fields, mirrored across three rows)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalProxyConfig {
-    /// 代理总开关
+    /// Proxy master switch
     pub proxy_enabled: bool,
-    /// 监听地址
+    /// Listen address
     pub listen_address: String,
-    /// 监听端口
+    /// Listen port
     pub listen_port: u16,
-    /// 是否启用日志
+    /// Whether logging is enabled
     pub enable_logging: bool,
 }
 
-/// 应用级代理配置（每个 app 独立）
+/// Per-app proxy config (independent per app)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppProxyConfig {
-    /// 应用类型 (claude/codex/gemini)
+    /// App type (claude/codex/gemini)
     pub app_type: String,
-    /// 该 app 代理启用开关
+    /// Proxy enabled switch for this app
     pub enabled: bool,
-    /// 该 app 自动故障转移开关
+    /// Auto failover switch for this app
     pub auto_failover_enabled: bool,
-    /// 最大重试次数
+    /// Maximum retries
     pub max_retries: u32,
-    /// 流式首字超时（秒）
+    /// Streaming first-byte timeout (seconds)
     pub streaming_first_byte_timeout: u32,
-    /// 流式静默超时（秒）
+    /// Streaming idle timeout (seconds)
     pub streaming_idle_timeout: u32,
-    /// 非流式总超时（秒）
+    /// Non-streaming total timeout (seconds)
     pub non_streaming_timeout: u32,
-    /// 熔断失败阈值
+    /// Circuit breaker failure threshold
     pub circuit_failure_threshold: u32,
-    /// 熔断恢复阈值
+    /// Circuit breaker recovery threshold
     pub circuit_success_threshold: u32,
-    /// 熔断恢复等待时间（秒）
+    /// Circuit breaker recovery wait (seconds)
     pub circuit_timeout_seconds: u32,
-    /// 错误率阈值
+    /// Error rate threshold
     pub circuit_error_rate_threshold: f64,
-    /// 计算错误率的最小请求数
+    /// Minimum requests before computing the error rate
     pub circuit_min_requests: u32,
 }
 
-/// 整流器配置
+/// Rectifier config
 ///
-/// 存储在 settings 表中
+/// Stored in the settings table
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RectifierConfig {
-    /// 总开关：是否启用整流器（默认开启）
+    /// Master switch: whether rectifiers are enabled (default on)
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// 请求整流：启用 thinking 签名整流器（默认开启）
+    /// Request rectification: enable the thinking signature rectifier (default on)
     ///
-    /// 处理错误：Invalid 'signature' in 'thinking' block
+    /// Handles the error: Invalid 'signature' in 'thinking' block
     #[serde(default = "default_true")]
     pub request_thinking_signature: bool,
-    /// 请求整流：启用 thinking budget 整流器（默认开启）
+    /// Request rectification: enable the thinking budget rectifier (default on)
     ///
-    /// 处理错误：budget_tokens + thinking 相关约束
+    /// Handles errors about budget_tokens + thinking constraints
     #[serde(default = "default_true")]
     pub request_thinking_budget: bool,
 }
@@ -233,23 +233,23 @@ impl Default for RectifierConfig {
     }
 }
 
-/// 请求优化器配置
+/// Request optimizer config
 ///
-/// 存储在 settings 表中，key = "optimizer_config"
-/// 仅对 Bedrock provider 生效（CLAUDE_CODE_USE_BEDROCK = "1"）
+/// Stored in the settings table, key = "optimizer_config"
+/// Applies only to Bedrock providers (CLAUDE_CODE_USE_BEDROCK = "1")
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OptimizerConfig {
-    /// 总开关（默认关闭，用户需手动启用）
+    /// Master switch (default off; the user must enable it)
     #[serde(default)]
     pub enabled: bool,
-    /// Thinking 优化子开关（总开关开启后默认生效）
+    /// Thinking optimization sub-switch (on by default once the master switch is on)
     #[serde(default = "default_true")]
     pub thinking_optimizer: bool,
-    /// Cache 注入子开关（总开关开启后默认生效）
+    /// Cache injection sub-switch (on by default once the master switch is on)
     #[serde(default = "default_true")]
     pub cache_injection: bool,
-    /// Cache TTL: "5m" | "1h"（默认 "1h"）
+    /// Cache TTL: "5m" | "1h" (default "1h")
     #[serde(default = "default_cache_ttl")]
     pub cache_ttl: String,
 }
@@ -269,32 +269,32 @@ impl Default for OptimizerConfig {
     }
 }
 
-/// Copilot 优化器配置
+/// Copilot optimizer config
 ///
-/// 存储在 settings 表中，key = "copilot_optimizer_config"
-/// 解决 Copilot 代理消耗量异常问题（Issue #1813）
+/// Stored in the settings table, key = "copilot_optimizer_config"
+/// Fixes abnormal usage consumption through the Copilot proxy (Issue #1813)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CopilotOptimizerConfig {
-    /// 总开关（默认开启 — 对 Copilot 用户至关重要）
+    /// Master switch (default on; essential for Copilot users)
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// x-initiator 请求分类（默认开启，P0 优先级）
+    /// x-initiator request classification (default on, P0 priority)
     #[serde(default = "default_true")]
     pub request_classification: bool,
-    /// Tool result 消息合并（默认开启，P1 优先级）
+    /// Tool result message merging (default on, P1 priority)
     #[serde(default = "default_true")]
     pub tool_result_merging: bool,
-    /// Compact 请求识别（默认开启，P2 优先级）
+    /// Compact request detection (default on, P2 priority)
     #[serde(default = "default_true")]
     pub compact_detection: bool,
-    /// 确定性 Request ID（默认开启，P3 优先级）
+    /// Deterministic request ID (default on, P3 priority)
     #[serde(default = "default_true")]
     pub deterministic_request_id: bool,
-    /// Warmup 小模型降级（默认关闭，P4 优先级，opt-in）
+    /// Warmup small-model downgrade (default off, P4 priority, opt-in)
     #[serde(default)]
     pub warmup_downgrade: bool,
-    /// Warmup 降级使用的模型（默认 "gpt-4o-mini"）
+    /// Model used for the warmup downgrade (default "gpt-4o-mini")
     #[serde(default = "default_warmup_model")]
     pub warmup_model: String,
 }
@@ -317,16 +317,16 @@ impl Default for CopilotOptimizerConfig {
     }
 }
 
-/// 日志配置
+/// Log config
 ///
-/// 存储在 settings 表的 log_config 字段中（JSON 格式）
+/// Stored in the log_config field of the settings table (JSON)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogConfig {
-    /// 总开关：是否启用日志
+    /// Master switch: whether logging is enabled
     #[serde(default = "default_true")]
     pub enabled: bool,
-    /// 日志级别: error, warn, info, debug, trace
+    /// Log level: error, warn, info, debug, trace
     #[serde(default = "default_log_level")]
     pub level: String,
 }
@@ -341,7 +341,7 @@ impl Default for LogConfig {
 }
 
 impl LogConfig {
-    /// 将配置转换为 log::LevelFilter
+    /// Convert the config to a log::LevelFilter
     pub fn to_level_filter(&self) -> log::LevelFilter {
         if !self.enabled {
             return log::LevelFilter::Off;
@@ -363,22 +363,25 @@ mod tests {
 
     #[test]
     fn test_rectifier_config_default_enabled() {
-        // 验证 RectifierConfig::default() 返回全开启状态
+        // RectifierConfig::default() should have everything on
         let config = RectifierConfig::default();
-        assert!(config.enabled, "整流器总开关默认应为 true");
+        assert!(
+            config.enabled,
+            "rectifier master switch should default to true"
+        );
         assert!(
             config.request_thinking_signature,
-            "thinking 签名整流器默认应为 true"
+            "thinking signature rectifier should default to true"
         );
         assert!(
             config.request_thinking_budget,
-            "thinking budget 整流器默认应为 true"
+            "thinking budget rectifier should default to true"
         );
     }
 
     #[test]
     fn test_rectifier_config_serde_default() {
-        // 验证反序列化缺字段时使用默认值 true
+        // Missing fields deserialize to the default true
         let json = "{}";
         let config: RectifierConfig = serde_json::from_str(json).unwrap();
         assert!(config.enabled);
@@ -388,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_rectifier_config_serde_explicit_true() {
-        // 验证显式设置 true 时正确反序列化
+        // Explicit true values deserialize correctly
         let json =
             r#"{"enabled": true, "requestThinkingSignature": true, "requestThinkingBudget": true}"#;
         let config: RectifierConfig = serde_json::from_str(json).unwrap();
@@ -399,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_rectifier_config_serde_partial_fields() {
-        // 验证只设置部分字段时，缺失字段使用默认值 true
+        // With only some fields set, missing fields default to true
         let json = r#"{"enabled": true, "requestThinkingSignature": false}"#;
         let config: RectifierConfig = serde_json::from_str(json).unwrap();
         assert!(config.enabled);
@@ -454,14 +457,14 @@ mod tests {
         };
         assert_eq!(config.to_level_filter(), log::LevelFilter::Trace);
 
-        // 无效级别回退到 info
+        // Invalid level falls back to info
         let config = LogConfig {
             level: "invalid".to_string(),
             ..Default::default()
         };
         assert_eq!(config.to_level_filter(), log::LevelFilter::Info);
 
-        // 禁用时返回 Off
+        // Disabled returns Off
         let config = LogConfig {
             enabled: false,
             level: "debug".to_string(),

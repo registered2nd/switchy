@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-// SSOT 模式：不再写供应商副本文件
+// SSOT mode: per-provider copy files are no longer written
 
-/// 供应商结构体
+/// A provider
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provider {
     pub id: String,
@@ -22,27 +22,27 @@ pub struct Provider {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "sortIndex")]
     pub sort_index: Option<usize>,
-    /// 备注信息
+    /// Notes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
-    /// 供应商元数据（不写入 live 配置，仅存于 ~/.switchy/config.json）
+    /// Provider metadata (never written to the live config; stored only in ~/.switchy/config.json)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<ProviderMeta>,
-    /// 图标名称（如 "openai", "anthropic"）
+    /// Icon name (e.g. "openai", "anthropic")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// 图标颜色（Hex 格式，如 "#00A67E"）
+    /// Icon color (hex, e.g. "#00A67E")
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "iconColor")]
     pub icon_color: Option<String>,
-    /// 是否加入故障转移队列
+    /// Whether the provider is in the failover queue
     #[serde(default)]
     #[serde(rename = "inFailoverQueue")]
     pub in_failover_queue: bool,
 }
 
 impl Provider {
-    /// 从现有ID创建供应商
+    /// Create a provider with an existing ID
     pub fn with_id(
         id: String,
         name: String,
@@ -66,7 +66,7 @@ impl Provider {
     }
 }
 
-/// 用量查询脚本配置
+/// Usage query script configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageScript {
     pub enabled: bool,
@@ -74,37 +74,37 @@ pub struct UsageScript {
     pub code: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<u64>,
-    /// 用量查询专用的 API Key（通用模板使用）
+    /// API key used only for usage queries (general template)
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "apiKey")]
     pub api_key: Option<String>,
-    /// 用量查询专用的 Base URL（通用和 NewAPI 模板使用）
+    /// Base URL used only for usage queries (general and NewAPI templates)
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "baseUrl")]
     pub base_url: Option<String>,
-    /// 访问令牌（用于需要登录的接口，NewAPI 模板使用）
+    /// Access token for endpoints that require login (NewAPI template)
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "accessToken")]
     pub access_token: Option<String>,
-    /// 用户ID（用于需要用户标识的接口，NewAPI 模板使用）
+    /// User ID for endpoints that require a user identifier (NewAPI template)
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "userId")]
     pub user_id: Option<String>,
-    /// 模板类型（用于后端判断验证规则）
+    /// Template type (the backend uses it to pick validation rules)
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "templateType")]
     pub template_type: Option<String>,
-    /// 自动查询间隔（单位：分钟，0 表示禁用自动查询）
+    /// Auto-query interval in minutes; 0 disables auto-query
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "autoQueryInterval")]
     pub auto_query_interval: Option<u64>,
-    /// Coding Plan 供应商标识（如 "kimi", "zhipu", "minimax"）
+    /// Coding Plan provider identifier (e.g. "kimi", "zhipu", "minimax")
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "codingPlanProvider")]
     pub coding_plan_provider: Option<String>,
 }
 
-/// 用量数据
+/// Usage data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageData {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -128,150 +128,150 @@ pub struct UsageData {
     pub unit: Option<String>,
 }
 
-/// 用量查询结果（支持多套餐）
+/// Usage query result (supports multiple plans)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageResult {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<Vec<UsageData>>, // 支持返回多个套餐
+    pub data: Option<Vec<UsageData>>, // may return several plans
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
-/// 供应商单独的模型测试配置
+/// Per-provider model test configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProviderTestConfig {
-    /// 是否启用单独配置（false 时使用全局配置）
+    /// Whether the per-provider settings apply (false uses the global settings)
     #[serde(default)]
     pub enabled: bool,
-    /// 测试用的模型名称（覆盖全局配置）
+    /// Model used for the test (overrides the global setting)
     #[serde(rename = "testModel", skip_serializing_if = "Option::is_none")]
     pub test_model: Option<String>,
-    /// 超时时间（秒）
+    /// Timeout in seconds
     #[serde(rename = "timeoutSecs", skip_serializing_if = "Option::is_none")]
     pub timeout_secs: Option<u64>,
-    /// 测试提示词
+    /// Test prompt
     #[serde(rename = "testPrompt", skip_serializing_if = "Option::is_none")]
     pub test_prompt: Option<String>,
-    /// 降级阈值（毫秒）
+    /// Degraded threshold in milliseconds
     #[serde(
         rename = "degradedThresholdMs",
         skip_serializing_if = "Option::is_none"
     )]
     pub degraded_threshold_ms: Option<u64>,
-    /// 最大重试次数
+    /// Maximum retries
     #[serde(rename = "maxRetries", skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u32>,
 }
 
-/// 供应商单独的代理配置
+/// Per-provider proxy configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProviderProxyConfig {
-    /// 是否启用单独配置（false 时使用全局/系统代理）
+    /// Whether the per-provider settings apply (false uses the global/system proxy)
     #[serde(default)]
     pub enabled: bool,
-    /// 代理类型：http, https, socks5
+    /// Proxy type: http, https, socks5
     #[serde(rename = "proxyType", skip_serializing_if = "Option::is_none")]
     pub proxy_type: Option<String>,
-    /// 代理主机
+    /// Proxy host
     #[serde(rename = "proxyHost", skip_serializing_if = "Option::is_none")]
     pub proxy_host: Option<String>,
-    /// 代理端口
+    /// Proxy port
     #[serde(rename = "proxyPort", skip_serializing_if = "Option::is_none")]
     pub proxy_port: Option<u16>,
-    /// 代理用户名（可选）
+    /// Proxy username (optional)
     #[serde(rename = "proxyUsername", skip_serializing_if = "Option::is_none")]
     pub proxy_username: Option<String>,
-    /// 代理密码（可选）
+    /// Proxy password (optional)
     #[serde(rename = "proxyPassword", skip_serializing_if = "Option::is_none")]
     pub proxy_password: Option<String>,
 }
 
-/// 认证绑定来源
+/// Where authentication comes from
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthBindingSource {
-    /// 从 provider 自身配置读取认证信息（默认）
+    /// Read credentials from the provider's own config (default)
     #[default]
     ProviderConfig,
-    /// 使用托管账号认证（如 GitHub Copilot OAuth）
+    /// Use a managed account (e.g. GitHub Copilot OAuth)
     ManagedAccount,
 }
 
-/// 通用认证绑定
+/// Generic authentication binding
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthBinding {
-    /// 认证来源
+    /// Authentication source
     #[serde(default)]
     pub source: AuthBindingSource,
-    /// 托管认证供应商标识（如 github_copilot）
+    /// Managed auth provider identifier (e.g. github_copilot)
     #[serde(rename = "authProvider", skip_serializing_if = "Option::is_none")]
     pub auth_provider: Option<String>,
-    /// 托管账号 ID；为空表示跟随该认证供应商的默认账号
+    /// Managed account ID; empty means follow that auth provider's default account
     #[serde(rename = "accountId", skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
 }
 
-/// 供应商元数据
+/// Provider metadata
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProviderMeta {
-    /// 自定义端点列表（按 URL 去重存储）
+    /// Custom endpoints (stored deduplicated by URL)
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub custom_endpoints: HashMap<String, crate::settings::CustomEndpoint>,
-    /// 是否在写入 live 时应用通用配置片段
+    /// Whether to apply the common config snippet when writing the live config
     #[serde(
         rename = "commonConfigEnabled",
         skip_serializing_if = "Option::is_none"
     )]
     pub common_config_enabled: Option<bool>,
-    /// 用量查询脚本配置
+    /// Usage query script configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage_script: Option<UsageScript>,
-    /// 请求地址管理：测速后自动选择最佳端点
+    /// Endpoint management: pick the fastest endpoint after a speed test
     #[serde(rename = "endpointAutoSelect", skip_serializing_if = "Option::is_none")]
     pub endpoint_auto_select: Option<bool>,
-    /// 合作伙伴标记（前端使用 isPartner，保持字段名一致）
+    /// Partner flag (the frontend uses isPartner; keep the field name in sync)
     #[serde(rename = "isPartner", skip_serializing_if = "Option::is_none")]
     pub is_partner: Option<bool>,
-    /// 合作伙伴促销 key，用于识别 PackyCode 等特殊供应商
+    /// Partner promotion key, used to recognise special providers such as PackyCode
     #[serde(
         rename = "partnerPromotionKey",
         skip_serializing_if = "Option::is_none"
     )]
     pub partner_promotion_key: Option<String>,
-    /// 成本倍数（用于计算实际成本）
+    /// Cost multiplier (used to compute actual cost)
     #[serde(rename = "costMultiplier", skip_serializing_if = "Option::is_none")]
     pub cost_multiplier: Option<String>,
-    /// 计费模式来源（response/request）
+    /// Pricing model source (response/request)
     #[serde(rename = "pricingModelSource", skip_serializing_if = "Option::is_none")]
     pub pricing_model_source: Option<String>,
-    /// 每日消费限额（USD）
+    /// Daily spend limit (USD)
     #[serde(rename = "limitDailyUsd", skip_serializing_if = "Option::is_none")]
     pub limit_daily_usd: Option<String>,
-    /// 每月消费限额（USD）
+    /// Monthly spend limit (USD)
     #[serde(rename = "limitMonthlyUsd", skip_serializing_if = "Option::is_none")]
     pub limit_monthly_usd: Option<String>,
-    /// 供应商单独的模型测试配置
+    /// Per-provider model test configuration
     #[serde(rename = "testConfig", skip_serializing_if = "Option::is_none")]
     pub test_config: Option<ProviderTestConfig>,
-    /// 供应商单独的代理配置
+    /// Per-provider proxy configuration
     #[serde(rename = "proxyConfig", skip_serializing_if = "Option::is_none")]
     pub proxy_config: Option<ProviderProxyConfig>,
-    /// Claude API 格式（仅 Claude 供应商使用）
-    /// - "anthropic": 原生 Anthropic Messages API，直接透传
-    /// - "openai_chat": OpenAI Chat Completions 格式，需要转换
-    /// - "openai_responses": OpenAI Responses API 格式，需要转换
+    /// Claude API format (Claude providers only)
+    /// - "anthropic": native Anthropic Messages API, passed through as-is
+    /// - "openai_chat": OpenAI Chat Completions format, needs conversion
+    /// - "openai_responses": OpenAI Responses API format, needs conversion
     #[serde(rename = "apiFormat", skip_serializing_if = "Option::is_none")]
     pub api_format: Option<String>,
-    /// 通用认证绑定（provider_config / managed_account）
+    /// Generic authentication binding (provider_config / managed_account)
     ///
-    /// 新代码应只写入该字段；githubAccountId 仅保留兼容读取。
+    /// New code should write only this field; githubAccountId is kept for reading old data.
     #[serde(rename = "authBinding", skip_serializing_if = "Option::is_none")]
     pub auth_binding: Option<AuthBinding>,
-    /// Claude 认证字段名（"ANTHROPIC_AUTH_TOKEN" 或 "ANTHROPIC_API_KEY"）
+    /// Claude auth field name ("ANTHROPIC_AUTH_TOKEN" or "ANTHROPIC_API_KEY")
     #[serde(rename = "apiKeyField", skip_serializing_if = "Option::is_none")]
     pub api_key_field: Option<String>,
-    /// 是否将 base_url 视为完整 API 端点（不拼接 endpoint 路径）
+    /// Whether base_url is a complete API endpoint (no endpoint path appended)
     #[serde(rename = "isFullUrl", skip_serializing_if = "Option::is_none")]
     pub is_full_url: Option<bool>,
     /// Prompt cache key for OpenAI-compatible endpoints.
@@ -279,16 +279,16 @@ pub struct ProviderMeta {
     /// If not set, provider ID is used automatically during format conversion.
     #[serde(rename = "promptCacheKey", skip_serializing_if = "Option::is_none")]
     pub prompt_cache_key: Option<String>,
-    /// 累加模式应用中，该 provider 是否已写入 live config。
-    /// `None` 表示旧数据/未知状态，`Some(false)` 表示明确仅存在于数据库中。
+    /// For additive-mode apps: whether this provider has been written to the live config.
+    /// `None` means legacy data / unknown; `Some(false)` means it exists only in the database.
     #[serde(rename = "liveConfigManaged", skip_serializing_if = "Option::is_none")]
     pub live_config_managed: Option<bool>,
-    /// 供应商类型标识（用于特殊供应商检测）
-    /// - "github_copilot": GitHub Copilot 供应商
+    /// Provider type identifier (used to detect special providers)
+    /// - "github_copilot": GitHub Copilot provider
     #[serde(rename = "providerType", skip_serializing_if = "Option::is_none")]
     pub provider_type: Option<String>,
-    /// GitHub Copilot 关联账号 ID（仅 github_copilot 供应商使用）
-    /// 用于多账号支持，关联到特定的 GitHub 账号
+    /// Linked GitHub Copilot account ID (github_copilot providers only)
+    /// Supports multiple accounts by linking to a specific GitHub account
     #[serde(rename = "githubAccountId", skip_serializing_if = "Option::is_none")]
     pub github_account_id: Option<String>,
     /// Captured Claude OAuth identity for this provider (Official/Claude only).
@@ -309,9 +309,9 @@ pub struct CapturedClaudeAccountMeta {
 }
 
 impl ProviderMeta {
-    /// 解析指定托管认证供应商绑定的账号 ID。
+    /// Resolve the account ID bound to the given managed auth provider.
     ///
-    /// 新版优先读取 authBinding，旧版继续兼容 githubAccountId。
+    /// Reads authBinding first; falls back to the legacy githubAccountId.
     pub fn managed_account_id_for(&self, auth_provider: &str) -> Option<String> {
         if let Some(binding) = self.auth_binding.as_ref() {
             if binding.source == AuthBindingSource::ManagedAccount
@@ -330,10 +330,10 @@ impl ProviderMeta {
 }
 
 // ============================================================================
-// 统一供应商（Universal Provider）- 跨应用共享配置
+// Universal Provider: configuration shared across apps
 // ============================================================================
 
-/// 统一供应商的应用启用状态
+/// Which apps a universal provider is enabled for
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UniversalProviderApps {
     #[serde(default)]
@@ -344,47 +344,47 @@ pub struct UniversalProviderApps {
     pub gemini: bool,
 }
 
-/// Claude 模型配置
+/// Claude model configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ClaudeModelConfig {
-    /// 主模型
+    /// Main model
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// Haiku 默认模型
+    /// Default Haiku model
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "haikuModel")]
     pub haiku_model: Option<String>,
-    /// Sonnet 默认模型
+    /// Default Sonnet model
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "sonnetModel")]
     pub sonnet_model: Option<String>,
-    /// Opus 默认模型
+    /// Default Opus model
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "opusModel")]
     pub opus_model: Option<String>,
 }
 
-/// Codex 模型配置
+/// Codex model configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CodexModelConfig {
-    /// 模型名称
+    /// Model name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// 推理强度
+    /// Reasoning effort
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "reasoningEffort")]
     pub reasoning_effort: Option<String>,
 }
 
-/// Gemini 模型配置
+/// Gemini model configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GeminiModelConfig {
-    /// 模型名称
+    /// Model name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
 }
 
-/// 各应用的模型配置
+/// Per-app model configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UniversalProviderModels {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -395,56 +395,56 @@ pub struct UniversalProviderModels {
     pub gemini: Option<GeminiModelConfig>,
 }
 
-/// 统一供应商（跨应用共享配置）
+/// Universal provider (configuration shared across apps)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UniversalProvider {
-    /// 唯一标识
+    /// Unique identifier
     pub id: String,
-    /// 供应商名称
+    /// Provider name
     pub name: String,
-    /// 供应商类型（如 "newapi", "custom"）
+    /// Provider type (e.g. "newapi", "custom")
     #[serde(rename = "providerType")]
     pub provider_type: String,
-    /// 应用启用状态
+    /// Which apps are enabled
     pub apps: UniversalProviderApps,
-    /// API 基础地址
+    /// API base URL
     #[serde(rename = "baseUrl")]
     pub base_url: String,
-    /// API 密钥
+    /// API key
     #[serde(rename = "apiKey")]
     pub api_key: String,
-    /// 各应用的模型配置
+    /// Per-app model configuration
     #[serde(default)]
     pub models: UniversalProviderModels,
-    /// 网站链接
+    /// Website URL
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "websiteUrl")]
     pub website_url: Option<String>,
-    /// 备注信息
+    /// Notes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
-    /// 图标名称
+    /// Icon name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// 图标颜色
+    /// Icon color
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "iconColor")]
     pub icon_color: Option<String>,
-    /// 元数据
+    /// Metadata
     #[serde(skip_serializing_if = "Option::is_none")]
     pub meta: Option<ProviderMeta>,
-    /// 创建时间戳
+    /// Creation timestamp
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "createdAt")]
     pub created_at: Option<i64>,
-    /// 排序索引
+    /// Sort index
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "sortIndex")]
     pub sort_index: Option<usize>,
 }
 
 impl UniversalProvider {
-    /// 创建新的统一供应商
+    /// Create a new universal provider
     pub fn new(
         id: String,
         name: String,
@@ -470,7 +470,7 @@ impl UniversalProvider {
         }
     }
 
-    /// 生成 Claude 供应商配置
+    /// Build the Claude provider config
     pub fn to_claude_provider(&self) -> Option<Provider> {
         if !self.apps.claude {
             return None;
@@ -517,7 +517,7 @@ impl UniversalProvider {
         })
     }
 
-    /// 生成 Codex 供应商配置
+    /// Build the Codex provider config
     pub fn to_codex_provider(&self) -> Option<Provider> {
         if !self.apps.codex {
             return None;
@@ -531,7 +531,7 @@ impl UniversalProvider {
             .and_then(|m| m.reasoning_effort.clone())
             .unwrap_or_else(|| "high".to_string());
 
-        // Codex/OpenAI 的 base_url 既可能是纯 origin（需要补 /v1），也可能包含自定义前缀（不应强行补版本）
+        // A Codex/OpenAI base_url may be a bare origin (needs /v1 appended) or carry a custom prefix (must not have a version forced on)
         let base_trimmed = self.base_url.trim_end_matches('/');
         let origin_only = match base_trimmed.split_once("://") {
             Some((_scheme, rest)) => !rest.contains('/'),
@@ -545,7 +545,7 @@ impl UniversalProvider {
             base_trimmed.to_string()
         };
 
-        // 生成 Codex 的 config.toml 内容
+        // Build Codex's config.toml content
         let config_toml = format!(
             r#"model_provider = "newapi"
 model = "{model}"
@@ -582,7 +582,7 @@ requires_openai_auth = true"#
         })
     }
 
-    /// 生成 Gemini 供应商配置
+    /// Build the Gemini provider config
     pub fn to_gemini_provider(&self) -> Option<Provider> {
         if !self.apps.gemini {
             return None;
@@ -619,13 +619,13 @@ requires_openai_auth = true"#
 }
 
 // ============================================================================
-// OpenCode 供应商配置结构
+// OpenCode provider config structures
 // ============================================================================
 
-/// OpenCode 供应商的 settings_config 结构
+/// settings_config structure of an OpenCode provider
 ///
-/// OpenCode 使用 AI SDK 包名来指定供应商类型，与其他应用的配置格式不同。
-/// 配置示例：
+/// OpenCode names the provider type by its AI SDK package name, unlike the other apps' config formats.
+/// Example:
 /// ```json
 /// {
 ///   "npm": "@ai-sdk/openai-compatible",
@@ -635,18 +635,18 @@ requires_openai_auth = true"#
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenCodeProviderConfig {
-    /// AI SDK 包名，如 "@ai-sdk/openai-compatible", "@ai-sdk/anthropic"
+    /// AI SDK package name, e.g. "@ai-sdk/openai-compatible", "@ai-sdk/anthropic"
     pub npm: String,
 
-    /// 供应商名称（可选，用于显示）
+    /// Provider name (optional, for display)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
-    /// 供应商选项（API 密钥、基础 URL 等）
+    /// Provider options (API key, base URL, etc.)
     #[serde(default)]
     pub options: OpenCodeProviderOptions,
 
-    /// 模型定义映射
+    /// Model definitions
     #[serde(default)]
     pub models: HashMap<String, OpenCodeModel>,
 }
@@ -662,55 +662,55 @@ impl Default for OpenCodeProviderConfig {
     }
 }
 
-/// OpenCode 供应商选项
+/// OpenCode provider options
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OpenCodeProviderOptions {
-    /// API 基础 URL
+    /// API base URL
     #[serde(rename = "baseURL", skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
 
-    /// API 密钥（支持环境变量引用，如 "{env:API_KEY}"）
+    /// API key (supports env var references such as "{env:API_KEY}")
     #[serde(rename = "apiKey", skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
 
-    /// 自定义请求头
+    /// Custom request headers
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
 
-    /// 额外选项（timeout, setCacheKey 等）
-    /// 使用 flatten 捕获所有未明确定义的字段
+    /// Extra options (timeout, setCacheKey, etc.)
+    /// flatten captures every field not defined explicitly
     #[serde(flatten, default, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, Value>,
 }
 
-/// OpenCode 模型定义
+/// OpenCode model definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpenCodeModel {
-    /// 模型显示名称
+    /// Model display name
     pub name: String,
 
-    /// 模型限制（上下文和输出 token 数）
+    /// Model limits (context and output tokens)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<OpenCodeModelLimit>,
 
-    /// 模型额外选项（provider 路由等）
+    /// Extra model options (provider routing, etc.)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<HashMap<String, Value>>,
 
-    /// 额外字段（cost、modalities、thinking、variants 等）
-    /// 使用 flatten 捕获所有未明确定义的字段
+    /// Extra fields (cost, modalities, thinking, variants, etc.)
+    /// flatten captures every field not defined explicitly
     #[serde(flatten, default, skip_serializing_if = "HashMap::is_empty")]
     pub extra: HashMap<String, Value>,
 }
 
-/// OpenCode 模型限制
+/// OpenCode model limits
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OpenCodeModelLimit {
-    /// 上下文 token 限制
+    /// Context token limit
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<u64>,
 
-    /// 输出 token 限制
+    /// Output token limit
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<u64>,
 }
@@ -719,7 +719,7 @@ pub struct OpenCodeModelLimit {
 mod tests {
     use super::{
         CapturedClaudeAccountMeta, ClaudeModelConfig, CodexModelConfig, GeminiModelConfig,
-        OpenCodeProviderConfig, Provider, ProviderManager, ProviderMeta, UniversalProvider,
+        OpenCodeProviderConfig, Provider, ProviderMeta, UniversalProvider,
     };
     use serde_json::json;
 
@@ -827,21 +827,6 @@ mod tests {
         assert!(provider.icon.is_none());
         assert!(provider.icon_color.is_none());
         assert!(!provider.in_failover_queue);
-    }
-
-    #[test]
-    fn provider_manager_get_all_providers_returns_map() {
-        let mut manager = ProviderManager::default();
-        let provider = Provider::with_id(
-            "provider-1".to_string(),
-            "Provider".to_string(),
-            json!({ "env": {} }),
-            None,
-        );
-        manager.providers.insert("provider-1".to_string(), provider);
-
-        assert_eq!(manager.get_all_providers().len(), 1);
-        assert!(manager.get_all_providers().contains_key("provider-1"));
     }
 
     #[test]

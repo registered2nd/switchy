@@ -204,7 +204,7 @@ export function ProviderList({
     setShowStreamCheckConfirm(false);
     try {
       if (settings) {
-        const { webdavSync: _, ...rest } = settings;
+        const rest = settings;
         await settingsApi.save({ ...rest, streamCheckConfirmed: true });
         await queryClient.invalidateQueries({ queryKey: ["settings"] });
       }

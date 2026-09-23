@@ -238,69 +238,6 @@ describe("useProviderActions", () => {
     expect(switchProviderMutateAsync).toHaveBeenCalledWith(provider.id);
   });
 
-  it("should sync plugin config when switching Claude provider with integration enabled", async () => {
-    switchProviderMutateAsync.mockResolvedValueOnce(undefined);
-    settingsApiGetMock.mockResolvedValueOnce({
-      enableClaudePluginIntegration: true,
-    });
-    settingsApiApplyMock.mockResolvedValueOnce(true);
-    const { wrapper } = createWrapper();
-    const provider = createProvider({ category: "official" });
-
-    const { result } = renderHook(() => useProviderActions("claude"), {
-      wrapper,
-    });
-
-    await act(async () => {
-      await result.current.switchProvider(provider);
-    });
-
-    expect(switchProviderMutateAsync).toHaveBeenCalledWith(provider.id);
-    expect(settingsApiGetMock).toHaveBeenCalledTimes(1);
-    expect(settingsApiApplyMock).toHaveBeenCalledWith({ official: true });
-  });
-
-  it("should not call applyClaudePluginConfig when integration is disabled", async () => {
-    switchProviderMutateAsync.mockResolvedValueOnce(undefined);
-    settingsApiGetMock.mockResolvedValueOnce({
-      enableClaudePluginIntegration: false,
-    });
-    const { wrapper } = createWrapper();
-    const provider = createProvider();
-
-    const { result } = renderHook(() => useProviderActions("claude"), {
-      wrapper,
-    });
-
-    await act(async () => {
-      await result.current.switchProvider(provider);
-    });
-
-    expect(settingsApiGetMock).toHaveBeenCalledTimes(1);
-    expect(settingsApiApplyMock).not.toHaveBeenCalled();
-  });
-
-  it("should show error toast when plugin sync fails with error message", async () => {
-    switchProviderMutateAsync.mockResolvedValueOnce(undefined);
-    settingsApiGetMock.mockResolvedValueOnce({
-      enableClaudePluginIntegration: true,
-    });
-    settingsApiApplyMock.mockRejectedValueOnce(new Error("Sync failed"));
-    const { wrapper } = createWrapper();
-    const provider = createProvider();
-
-    const { result } = renderHook(() => useProviderActions("claude"), {
-      wrapper,
-    });
-
-    await act(async () => {
-      await result.current.switchProvider(provider);
-    });
-
-    expect(toastErrorMock).toHaveBeenCalledTimes(1);
-    expect(toastErrorMock.mock.calls[0]?.[0]).toBe("Sync failed");
-  });
-
   it("propagates updateProvider errors", async () => {
     updateProviderMutateAsync.mockRejectedValueOnce(new Error("update failed"));
     const { wrapper } = createWrapper();
@@ -315,27 +252,6 @@ describe("useProviderActions", () => {
         await result.current.updateProvider(provider);
       }),
     ).rejects.toThrow("update failed");
-  });
-
-  it("should use default error message when plugin sync fails without error message", async () => {
-    switchProviderMutateAsync.mockResolvedValueOnce(undefined);
-    settingsApiGetMock.mockResolvedValueOnce({
-      enableClaudePluginIntegration: true,
-    });
-    settingsApiApplyMock.mockRejectedValueOnce(new Error(""));
-    const { wrapper } = createWrapper();
-    const provider = createProvider();
-
-    const { result } = renderHook(() => useProviderActions("claude"), {
-      wrapper,
-    });
-
-    await act(async () => {
-      await result.current.switchProvider(provider);
-    });
-
-    expect(toastErrorMock).toHaveBeenCalledTimes(1);
-    expect(toastErrorMock.mock.calls[0]?.[0]).toBe("同步 Claude 插件失败");
   });
 
   it("handles mutation errors when plugin sync is skipped", async () => {

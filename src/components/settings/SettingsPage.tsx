@@ -5,7 +5,6 @@ import {
   Save,
   FolderSearch,
   Database,
-  Cloud,
   ScrollText,
   HardDriveDownload,
   FlaskConical,
@@ -33,12 +32,10 @@ import { LanguageSettings } from "@/components/settings/LanguageSettings";
 import { ThemeSettings } from "@/components/settings/ThemeSettings";
 import { WindowSettings } from "@/components/settings/WindowSettings";
 import { AppVisibilitySettings } from "@/components/settings/AppVisibilitySettings";
-import { SkillSyncMethodSettings } from "@/components/settings/SkillSyncMethodSettings";
 import { TerminalSettings } from "@/components/settings/TerminalSettings";
 import { DirectorySettings } from "@/components/settings/DirectorySettings";
 import { ImportExportSection } from "@/components/settings/ImportExportSection";
 import { BackupListSection } from "@/components/settings/BackupListSection";
-import { WebdavSyncSection } from "@/components/settings/WebdavSyncSection";
 import { AboutSection } from "@/components/settings/AboutSection";
 import { PoolTabContent } from "@/components/settings/PoolTabContent";
 import { ModelTestConfigPanel } from "@/components/usage/ModelTestConfigPanel";
@@ -69,7 +66,6 @@ export function SettingsPage({
     settings,
     isLoading,
     isSaving,
-    isPortable,
     appConfigDir,
     resolvedDirs,
     claudeMirrorDir,
@@ -238,12 +234,6 @@ export function SettingsPage({
                     <WindowSettings
                       settings={settings}
                       onChange={handleAutoSave}
-                    />
-                    <SkillSyncMethodSettings
-                      value={settings.skillSyncMethod ?? "auto"}
-                      onChange={(method) =>
-                        handleAutoSave({ skillSyncMethod: method })
-                      }
                     />
                     <TerminalSettings
                       value={settings.preferredTerminal}
@@ -414,31 +404,6 @@ export function SettingsPage({
                         </AccordionContent>
                       </AccordionItem>
 
-                      <AccordionItem
-                        value="cloudSync"
-                        className="rounded-xl glass-card overflow-hidden"
-                      >
-                        <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 data-[state=open]:bg-muted/50">
-                          <div className="flex items-center gap-3">
-                            <Cloud className="h-5 w-5 text-blue-500" />
-                            <div className="text-left">
-                              <h3 className="text-base font-semibold">
-                                {t("settings.advanced.cloudSync.title")}
-                              </h3>
-                              <p className="text-sm text-muted-foreground font-normal">
-                                {t("settings.advanced.cloudSync.description")}
-                              </p>
-                            </div>
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-6 pb-6 pt-4 border-t border-border/50">
-                          <WebdavSyncSection
-                            config={settings?.webdavSync}
-                            settings={settings}
-                            onAutoSave={handleAutoSave}
-                          />
-                        </AccordionContent>
-                      </AccordionItem>
 
                       <AccordionItem
                         value="test"
@@ -519,7 +484,7 @@ export function SettingsPage({
               </TabsContent>
 
               <TabsContent value="about" className="mt-0">
-                <AboutSection isPortable={isPortable} />
+                <AboutSection />
               </TabsContent>
 
               <TabsContent value="usage" className="mt-0">

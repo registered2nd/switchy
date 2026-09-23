@@ -1,11 +1,11 @@
-//! 请求处理器
+//! Request handlers
 //!
-//! 处理各种API端点的HTTP请求
+//! Handles HTTP requests for each API endpoint
 //!
-//! 重构后的结构：
-//! - 通用逻辑提取到 `handler_context` 和 `response_processor` 模块
-//! - 各 handler 只保留独特的业务逻辑
-//! - Claude 的格式转换逻辑保留在此文件（用于 OpenRouter 旧接口回退）
+//! Structure:
+//! - Shared logic lives in the `handler_context` and `response_processor` modules
+//! - Each handler keeps only its own specific logic
+//! - Claude's format-conversion logic stays in this file (fallback for the legacy OpenRouter endpoint)
 
 use super::{
     error_mapper::{get_error_message, map_proxy_error_to_status},
@@ -34,10 +34,10 @@ use http_body_util::BodyExt;
 use serde_json::{json, Value};
 
 // ============================================================================
-// 健康检查和状态查询（简单端点）
+// Health check and status (simple endpoints)
 // ============================================================================
 
-/// 健康检查
+/// Health check
 pub async fn health_check() -> (StatusCode, Json<Value>) {
     (
         StatusCode::OK,
@@ -48,21 +48,21 @@ pub async fn health_check() -> (StatusCode, Json<Value>) {
     )
 }
 
-/// 获取服务状态
+/// Service status
 pub async fn get_status(State(state): State<ProxyState>) -> Result<Json<ProxyStatus>, ProxyError> {
     let status = state.status.read().await.clone();
     Ok(Json(status))
 }
 
 // ============================================================================
-// Claude API 处理器（包含格式转换逻辑）
+// Claude API handler (includes format conversion)
 // ============================================================================
 
-/// 处理 /v1/messages 请求（Claude API）
+/// Handles /v1/messages requests (Claude API)
 ///
-/// Claude 处理器包含独特的格式转换逻辑：
-/// - 过去用于 OpenRouter 的 OpenAI Chat Completions 兼容接口（Anthropic ↔ OpenAI 转换）
-/// - 现在 OpenRouter 已推出 Claude Code 兼容接口，默认不再启用该转换（逻辑保留以备回退）
+/// The Claude handler has its own format-conversion logic:
+/// - previously used for OpenRouter's OpenAI Chat Completions-compatible endpoint (Anthropic <-> OpenAI conversion)
+/// - OpenRouter now offers a Claude Code-compatible endpoint, so the conversion is off by default (the logic is kept as a fallback)
 pub async fn handle_messages(
     State(state): State<ProxyState>,
     request: axum::extract::Request,
@@ -92,7 +92,7 @@ pub async fn handle_messages(
         .and_then(|s| s.as_bool())
         .unwrap_or(false);
 
-    // 转发请求
+    // Forward the request
     let forwarder = ctx.create_forwarder(&state);
     let result = match forwarder
         .forward_with_retry(
@@ -123,23 +123,23 @@ pub async fn handle_messages(
         .to_string();
     let response = result.response;
 
-    // 检查是否需要格式转换（OpenRouter 等中转服务）
+    // Check whether format conversion is needed (OpenRouter and other relays)
     let adapter = get_adapter(&AppType::Claude);
     let needs_transform = adapter.needs_transform(&ctx.provider);
 
-    // Claude 特有：格式转换处理
+    // Claude only: format conversion
     if needs_transform {
         return handle_claude_transform(response, &ctx, &state, &body, is_stream, &api_format)
             .await;
     }
 
-    // 通用响应处理（透传模式）
+    // Shared response handling (passthrough)
     process_response(response, &ctx, &state, &CLAUDE_PARSER_CONFIG).await
 }
 
-/// Claude 格式转换处理（独有逻辑）
+/// Claude format conversion (Claude only)
 ///
-/// 支持 OpenAI Chat Completions 和 Responses API 两种格式的转换
+/// Converts from both OpenAI Chat Completions and Responses API formats
 async fn handle_claude_transform(
     response: super::hyper_client::ProxyResponse,
     ctx: &RequestContext,
@@ -151,7 +151,7 @@ async fn handle_claude_transform(
     let status = response.status();
 
     if is_stream {
-        // 根据 api_format 选择流式转换器
+        // Pick the streaming converter by api_format
         let stream = response.bytes_stream();
         let sse_stream: Box<
             dyn futures::Stream<Item = Result<Bytes, std::io::Error>> + Send + Unpin,
@@ -161,7 +161,7 @@ async fn handle_claude_transform(
             Box::new(Box::pin(create_anthropic_sse_stream(stream)))
         };
 
-        // 创建使用量收集器
+        // Create the usage collector
         let usage_collector = {
             let state = state.clone();
             let provider_id = ctx.provider.id.clone();
@@ -192,12 +192,12 @@ async fn handle_claude_transform(
                         .await;
                     });
                 } else {
-                    log::debug!("[Claude] OpenRouter 流式响应缺少 usage 统计，跳过消费记录");
+                    log::debug!("[Claude] OpenRouter streamed response has no usage stats; skipping usage record");
                 }
             })
         };
 
-        // 获取流式超时配置
+        // Streaming timeout configuration
         let timeout_config = ctx.streaming_timeout_config();
 
         let logged_stream = create_logged_passthrough_stream(
@@ -225,7 +225,7 @@ async fn handle_claude_transform(
         return Ok((headers, body).into_response());
     }
 
-    // 非流式响应转换 (OpenAI/Responses → Anthropic)
+    // Non-streaming response conversion (OpenAI/Responses -> Anthropic)
     let body_timeout =
         if ctx.app_config.auto_failover_enabled && ctx.app_config.non_streaming_timeout > 0 {
             std::time::Duration::from_secs(ctx.app_config.non_streaming_timeout as u64)
@@ -238,22 +238,22 @@ async fn handle_claude_transform(
     let body_str = String::from_utf8_lossy(&body_bytes);
 
     let upstream_response: Value = serde_json::from_slice(&body_bytes).map_err(|e| {
-        log::error!("[Claude] 解析上游响应失败: {e}, body: {body_str}");
+        log::error!("[Claude] Failed to parse upstream response: {e}, body: {body_str}");
         ProxyError::TransformError(format!("Failed to parse upstream response: {e}"))
     })?;
 
-    // 根据 api_format 选择非流式转换器
+    // Pick the non-streaming converter by api_format
     let anthropic_response = if api_format == "openai_responses" {
         transform_responses::responses_to_anthropic(upstream_response)
     } else {
         transform::openai_to_anthropic(upstream_response)
     }
     .map_err(|e| {
-        log::error!("[Claude] 转换响应失败: {e}");
+        log::error!("[Claude] Failed to convert response: {e}");
         e
     })?;
 
-    // 记录使用量
+    // Record usage
     if let Some(usage) = TokenUsage::from_claude_response(&anthropic_response) {
         let model = anthropic_response
             .get("model")
@@ -284,7 +284,7 @@ async fn handle_claude_transform(
         });
     }
 
-    // 构建响应
+    // Build the response
     let mut builder = axum::response::Response::builder().status(status);
     strip_entity_headers_for_rebuilt_body(&mut response_headers);
 
@@ -295,13 +295,13 @@ async fn handle_claude_transform(
     builder = builder.header("content-type", "application/json");
 
     let response_body = serde_json::to_vec(&anthropic_response).map_err(|e| {
-        log::error!("[Claude] 序列化响应失败: {e}");
+        log::error!("[Claude] Failed to serialize response: {e}");
         ProxyError::TransformError(format!("Failed to serialize response: {e}"))
     })?;
 
     let body = axum::body::Body::from(response_body);
     builder.body(body).map_err(|e| {
-        log::error!("[Claude] 构建响应失败: {e}");
+        log::error!("[Claude] Failed to build response: {e}");
         ProxyError::Internal(format!("Failed to build response: {e}"))
     })
 }
@@ -314,10 +314,10 @@ fn endpoint_with_query(uri: &axum::http::Uri, endpoint: &str) -> String {
 }
 
 // ============================================================================
-// Codex API 处理器
+// Codex API handlers
 // ============================================================================
 
-/// 处理 /v1/chat/completions 请求（OpenAI Chat Completions API - Codex CLI）
+/// Handles /v1/chat/completions requests (OpenAI Chat Completions API - Codex CLI)
 pub async fn handle_chat_completions(
     State(state): State<ProxyState>,
     request: axum::extract::Request,
@@ -371,7 +371,7 @@ pub async fn handle_chat_completions(
     process_response(response, &ctx, &state, &OPENAI_PARSER_CONFIG).await
 }
 
-/// 处理 /v1/responses 请求（OpenAI Responses API - Codex CLI 透传）
+/// Handles /v1/responses requests (OpenAI Responses API - Codex CLI passthrough)
 pub async fn handle_responses(
     State(state): State<ProxyState>,
     request: axum::extract::Request,
@@ -426,7 +426,7 @@ pub async fn handle_responses(
     process_response(response, &ctx, &state, &CODEX_PARSER_CONFIG).await
 }
 
-/// 处理 /v1/responses/compact 请求（OpenAI Responses Compact API - Codex CLI 透传）
+/// Handles /v1/responses/compact requests (OpenAI Responses Compact API - Codex CLI passthrough)
 pub async fn handle_responses_compact(
     State(state): State<ProxyState>,
     request: axum::extract::Request,
@@ -682,10 +682,10 @@ pub async fn handle_claude_passthrough(
 }
 
 // ============================================================================
-// Gemini API 处理器
+// Gemini API handler
 // ============================================================================
 
-/// 处理 Gemini API 请求（透传，包括查询参数）
+/// Handles Gemini API requests (passthrough, including query parameters)
 pub async fn handle_gemini(
     State(state): State<ProxyState>,
     uri: axum::http::Uri,
@@ -702,12 +702,12 @@ pub async fn handle_gemini(
     let body: Value = serde_json::from_slice(&body_bytes)
         .map_err(|e| ProxyError::Internal(format!("Failed to parse request body: {e}")))?;
 
-    // Gemini 的模型名称在 URI 中
+    // Gemini carries the model name in the URI
     let mut ctx = RequestContext::new(&state, &body, &headers, AppType::Gemini, "Gemini", "gemini")
         .await?
         .with_model_from_uri(&uri);
 
-    // 提取完整的路径和查询参数
+    // Extract the full path and query parameters
     let endpoint = uri
         .path_and_query()
         .map(|pq| pq.as_str())
@@ -747,7 +747,7 @@ pub async fn handle_gemini(
 }
 
 // ============================================================================
-// 使用量记录（保留用于 Claude 转换逻辑）
+// Usage logging (kept for the Claude conversion logic)
 // ============================================================================
 
 fn log_forward_error(
@@ -775,11 +775,11 @@ fn log_forward_error(
         Some(ctx.session_id.clone()),
         None,
     ) {
-        log::warn!("记录失败请求日志失败: {e}");
+        log::warn!("Failed to log failed request: {e}");
     }
 }
 
-/// 记录请求使用量
+/// Records request usage
 #[allow(clippy::too_many_arguments)]
 async fn log_usage(
     state: &ProxyState,
@@ -823,6 +823,6 @@ async fn log_usage(
         None, // provider_type
         is_streaming,
     ) {
-        log::warn!("[USG-001] 记录使用量失败: {e}");
+        log::warn!("[USG-001] Failed to record usage: {e}");
     }
 }

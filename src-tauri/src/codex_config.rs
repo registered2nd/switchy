@@ -11,7 +11,7 @@ use std::fs;
 use std::path::Path;
 use toml_edit::DocumentMut;
 
-/// 获取 Codex 配置目录路径
+/// Get the Codex config directory path
 pub fn get_codex_config_dir() -> PathBuf {
     if let Some(custom) = crate::settings::get_codex_override_dir() {
         return custom;
@@ -20,17 +20,17 @@ pub fn get_codex_config_dir() -> PathBuf {
     get_home_dir().join(".codex")
 }
 
-/// 获取 Codex auth.json 路径
+/// Get the Codex auth.json path
 pub fn get_codex_auth_path() -> PathBuf {
     get_codex_config_dir().join("auth.json")
 }
 
-/// 获取 Codex config.toml 路径
+/// Get the Codex config.toml path
 pub fn get_codex_config_path() -> PathBuf {
     get_codex_config_dir().join("config.toml")
 }
 
-/// 获取 Codex 供应商配置文件路径
+/// Get the path of a Codex provider config file
 #[allow(dead_code)]
 pub fn get_codex_provider_paths(
     provider_id: &str,
@@ -46,7 +46,7 @@ pub fn get_codex_provider_paths(
     (auth_path, config_path)
 }
 
-/// 删除 Codex 供应商配置文件
+/// Delete a Codex provider config file
 #[allow(dead_code)]
 pub fn delete_codex_provider_config(
     provider_id: &str,
@@ -60,7 +60,7 @@ pub fn delete_codex_provider_config(
     Ok(())
 }
 
-/// 原子写 Codex 的 `auth.json` 与 `config.toml`，在第二步失败时回滚第一步
+/// Atomically write Codex's `auth.json` and `config.toml`, rolling back the first write if the second fails
 pub fn write_codex_live_atomic(
     auth: &Value,
     config_text_opt: Option<&str>,
@@ -72,7 +72,7 @@ pub fn write_codex_live_atomic(
         std::fs::create_dir_all(parent).map_err(|e| AppError::io(parent, e))?;
     }
 
-    // 读取旧内容用于回滚
+    // Read the old contents for rollback
     let old_auth = if auth_path.exists() {
         Some(fs::read(&auth_path).map_err(|e| AppError::io(&auth_path, e))?)
     } else {
@@ -84,7 +84,7 @@ pub fn write_codex_live_atomic(
         None
     };
 
-    // 准备写入内容
+    // Prepare the contents to write
     let cfg_text = match config_text_opt {
         Some(s) => s.to_string(),
         None => String::new(),
@@ -93,12 +93,12 @@ pub fn write_codex_live_atomic(
         toml::from_str::<toml::Table>(&cfg_text).map_err(|e| AppError::toml(&config_path, e))?;
     }
 
-    // 第一步：写 auth.json
+    // Step 1: write auth.json
     write_json_file(&auth_path, auth)?;
 
-    // 第二步：写 config.toml（失败则回滚 auth.json）
+    // Step 2: write config.toml (roll back auth.json on failure)
     if let Err(e) = write_text_file(&config_path, &cfg_text) {
-        // 回滚 auth.json
+        // Roll back auth.json
         if let Some(bytes) = old_auth {
             let _ = atomic_write(&auth_path, &bytes);
         } else {
@@ -110,7 +110,7 @@ pub fn write_codex_live_atomic(
     Ok(())
 }
 
-/// 读取 `~/.codex/config.toml`，若不存在返回空字符串
+/// Read `~/.codex/config.toml`; returns an empty string if it does not exist
 pub fn read_codex_config_text() -> Result<String, AppError> {
     let path = get_codex_config_path();
     if path.exists() {
@@ -120,7 +120,7 @@ pub fn read_codex_config_text() -> Result<String, AppError> {
     }
 }
 
-/// 对非空的 TOML 文本进行语法校验
+/// Validate the syntax of non-empty TOML text
 pub fn validate_config_toml(text: &str) -> Result<(), AppError> {
     if text.trim().is_empty() {
         return Ok(());
@@ -130,7 +130,7 @@ pub fn validate_config_toml(text: &str) -> Result<(), AppError> {
         .map_err(|e| AppError::toml(Path::new("config.toml"), e))
 }
 
-/// 读取并校验 `~/.codex/config.toml`，返回文本（可能为空）
+/// Read and validate `~/.codex/config.toml`, returning the text (possibly empty)
 pub fn read_and_validate_codex_config_text() -> Result<String, AppError> {
     let s = read_codex_config_text()?;
     validate_config_toml(&s)?;

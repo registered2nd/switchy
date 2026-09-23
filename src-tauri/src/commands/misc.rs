@@ -15,7 +15,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-/// 打开外部链接
+/// Open an external link
 #[tauri::command]
 pub async fn open_external(app: AppHandle, url: String) -> Result<bool, String> {
     let url = if url.starts_with("http://") || url.starts_with("https://") {
@@ -26,7 +26,7 @@ pub async fn open_external(app: AppHandle, url: String) -> Result<bool, String> 
 
     app.opener()
         .open_url(&url, None::<String>)
-        .map_err(|e| format!("打开链接失败: {e}"))?;
+        .map_err(|e| format!("Failed to open link: {e}"))?;
 
     Ok(true)
 }
@@ -36,28 +36,28 @@ pub async fn copy_text_to_clipboard(text: String) -> Result<bool, String> {
     // Use spawn_blocking to avoid blocking the async runtime
     // Clipboard access can block on some platforms and may have thread/loop constraints
     tokio::task::spawn_blocking(move || {
-        let mut clipboard =
-            arboard::Clipboard::new().map_err(|e| format!("访问系统剪贴板失败: {e}"))?;
+        let mut clipboard = arboard::Clipboard::new()
+            .map_err(|e| format!("Failed to access the system clipboard: {e}"))?;
         clipboard
             .set_text(text)
-            .map_err(|e| format!("写入系统剪贴板失败: {e}"))?;
+            .map_err(|e| format!("Failed to write to the system clipboard: {e}"))?;
         Ok(true)
     })
     .await
-    .map_err(|e| format!("剪贴板任务执行失败: {e}"))?
+    .map_err(|e| format!("Clipboard task failed: {e}"))?
 }
 
-/// 获取应用启动阶段的初始化错误（若有）。
-/// 用于前端在早期主动拉取，避免事件订阅竞态导致的提示缺失。
+/// Get the initialization error from app startup, if any.
+/// Lets the frontend pull it early, so a race with the event subscription cannot drop the notice.
 #[tauri::command]
 pub async fn get_init_error() -> Result<Option<InitErrorPayload>, String> {
     Ok(crate::init_status::get_init_error())
 }
 
-/// 打开指定提供商的终端
+/// Open a terminal for the given provider
 ///
-/// 根据提供商配置的环境变量启动一个带有该提供商特定设置的终端
-/// 无需检查是否为当前激活的提供商，任何提供商都可以打开终端
+/// Starts a terminal with the provider's settings, based on the environment variables in its config.
+/// Works for any provider, not only the active one.
 #[allow(non_snake_case)]
 #[tauri::command]
 pub async fn open_provider_terminal(
@@ -69,26 +69,26 @@ pub async fn open_provider_terminal(
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     let launch_cwd = resolve_launch_cwd(cwd)?;
 
-    // 获取提供商配置
+    // Get the provider config
     let providers = ProviderService::list(state.inner(), app_type.clone())
-        .map_err(|e| format!("获取提供商列表失败: {e}"))?;
+        .map_err(|e| format!("Failed to get the provider list: {e}"))?;
 
     let provider = providers
         .get(&providerId)
-        .ok_or_else(|| format!("提供商 {providerId} 不存在"))?;
+        .ok_or_else(|| format!("Provider {providerId} not found"))?;
 
-    // 从提供商配置中提取环境变量
+    // Extract environment variables from the provider config
     let config = &provider.settings_config;
     let env_vars = extract_env_vars_from_config(config, &app_type);
 
-    // 根据平台启动终端，传入提供商ID用于生成唯一的配置文件名
+    // Start the terminal for this platform; the provider ID makes the config file name unique
     launch_terminal_with_env(env_vars, &providerId, launch_cwd.as_deref())
-        .map_err(|e| format!("启动终端失败: {e}"))?;
+        .map_err(|e| format!("Failed to start terminal: {e}"))?;
 
     Ok(true)
 }
 
-/// 从提供商配置中提取环境变量
+/// Extract environment variables from the provider config
 fn extract_env_vars_from_config(
     config: &serde_json::Value,
     app_type: &AppType,
@@ -99,7 +99,7 @@ fn extract_env_vars_from_config(
         return env_vars;
     };
 
-    // 处理 env 字段（Claude/Gemini 通用）
+    // The env field (shared by Claude and Gemini)
     if let Some(env) = obj.get("env").and_then(|v| v.as_object()) {
         for (key, value) in env {
             if let Some(str_val) = value.as_str() {
@@ -107,7 +107,7 @@ fn extract_env_vars_from_config(
             }
         }
 
-        // 处理 base_url: 根据应用类型添加对应的环境变量
+        // base_url: add the environment variable that matches the app type
         let base_url_key = match app_type {
             AppType::Claude => Some("ANTHROPIC_BASE_URL"),
             AppType::Gemini => Some("GOOGLE_GEMINI_BASE_URL"),
@@ -121,14 +121,14 @@ fn extract_env_vars_from_config(
         }
     }
 
-    // Codex 使用 auth 字段转换为 OPENAI_API_KEY
+    // Codex: the auth field becomes OPENAI_API_KEY
     if *app_type == AppType::Codex {
         if let Some(auth) = obj.get("auth").and_then(|v| v.as_str()) {
             env_vars.push(("OPENAI_API_KEY".to_string(), auth.to_string()));
         }
     }
 
-    // Gemini 使用 api_key 字段转换为 GEMINI_API_KEY
+    // Gemini: the api_key field becomes GEMINI_API_KEY
     if *app_type == AppType::Gemini {
         if let Some(api_key) = obj.get("api_key").and_then(|v| v.as_str()) {
             env_vars.push(("GEMINI_API_KEY".to_string(), api_key.to_string()));
@@ -144,17 +144,21 @@ fn resolve_launch_cwd(cwd: Option<String>) -> Result<Option<PathBuf>, String> {
     };
 
     if raw_path.contains('\n') || raw_path.contains('\r') {
-        return Err("目录路径包含非法换行符".to_string());
+        return Err("Directory path contains an illegal newline".to_string());
     }
 
     let path = Path::new(&raw_path);
     if !path.exists() {
-        return Err(format!("目录不存在: {raw_path}"));
+        return Err(format!("Directory does not exist: {raw_path}"));
     }
 
-    let resolved = std::fs::canonicalize(path).map_err(|e| format!("解析目录失败: {e}"))?;
+    let resolved =
+        std::fs::canonicalize(path).map_err(|e| format!("Failed to resolve directory: {e}"))?;
     if !resolved.is_dir() {
-        return Err(format!("选择的路径不是文件夹: {}", resolved.display()));
+        return Err(format!(
+            "The selected path is not a folder: {}",
+            resolved.display()
+        ));
     }
 
     // Strip Windows extended-length prefix that canonicalize produces,
@@ -175,8 +179,8 @@ fn resolve_launch_cwd(cwd: Option<String>) -> Result<Option<PathBuf>, String> {
     Ok(Some(resolved))
 }
 
-/// 创建临时配置文件并启动 claude 终端
-/// 使用 --settings 参数传入提供商特定的 API 配置
+/// Create a temporary config file and start a claude terminal
+/// Passes the provider's API config through the --settings argument
 fn launch_terminal_with_env(
     env_vars: Vec<(String, String)>,
     provider_id: &str,
@@ -189,7 +193,7 @@ fn launch_terminal_with_env(
         std::process::id()
     ));
 
-    // 创建并写入配置文件
+    // Create and write the config file
     write_claude_config(&config_file, &env_vars)?;
 
     #[cfg(target_os = "macos")]
@@ -211,10 +215,10 @@ fn launch_terminal_with_env(
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    Err("不支持的操作系统".to_string())
+    Err("Unsupported operating system".to_string())
 }
 
-/// 写入 claude 配置文件
+/// Write the claude config file
 fn write_claude_config(
     config_file: &std::path::Path,
     env_vars: &[(String, String)],
@@ -228,13 +232,14 @@ fn write_claude_config(
 
     config_obj.insert("env".to_string(), serde_json::Value::Object(env_obj));
 
-    let config_json =
-        serde_json::to_string_pretty(&config_obj).map_err(|e| format!("序列化配置失败: {e}"))?;
+    let config_json = serde_json::to_string_pretty(&config_obj)
+        .map_err(|e| format!("Failed to serialize config: {e}"))?;
 
-    std::fs::write(config_file, config_json).map_err(|e| format!("写入配置文件失败: {e}"))
+    std::fs::write(config_file, config_json)
+        .map_err(|e| format!("Failed to write config file: {e}"))
 }
 
-/// macOS: 根据用户首选终端启动
+/// macOS: start the user's preferred terminal
 #[cfg(target_os = "macos")]
 fn launch_macos_terminal(config_file: &std::path::Path, cwd: Option<&Path>) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
@@ -262,11 +267,12 @@ exec bash --norc --noprofile
         cd_command = cd_command,
     );
 
-    std::fs::write(&script_file, &script_content).map_err(|e| format!("写入启动脚本失败: {e}"))?;
+    std::fs::write(&script_file, &script_content)
+        .map_err(|e| format!("Failed to write launch script: {e}"))?;
 
     // Make script executable
     std::fs::set_permissions(&script_file, std::fs::Permissions::from_mode(0o755))
-        .map_err(|e| format!("设置脚本权限失败: {e}"))?;
+        .map_err(|e| format!("Failed to set script permissions: {e}"))?;
 
     // Try the preferred terminal first, fall back to Terminal.app if it fails
     // Note: Kitty doesn't need the -e flag, others do
@@ -282,7 +288,7 @@ exec bash --norc --noprofile
     // If preferred terminal fails and it's not the default, try Terminal.app as fallback
     if result.is_err() && terminal != "terminal" {
         log::warn!(
-            "首选终端 {} 启动失败，回退到 Terminal.app: {:?}",
+            "Preferred terminal {} failed to start, falling back to Terminal.app: {:?}",
             terminal,
             result.as_ref().err()
         );
@@ -309,12 +315,12 @@ end tell"#,
         .arg("-e")
         .arg(&applescript)
         .output()
-        .map_err(|e| format!("执行 osascript 失败: {e}"))?;
+        .map_err(|e| format!("Failed to run osascript: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "Terminal.app 执行失败 (exit code: {:?}): {}",
+            "Terminal.app failed (exit code: {:?}): {}",
             output.status.code(),
             stderr
         ));
@@ -345,12 +351,12 @@ end tell"#,
         .arg("-e")
         .arg(&applescript)
         .output()
-        .map_err(|e| format!("执行 osascript 失败: {e}"))?;
+        .map_err(|e| format!("Failed to run osascript: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "iTerm2 执行失败 (exit code: {:?}): {}",
+            "iTerm2 failed (exit code: {:?}): {}",
             output.status.code(),
             stderr
         ));
@@ -359,7 +365,7 @@ end tell"#,
     Ok(())
 }
 
-/// macOS: 使用 open -a 启动支持 --args 参数的终端（Alacritty/Kitty/Ghostty）
+/// macOS: start a terminal that accepts --args through open -a (Alacritty/Kitty/Ghostty)
 #[cfg(target_os = "macos")]
 fn launch_macos_open_app(
     app_name: &str,
@@ -378,12 +384,12 @@ fn launch_macos_open_app(
 
     let output = cmd
         .output()
-        .map_err(|e| format!("启动 {app_name} 失败: {e}"))?;
+        .map_err(|e| format!("Failed to start {app_name}: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "{} 启动失败 (exit code: {:?}): {}",
+            "{} failed to start (exit code: {:?}): {}",
             app_name,
             output.status.code(),
             stderr
@@ -393,7 +399,7 @@ fn launch_macos_open_app(
     Ok(())
 }
 
-/// Linux: 根据用户首选终端启动
+/// Linux: start the user's preferred terminal
 #[cfg(target_os = "linux")]
 fn launch_linux_terminal(config_file: &std::path::Path, cwd: Option<&Path>) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
@@ -433,10 +439,11 @@ exec bash --norc --noprofile
         cd_command = cd_command,
     );
 
-    std::fs::write(&script_file, &script_content).map_err(|e| format!("写入启动脚本失败: {e}"))?;
+    std::fs::write(&script_file, &script_content)
+        .map_err(|e| format!("Failed to write launch script: {e}"))?;
 
     std::fs::set_permissions(&script_file, std::fs::Permissions::from_mode(0o755))
-        .map_err(|e| format!("设置脚本权限失败: {e}"))?;
+        .map_err(|e| format!("Failed to set script permissions: {e}"))?;
 
     // Build terminal list: preferred terminal first (if specified), then defaults
     let terminals_to_try: Vec<(&str, Vec<&str>)> = if let Some(ref pref) = preferred {
@@ -462,7 +469,7 @@ exec bash --norc --noprofile
             .collect()
     };
 
-    let mut last_error = String::from("未找到可用的终端");
+    let mut last_error = String::from("No usable terminal found");
 
     for (terminal, args) in terminals_to_try {
         // Check if terminal exists in common paths
@@ -481,7 +488,7 @@ exec bash --norc --noprofile
             match result {
                 Ok(_) => return Ok(()),
                 Err(e) => {
-                    last_error = format!("执行 {} 失败: {}", terminal, e);
+                    last_error = format!("Failed to run {}: {}", terminal, e);
                 }
             }
         }
@@ -504,7 +511,7 @@ fn which_command(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Windows: 根据用户首选终端启动
+/// Windows: start the user's preferred terminal
 #[cfg(target_os = "windows")]
 fn launch_windows_terminal(
     temp_dir: &std::path::Path,
@@ -533,7 +540,7 @@ del \"%~f0\" >nul 2>&1
         cwd_command = cwd_command,
     );
 
-    std::fs::write(&bat_file, &content).map_err(|e| format!("写入批处理文件失败: {e}"))?;
+    std::fs::write(&bat_file, &content).map_err(|e| format!("Failed to write batch file: {e}"))?;
 
     let bat_path = bat_file.to_string_lossy();
     let ps_cmd = format!("& '{}'", bat_path);
@@ -551,7 +558,7 @@ del \"%~f0\" >nul 2>&1
     // If preferred terminal fails and it's not the default, try cmd as fallback
     if result.is_err() && terminal != "cmd" {
         log::warn!(
-            "首选终端 {} 启动失败，回退到 cmd: {:?}",
+            "Preferred terminal {} failed to start, falling back to cmd: {:?}",
             terminal,
             result.as_ref().err()
         );
@@ -624,12 +631,12 @@ fn run_windows_start_command(args: &[&str], terminal_name: &str) -> Result<(), S
         .args(&full_args)
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| format!("启动 {} 失败: {e}", terminal_name))?;
+        .map_err(|e| format!("Failed to start {}: {e}", terminal_name))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!(
-            "{} 启动失败 (exit code: {:?}): {}",
+            "{} failed to start (exit code: {:?}): {}",
             terminal_name,
             output.status.code(),
             stderr
@@ -639,7 +646,7 @@ fn run_windows_start_command(args: &[&str], terminal_name: &str) -> Result<(), S
     Ok(())
 }
 
-/// 设置窗口主题（Windows/macOS 标题栏颜色）
+/// Set the window theme (Windows/macOS title bar color)
 /// theme: "dark" | "light" | "system"
 #[tauri::command]
 pub async fn set_window_theme(window: tauri::Window, theme: String) -> Result<(), String> {
@@ -657,7 +664,6 @@ pub async fn set_window_theme(window: tauri::Window, theme: String) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn resolve_launch_cwd_accepts_existing_directory() {
@@ -680,7 +686,7 @@ mod tests {
         let error = resolve_launch_cwd(Some(missing.to_string_lossy().into_owned()))
             .expect_err("missing directory should fail");
 
-        assert!(error.contains("目录不存在"));
+        assert!(error.contains("Directory does not exist"));
     }
 
     #[test]

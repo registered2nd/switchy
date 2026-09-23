@@ -1,26 +1,26 @@
-//! Response Parser - 从 API 响应中提取 token 使用量
+//! Response Parser - extracts token usage from API responses
 //!
-//! 支持多种 API 格式：
-//! - Claude API (非流式和流式)
-//! - OpenRouter (OpenAI 格式)
-//! - Codex API (非流式和流式)
-//! - Gemini API (非流式和流式)
+//! Supported API formats:
+//! - Claude API (streaming and non-streaming)
+//! - OpenRouter (OpenAI format)
+//! - Codex API (streaming and non-streaming)
+//! - Gemini API (streaming and non-streaming)
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Token 使用量统计
+/// Token usage
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TokenUsage {
     pub input_tokens: u32,
     pub output_tokens: u32,
     pub cache_read_tokens: u32,
     pub cache_creation_tokens: u32,
-    /// 从响应中提取的实际模型名称（如果可用）
+    /// Actual model name from the response (if available)
     pub model: Option<String>,
 }
 
-/// API 类型
+/// API type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum ApiType {
@@ -31,10 +31,10 @@ pub enum ApiType {
 }
 
 impl TokenUsage {
-    /// 从 Claude API 非流式响应解析
+    /// Parses a non-streaming Claude API response
     pub fn from_claude_response(body: &Value) -> Option<Self> {
         let usage = body.get("usage")?;
-        // 提取响应中的模型名称
+        // Extract the model name from the response
         let model = body
             .get("model")
             .and_then(|v| v.as_str())
@@ -55,7 +55,7 @@ impl TokenUsage {
         })
     }
 
-    /// 从 Claude API 流式响应解析
+    /// Parses a streaming Claude API response
     #[allow(dead_code)]
     pub fn from_claude_stream_events(events: &[Value]) -> Option<Self> {
         let mut usage = Self::default();
@@ -65,7 +65,7 @@ impl TokenUsage {
             if let Some(event_type) = event.get("type").and_then(|v| v.as_str()) {
                 match event_type {
                     "message_start" => {
-                        // 从 message_start 提取模型名称
+                        // Take the model name from message_start
                         if model.is_none() {
                             if let Some(message) = event.get("message") {
                                 if let Some(m) = message.get("model").and_then(|v| v.as_str()) {
@@ -74,7 +74,7 @@ impl TokenUsage {
                             }
                         }
                         if let Some(msg_usage) = event.get("message").and_then(|m| m.get("usage")) {
-                            // 从 message_start 获取 input_tokens（原生 Claude API）
+                            // Take input_tokens from message_start (native Claude API)
                             if let Some(input) =
                                 msg_usage.get("input_tokens").and_then(|v| v.as_u64())
                             {
@@ -94,14 +94,14 @@ impl TokenUsage {
                     }
                     "message_delta" => {
                         if let Some(delta_usage) = event.get("usage") {
-                            // 从 message_delta 获取 output_tokens
+                            // Take output_tokens from message_delta
                             if let Some(output) =
                                 delta_usage.get("output_tokens").and_then(|v| v.as_u64())
                             {
                                 usage.output_tokens = output as u32;
                             }
-                            // OpenRouter 转换后的流式响应：input_tokens 也在 message_delta 中
-                            // 如果 message_start 中没有 input_tokens，则从 message_delta 获取
+                            // Streaming responses converted from OpenRouter: input_tokens is also in message_delta.
+                            // If message_start had no input_tokens, take it from message_delta
                             if usage.input_tokens == 0 {
                                 if let Some(input) =
                                     delta_usage.get("input_tokens").and_then(|v| v.as_u64())
@@ -109,7 +109,7 @@ impl TokenUsage {
                                     usage.input_tokens = input as u32;
                                 }
                             }
-                            // 从 message_delta 中处理缓存命中(cache_read_input_tokens)
+                            // Handle cache hits (cache_read_input_tokens) from message_delta
                             if usage.cache_read_tokens == 0 {
                                 if let Some(cache_read) = delta_usage
                                     .get("cache_read_input_tokens")
@@ -118,8 +118,8 @@ impl TokenUsage {
                                     usage.cache_read_tokens = cache_read as u32;
                                 }
                             }
-                            // 从 message_delta 中处理缓存创建(cache_creation_input_tokens)
-                            // 注: 现在 zhipu 没有返回 cache_creation_input_tokens 字段
+                            // Handle cache creation (cache_creation_input_tokens) from message_delta
+                            // Note: zhipu currently does not return cache_creation_input_tokens
                             if usage.cache_creation_tokens == 0 {
                                 if let Some(cache_creation) = delta_usage
                                     .get("cache_creation_input_tokens")
@@ -143,7 +143,7 @@ impl TokenUsage {
         }
     }
 
-    /// 从 OpenRouter 响应解析 (OpenAI 格式)
+    /// Parses an OpenRouter response (OpenAI format)
     #[allow(dead_code)]
     pub fn from_openrouter_response(body: &Value) -> Option<Self> {
         let usage = body.get("usage")?;
@@ -156,12 +156,12 @@ impl TokenUsage {
         })
     }
 
-    /// 从 Codex API 非流式响应解析
+    /// Parses a non-streaming Codex API response
     pub fn from_codex_response(body: &Value) -> Option<Self> {
         let usage = body.get("usage");
         if usage.is_none() {
             log::debug!(
-                "[Codex] 响应中没有 usage 字段，body keys: {:?}",
+                "[Codex] No usage field in response, body keys: {:?}",
                 body.as_object().map(|o| o.keys().collect::<Vec<_>>())
             );
             return None;
@@ -172,11 +172,13 @@ impl TokenUsage {
         let output_tokens = usage.get("output_tokens").and_then(|v| v.as_u64());
 
         if input_tokens.is_none() || output_tokens.is_none() {
-            log::debug!("[Codex] usage 字段缺少 input_tokens 或 output_tokens，usage: {usage:?}");
+            log::debug!(
+                "[Codex] usage field is missing input_tokens or output_tokens, usage: {usage:?}"
+            );
             return None;
         }
 
-        // 提取响应中的模型名称
+        // Extract the model name from the response
         let model = body
             .get("model")
             .and_then(|v| v.as_str())
@@ -205,17 +207,17 @@ impl TokenUsage {
         })
     }
 
-    /// 从 Codex API 响应解析并调整 input_tokens
+    /// Parses a Codex API response and adjusts input_tokens
     ///
-    /// Codex 的 input_tokens 需要减去 cached_tokens 以获得实际计费的 token 数
-    /// 公式: adjusted_input = max(input_tokens - cached_tokens, 0)
+    /// Codex input_tokens must have cached_tokens subtracted to get the billed token count.
+    /// Formula: adjusted_input = max(input_tokens - cached_tokens, 0)
     #[allow(dead_code)]
     pub fn from_codex_response_adjusted(body: &Value) -> Option<Self> {
         let usage = body.get("usage")?;
         let input_tokens = usage.get("input_tokens")?.as_u64()? as u32;
         let output_tokens = usage.get("output_tokens")?.as_u64()? as u32;
 
-        // 获取 cached_tokens (可能在 cache_read_input_tokens 或 input_tokens_details 中)
+        // Get cached_tokens (in cache_read_input_tokens or input_tokens_details)
         let cached_tokens = usage
             .get("cache_read_input_tokens")
             .and_then(|v| v.as_u64())
@@ -227,10 +229,10 @@ impl TokenUsage {
             })
             .unwrap_or(0) as u32;
 
-        // 调整 input_tokens: 减去 cached_tokens
+        // Adjust input_tokens: subtract cached_tokens
         let adjusted_input = input_tokens.saturating_sub(cached_tokens);
 
-        // 提取响应中的模型名称
+        // Extract the model name from the response
         let model = body
             .get("model")
             .and_then(|v| v.as_str())
@@ -248,86 +250,86 @@ impl TokenUsage {
         })
     }
 
-    /// 从 Codex API 流式响应解析
+    /// Parses a streaming Codex API response
     #[allow(dead_code)]
     pub fn from_codex_stream_events(events: &[Value]) -> Option<Self> {
-        log::debug!("[Codex] 解析流式事件，共 {} 个事件", events.len());
+        log::debug!("[Codex] Parsing {} stream events", events.len());
         for event in events {
             if let Some(event_type) = event.get("type").and_then(|v| v.as_str()) {
-                log::debug!("[Codex] 事件类型: {event_type}");
+                log::debug!("[Codex] Event type: {event_type}");
                 if event_type == "response.completed" {
                     if let Some(response) = event.get("response") {
-                        log::debug!("[Codex] 找到 response.completed 事件，解析 usage");
+                        log::debug!("[Codex] Found response.completed event, parsing usage");
                         return Self::from_codex_response_adjusted(response);
                     }
                 }
             }
         }
-        log::debug!("[Codex] 未找到 response.completed 事件");
+        log::debug!("[Codex] No response.completed event found");
         None
     }
 
-    /// 智能 Codex 响应解析 - 自动检测 OpenAI 或 Codex 格式
+    /// Smart Codex response parsing - detects OpenAI or Codex format automatically
     ///
-    /// Codex 支持两种 API 格式：
-    /// - `/v1/responses`: 使用 input_tokens/output_tokens
-    /// - `/v1/chat/completions`: 使用 prompt_tokens/completion_tokens (OpenAI 格式)
+    /// Codex supports two API formats:
+    /// - `/v1/responses`: uses input_tokens/output_tokens
+    /// - `/v1/chat/completions`: uses prompt_tokens/completion_tokens (OpenAI format)
     ///
-    /// 注意：记录原始 input_tokens，费用计算时再减去 cached_tokens
+    /// Note: the raw input_tokens is recorded; cached_tokens is subtracted when the cost is calculated
     pub fn from_codex_response_auto(body: &Value) -> Option<Self> {
         let usage = body.get("usage")?;
 
-        // 检测格式：OpenAI 使用 prompt_tokens，Codex 使用 input_tokens
+        // Detect the format: OpenAI uses prompt_tokens, Codex uses input_tokens
         if usage.get("prompt_tokens").is_some() {
-            log::debug!("[Codex] 检测到 OpenAI 格式 (prompt_tokens)");
+            log::debug!("[Codex] Detected OpenAI format (prompt_tokens)");
             Self::from_openai_response(body)
         } else if usage.get("input_tokens").is_some() {
-            log::debug!("[Codex] 检测到 Codex 格式 (input_tokens)");
-            // 使用非调整版本，记录原始 input_tokens
+            log::debug!("[Codex] Detected Codex format (input_tokens)");
+            // Use the unadjusted version to record the raw input_tokens
             Self::from_codex_response(body)
         } else {
-            log::debug!("[Codex] 无法识别响应格式，usage: {usage:?}");
+            log::debug!("[Codex] Unrecognized response format, usage: {usage:?}");
             None
         }
     }
 
-    /// 智能 Codex 流式响应解析 - 自动检测 OpenAI 或 Codex 格式
+    /// Smart Codex streaming response parsing - detects OpenAI or Codex format automatically
     pub fn from_codex_stream_events_auto(events: &[Value]) -> Option<Self> {
-        log::debug!("[Codex] 智能解析流式事件，共 {} 个事件", events.len());
+        log::debug!("[Codex] Smart-parsing {} stream events", events.len());
 
-        // 先尝试 Codex Responses API 格式 (response.completed 事件)
+        // Try the Codex Responses API format first (response.completed event)
         for event in events {
             if let Some(event_type) = event.get("type").and_then(|v| v.as_str()) {
                 if event_type == "response.completed" {
                     if let Some(response) = event.get("response") {
-                        log::debug!("[Codex] 找到 response.completed 事件");
+                        log::debug!("[Codex] Found response.completed event");
                         return Self::from_codex_response_auto(response);
                     }
                 }
             }
         }
 
-        // 回退到 OpenAI Chat Completions 格式 (最后一个 chunk 包含 usage)
-        log::debug!("[Codex] 尝试 OpenAI 流式格式");
+        // Fall back to the OpenAI Chat Completions format (the last chunk carries usage)
+        log::debug!("[Codex] Trying OpenAI streaming format");
         Self::from_openai_stream_events(events)
     }
 
-    /// 从 OpenAI Chat Completions API 响应解析 (prompt_tokens, completion_tokens)
+    /// Parses an OpenAI Chat Completions API response (prompt_tokens, completion_tokens)
     pub fn from_openai_response(body: &Value) -> Option<Self> {
         let usage = body.get("usage")?;
 
-        // OpenAI 使用 prompt_tokens 和 completion_tokens
+        // OpenAI uses prompt_tokens and completion_tokens
         let prompt_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64())?;
         let completion_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64())?;
 
-        // 获取 cached_tokens (可能在 prompt_tokens_details 中)
+        // Get cached_tokens (may be in prompt_tokens_details)
         let cached_tokens = usage
             .get("prompt_tokens_details")
             .and_then(|d| d.get("cached_tokens"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32;
 
-        // 提取响应中的模型名称
+        // Extract the model name from the response
         let model = body
             .get("model")
             .and_then(|v| v.as_str())
@@ -342,26 +344,26 @@ impl TokenUsage {
         })
     }
 
-    /// 从 OpenAI Chat Completions API 流式响应解析
+    /// Parses a streaming OpenAI Chat Completions API response
     pub fn from_openai_stream_events(events: &[Value]) -> Option<Self> {
-        log::debug!("[Codex] 解析 OpenAI 流式事件，共 {} 个事件", events.len());
-        // OpenAI 流式响应在最后一个 chunk 中包含 usage
+        log::debug!("[Codex] Parsing {} OpenAI stream events", events.len());
+        // In OpenAI streaming responses the last chunk carries usage
         for event in events.iter().rev() {
             if let Some(usage) = event.get("usage") {
                 if !usage.is_null() {
-                    log::debug!("[Codex] 找到 usage: {usage:?}");
+                    log::debug!("[Codex] Found usage: {usage:?}");
                     return Self::from_openai_response(event);
                 }
             }
         }
-        log::debug!("[Codex] 未找到 usage 信息");
+        log::debug!("[Codex] No usage info found");
         None
     }
 
-    /// 从 Gemini API 非流式响应解析
+    /// Parses a non-streaming Gemini API response
     pub fn from_gemini_response(body: &Value) -> Option<Self> {
         let usage = body.get("usageMetadata")?;
-        // 提取实际使用的模型名称（modelVersion 字段）
+        // Extract the model name actually used (modelVersion field)
         let model = body
             .get("modelVersion")
             .and_then(|v| v.as_str())
@@ -370,8 +372,8 @@ impl TokenUsage {
         let prompt_tokens = usage.get("promptTokenCount")?.as_u64()? as u32;
         let total_tokens = usage.get("totalTokenCount")?.as_u64()? as u32;
 
-        // 输出 tokens = 总 tokens - 输入 tokens
-        // 这包含了 candidatesTokenCount + thoughtsTokenCount
+        // Output tokens = total tokens - input tokens,
+        // which includes candidatesTokenCount + thoughtsTokenCount
         let output_tokens = total_tokens.saturating_sub(prompt_tokens);
 
         Some(Self {
@@ -386,7 +388,7 @@ impl TokenUsage {
         })
     }
 
-    /// 从 Gemini API 流式响应解析
+    /// Parses a streaming Gemini API response
     #[allow(dead_code)]
     pub fn from_gemini_stream_chunks(chunks: &[Value]) -> Option<Self> {
         let mut total_input = 0u32;
@@ -396,26 +398,26 @@ impl TokenUsage {
 
         for chunk in chunks {
             if let Some(usage) = chunk.get("usageMetadata") {
-                // 输入 tokens (通常在所有 chunk 中保持不变)
+                // Input tokens (usually the same in every chunk)
                 total_input = usage
                     .get("promptTokenCount")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as u32;
 
-                // 总 tokens (包含输入 + 输出 + 思考)
+                // Total tokens (input + output + thinking)
                 total_tokens = usage
                     .get("totalTokenCount")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as u32;
 
-                // 缓存读取 tokens
+                // Cache read tokens
                 total_cache_read = usage
                     .get("cachedContentTokenCount")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0) as u32;
             }
 
-            // 提取实际使用的模型名称（modelVersion 字段）
+            // Extract the model name actually used (modelVersion field)
             if model.is_none() {
                 if let Some(model_version) = chunk.get("modelVersion").and_then(|v| v.as_str()) {
                     model = Some(model_version.to_string());
@@ -423,7 +425,7 @@ impl TokenUsage {
             }
         }
 
-        // 输出 tokens = 总 tokens - 输入 tokens
+        // Output tokens = total tokens - input tokens
         let total_output = total_tokens.saturating_sub(total_input);
 
         if total_input > 0 || total_output > 0 {
@@ -583,7 +585,7 @@ mod tests {
 
     #[test]
     fn test_gemini_response_parsing_no_model() {
-        // 测试没有 modelVersion 字段的情况
+        // Case with no modelVersion field
         let response = json!({
             "usageMetadata": {
                 "promptTokenCount": 100,
@@ -603,8 +605,8 @@ mod tests {
 
     #[test]
     fn test_gemini_response_with_thoughts() {
-        // 测试包含 thoughtsTokenCount 的实际响应
-        // 这是用户报告的真实场景
+        // Real response containing thoughtsTokenCount,
+        // taken from a user report
         let response = json!({
             "candidates": [
                 {
@@ -633,7 +635,7 @@ mod tests {
         let usage = TokenUsage::from_gemini_response(&response).unwrap();
         assert_eq!(usage.input_tokens, 8383);
         // output_tokens = totalTokenCount - promptTokenCount
-        // = 8547 - 8383 = 164 (包含 candidatesTokenCount 50 + thoughtsTokenCount 114)
+        // = 8547 - 8383 = 164 (candidatesTokenCount 50 + thoughtsTokenCount 114)
         assert_eq!(usage.output_tokens, 164);
         assert_eq!(usage.cache_read_tokens, 0);
         assert_eq!(usage.cache_creation_tokens, 0);
@@ -653,7 +655,7 @@ mod tests {
         });
 
         let usage = TokenUsage::from_codex_response(&response).unwrap();
-        // 非调整模式：input_tokens 保持原值，但应记录缓存命中
+        // Unadjusted mode: input_tokens keeps its raw value, but cache hits are still recorded
         assert_eq!(usage.input_tokens, 1000);
         assert_eq!(usage.output_tokens, 500);
         assert_eq!(usage.cache_read_tokens, 300);
@@ -672,7 +674,7 @@ mod tests {
         });
 
         let usage = TokenUsage::from_codex_response_adjusted(&response).unwrap();
-        // input_tokens 应该被调整: 1000 - 300 = 700
+        // input_tokens should be adjusted: 1000 - 300 = 700
         assert_eq!(usage.input_tokens, 700);
         assert_eq!(usage.output_tokens, 500);
         assert_eq!(usage.cache_read_tokens, 300);
@@ -688,7 +690,7 @@ mod tests {
         });
 
         let usage = TokenUsage::from_codex_response_adjusted(&response).unwrap();
-        // 没有 cached_tokens，input_tokens 保持不变
+        // No cached_tokens, so input_tokens is unchanged
         assert_eq!(usage.input_tokens, 1000);
         assert_eq!(usage.output_tokens, 500);
         assert_eq!(usage.cache_read_tokens, 0);
@@ -712,7 +714,7 @@ mod tests {
 
     #[test]
     fn test_codex_response_adjusted_saturating_sub() {
-        // 测试 cached_tokens > input_tokens 的边界情况
+        // Edge case: cached_tokens > input_tokens
         let response = json!({
             "usage": {
                 "input_tokens": 100,
@@ -724,15 +726,15 @@ mod tests {
         });
 
         let usage = TokenUsage::from_codex_response_adjusted(&response).unwrap();
-        // saturating_sub 确保不会下溢
+        // saturating_sub prevents underflow
         assert_eq!(usage.input_tokens, 0);
         assert_eq!(usage.cache_read_tokens, 200);
     }
 
     #[test]
     fn test_openrouter_stream_parsing() {
-        // 测试 OpenRouter 转换后的流式响应解析
-        // OpenRouter 流式响应经过转换后，input_tokens 在 message_delta 中
+        // Parsing a streaming response converted from OpenRouter:
+        // after OpenRouter conversion, input_tokens is in message_delta
         let events = vec![
             json!({
                 "type": "message_start",
@@ -764,8 +766,8 @@ mod tests {
 
     #[test]
     fn test_native_claude_stream_parsing() {
-        // 测试原生 Claude API 流式响应解析
-        // 原生 Claude API 的 input_tokens 在 message_start 中
+        // Parsing a native Claude API streaming response:
+        // in the native Claude API, input_tokens is in message_start
         let events = vec![
             json!({
                 "type": "message_start",
@@ -793,12 +795,12 @@ mod tests {
     }
 
     // ============================================================================
-    // 智能 Codex 解析测试
+    // Smart Codex parsing tests
     // ============================================================================
 
     #[test]
     fn test_codex_response_auto_openai_format() {
-        // OpenAI 格式 (prompt_tokens/completion_tokens)
+        // OpenAI format (prompt_tokens/completion_tokens)
         let response = json!({
             "model": "gpt-4o",
             "usage": {
@@ -819,7 +821,7 @@ mod tests {
 
     #[test]
     fn test_codex_response_auto_codex_format() {
-        // Codex 格式 (input_tokens/output_tokens)
+        // Codex format (input_tokens/output_tokens)
         let response = json!({
             "model": "o3",
             "usage": {
@@ -832,7 +834,7 @@ mod tests {
         });
 
         let usage = TokenUsage::from_codex_response_auto(&response).unwrap();
-        // 记录原始 input_tokens，不调整
+        // Raw input_tokens recorded, not adjusted
         assert_eq!(usage.input_tokens, 1000);
         assert_eq!(usage.output_tokens, 500);
         assert_eq!(usage.cache_read_tokens, 300);
@@ -841,7 +843,7 @@ mod tests {
 
     #[test]
     fn test_codex_stream_events_auto_codex_format() {
-        // Codex Responses API 流式格式 (response.completed 事件)
+        // Codex Responses API streaming format (response.completed event)
         let events = vec![
             json!({
                 "type": "response.created",
@@ -865,7 +867,7 @@ mod tests {
         ];
 
         let usage = TokenUsage::from_codex_stream_events_auto(&events).unwrap();
-        // 记录原始 input_tokens，不调整
+        // Raw input_tokens recorded, not adjusted
         assert_eq!(usage.input_tokens, 1000);
         assert_eq!(usage.output_tokens, 500);
         assert_eq!(usage.cache_read_tokens, 200);
@@ -874,7 +876,7 @@ mod tests {
 
     #[test]
     fn test_codex_stream_events_auto_openai_format() {
-        // OpenAI Chat Completions 流式格式 (最后一个 chunk 包含 usage)
+        // OpenAI Chat Completions streaming format (the last chunk carries usage)
         let events = vec![
             json!({
                 "id": "chatcmpl-123",

@@ -1,28 +1,28 @@
-//! OpenAI Responses API 格式转换模块
+//! OpenAI Responses API format conversion
 //!
-//! 实现 Anthropic Messages ↔ OpenAI Responses API 格式转换。
-//! Responses API 是 OpenAI 2025 年推出的新一代 API，采用扁平化的 input/output 结构。
+//! Converts between Anthropic Messages and the OpenAI Responses API.
+//! The Responses API is OpenAI's newer API, released in 2025, with a flat input/output structure.
 //!
-//! 与 Chat Completions 的主要差异：
-//! - tool_use/tool_result 从 message content 中"提升"为顶层 input item
-//! - system prompt 使用 `instructions` 字段而非 system role message
-//! - usage 字段命名与 Anthropic 一致 (input_tokens/output_tokens)
+//! Main differences from Chat Completions:
+//! - tool_use/tool_result are "lifted" out of message content into top-level input items
+//! - the system prompt uses the `instructions` field instead of a system-role message
+//! - usage field names match Anthropic's (input_tokens/output_tokens)
 
 use crate::proxy::error::ProxyError;
 use serde_json::{json, Value};
 
-/// Anthropic 请求 → OpenAI Responses 请求
+/// Anthropic request → OpenAI Responses request
 ///
 /// `cache_key`: optional prompt_cache_key to inject for improved cache routing
 pub fn anthropic_to_responses(body: Value, cache_key: Option<&str>) -> Result<Value, ProxyError> {
     let mut result = json!({});
 
-    // NOTE: 模型映射由上游统一处理（proxy::model_mapper），格式转换层只做结构转换。
+    // NOTE: model mapping happens upstream (proxy::model_mapper); this layer only converts structure.
     if let Some(model) = body.get("model").and_then(|m| m.as_str()) {
         result["model"] = json!(model);
     }
 
-    // system → instructions (Responses API 使用 instructions 字段)
+    // system → instructions (the Responses API uses the instructions field)
     if let Some(system) = body.get("system") {
         let instructions = if let Some(text) = system.as_str() {
             text.to_string()
@@ -50,7 +50,7 @@ pub fn anthropic_to_responses(body: Value, cache_key: Option<&str>) -> Result<Va
         result["max_output_tokens"] = v.clone();
     }
 
-    // 直接透传的参数
+    // Parameters passed through as-is
     if let Some(v) = body.get("temperature") {
         result["temperature"] = v.clone();
     }
@@ -70,9 +70,9 @@ pub fn anthropic_to_responses(body: Value, cache_key: Option<&str>) -> Result<Va
         }
     }
 
-    // stop_sequences → 丢弃 (Responses API 不支持)
+    // stop_sequences → dropped (the Responses API does not support them)
 
-    // 转换 tools (过滤 BatchTool)
+    // Convert tools (BatchTool filtered out)
     if let Some(tools) = body.get("tools").and_then(|t| t.as_array()) {
         let response_tools: Vec<Value> = tools
             .iter()
@@ -209,13 +209,13 @@ pub(crate) fn build_anthropic_usage_from_responses(usage: Option<&Value>) -> Val
     result
 }
 
-/// 将 Anthropic messages 数组转换为 Responses API input 数组
+/// Converts the Anthropic messages array to a Responses API input array
 ///
-/// 核心转换逻辑：
-/// - user/assistant 的 text 内容 → 对应 role 的 message item
-/// - tool_use 从 assistant message 中"提升"为独立的 function_call item
-/// - tool_result 从 user message 中"提升"为独立的 function_call_output item
-/// - thinking blocks → 丢弃
+/// Core conversion:
+/// - user/assistant text content → a message item with that role
+/// - tool_use is "lifted" out of the assistant message into its own function_call item
+/// - tool_result is "lifted" out of the user message into its own function_call_output item
+/// - thinking blocks → dropped
 fn convert_messages_to_input(messages: &[Value]) -> Result<Vec<Value>, ProxyError> {
     let mut input = Vec::new();
 
@@ -224,7 +224,7 @@ fn convert_messages_to_input(messages: &[Value]) -> Result<Vec<Value>, ProxyErro
         let content = msg.get("content");
 
         match content {
-            // 字符串内容
+            // String content
             Some(Value::String(text)) => {
                 let content_type = if role == "assistant" {
                     "output_text"
@@ -237,7 +237,7 @@ fn convert_messages_to_input(messages: &[Value]) -> Result<Vec<Value>, ProxyErro
                 }));
             }
 
-            // 数组内容（多模态/工具调用）
+            // Array content (multimodal / tool calls)
             Some(Value::Array(blocks)) => {
                 let mut message_content = Vec::new();
 
@@ -274,7 +274,7 @@ fn convert_messages_to_input(messages: &[Value]) -> Result<Vec<Value>, ProxyErro
                         }
 
                         "tool_use" => {
-                            // 先刷新已累积的消息内容
+                            // Flush the accumulated message content first
                             if !message_content.is_empty() {
                                 input.push(json!({
                                     "role": role,
@@ -283,7 +283,7 @@ fn convert_messages_to_input(messages: &[Value]) -> Result<Vec<Value>, ProxyErro
                                 message_content.clear();
                             }
 
-                            // 提升为独立的 function_call item
+                            // Lift into its own function_call item
                             let id = block.get("id").and_then(|i| i.as_str()).unwrap_or("");
                             let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("");
                             let arguments = block.get("input").cloned().unwrap_or(json!({}));
@@ -297,7 +297,7 @@ fn convert_messages_to_input(messages: &[Value]) -> Result<Vec<Value>, ProxyErro
                         }
 
                         "tool_result" => {
-                            // 先刷新已累积的消息内容
+                            // Flush the accumulated message content first
                             if !message_content.is_empty() {
                                 input.push(json!({
                                     "role": role,
@@ -306,7 +306,7 @@ fn convert_messages_to_input(messages: &[Value]) -> Result<Vec<Value>, ProxyErro
                                 message_content.clear();
                             }
 
-                            // 提升为独立的 function_call_output item
+                            // Lift into its own function_call_output item
                             let call_id = block
                                 .get("tool_use_id")
                                 .and_then(|i| i.as_str())
@@ -325,14 +325,14 @@ fn convert_messages_to_input(messages: &[Value]) -> Result<Vec<Value>, ProxyErro
                         }
 
                         "thinking" => {
-                            // 丢弃 thinking blocks（与 openai_chat 一致）
+                            // Drop thinking blocks (same as openai_chat)
                         }
 
                         _ => {}
                     }
                 }
 
-                // 刷新剩余的消息内容
+                // Flush the remaining message content
                 if !message_content.is_empty() {
                     input.push(json!({
                         "role": role,
@@ -342,7 +342,7 @@ fn convert_messages_to_input(messages: &[Value]) -> Result<Vec<Value>, ProxyErro
             }
 
             _ => {
-                // 无内容或 null
+                // No content, or null
                 input.push(json!({ "role": role }));
             }
         }
@@ -351,7 +351,7 @@ fn convert_messages_to_input(messages: &[Value]) -> Result<Vec<Value>, ProxyErro
     Ok(input)
 }
 
-/// OpenAI Responses 响应 → Anthropic 响应
+/// OpenAI Responses response → Anthropic response
 pub fn responses_to_anthropic(body: Value) -> Result<Value, ProxyError> {
     let output = body
         .get("output")
@@ -405,7 +405,7 @@ pub fn responses_to_anthropic(body: Value) -> Result<Value, ProxyError> {
             }
 
             "reasoning" => {
-                // 映射 reasoning summary → thinking block
+                // Map reasoning summary → thinking block
                 if let Some(summary) = item.get("summary").and_then(|s| s.as_array()) {
                     let thinking_text: String = summary
                         .iter()

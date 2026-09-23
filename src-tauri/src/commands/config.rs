@@ -122,8 +122,8 @@ fn invalid_json_format_error(error: serde_json::Error) -> String {
 
     match lang.as_str() {
         "en" => format!("Invalid JSON format: {error}"),
-        "ja" => format!("JSON形式が無効です: {error}"),
-        _ => format!("无效的 JSON 格式: {error}"),
+        "ja" => format!("Invalid JSON format: {error}"),
+        _ => format!("Invalid JSON format: {error}"),
     }
 }
 
@@ -134,8 +134,8 @@ fn invalid_toml_format_error(error: toml_edit::TomlError) -> String {
 
     match lang.as_str() {
         "en" => format!("Invalid TOML format: {error}"),
-        "ja" => format!("TOML形式が無効です: {error}"),
-        _ => format!("无效的 TOML 格式: {error}"),
+        "ja" => format!("Invalid TOML format: {error}"),
+        _ => format!("Invalid TOML format: {error}"),
     }
 }
 
@@ -252,13 +252,14 @@ pub async fn open_config_folder(handle: AppHandle, app: String) -> Result<bool, 
     };
 
     if !config_dir.exists() {
-        std::fs::create_dir_all(&config_dir).map_err(|e| format!("创建目录失败: {e}"))?;
+        std::fs::create_dir_all(&config_dir)
+            .map_err(|e| format!("Failed to create directory: {e}"))?;
     }
 
     handle
         .opener()
         .open_path(config_dir.to_string_lossy().to_string(), None::<String>)
-        .map_err(|e| format!("打开文件夹失败: {e}"))?;
+        .map_err(|e| format!("Failed to open folder: {e}"))?;
 
     Ok(true)
 }
@@ -280,14 +281,14 @@ pub async fn pick_directory(
         builder.blocking_pick_folder()
     })
     .await
-    .map_err(|e| format!("弹出目录选择器失败: {e}"))?;
+    .map_err(|e| format!("Failed to open the folder picker: {e}"))?;
 
     match result {
         Some(file_path) => {
             let resolved = file_path
                 .simplified()
                 .into_path()
-                .map_err(|e| format!("解析选择的目录失败: {e}"))?;
+                .map_err(|e| format!("Failed to resolve the selected directory: {e}"))?;
             Ok(Some(resolved.to_string_lossy().to_string()))
         }
         None => Ok(None),
@@ -305,13 +306,14 @@ pub async fn open_app_config_folder(handle: AppHandle) -> Result<bool, String> {
     let config_dir = config::get_app_config_dir();
 
     if !config_dir.exists() {
-        std::fs::create_dir_all(&config_dir).map_err(|e| format!("创建目录失败: {e}"))?;
+        std::fs::create_dir_all(&config_dir)
+            .map_err(|e| format!("Failed to create directory: {e}"))?;
     }
 
     handle
         .opener()
         .open_path(config_dir.to_string_lossy().to_string(), None::<String>)
-        .map_err(|e| format!("打开文件夹失败: {e}"))?;
+        .map_err(|e| format!("Failed to open folder: {e}"))?;
 
     Ok(true)
 }
@@ -454,7 +456,7 @@ mod tests {
         let err = validate_common_config_snippet("codex", "[broken")
             .expect_err("invalid codex snippet should be rejected");
         assert!(
-            err.contains("TOML") || err.contains("toml") || err.contains("格式"),
+            err.contains("TOML") || err.contains("toml") || err.contains("format"),
             "expected TOML validation error, got {err}"
         );
     }

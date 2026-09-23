@@ -1,11 +1,11 @@
-//! 使用统计相关命令
+//! Usage statistics commands
 
 use crate::error::AppError;
 use crate::services::usage_stats::*;
 use crate::store::AppState;
 use tauri::State;
 
-/// 获取使用量汇总
+/// Get the usage summary
 #[tauri::command]
 pub fn get_usage_summary(
     state: State<'_, AppState>,
@@ -15,7 +15,7 @@ pub fn get_usage_summary(
     state.db.get_usage_summary(start_date, end_date)
 }
 
-/// 获取每日趋势
+/// Get the daily trend
 #[tauri::command]
 pub fn get_usage_trends(
     state: State<'_, AppState>,
@@ -25,19 +25,19 @@ pub fn get_usage_trends(
     state.db.get_daily_trends(start_date, end_date)
 }
 
-/// 获取 Provider 统计
+/// Get per-provider stats
 #[tauri::command]
 pub fn get_provider_stats(state: State<'_, AppState>) -> Result<Vec<ProviderStats>, AppError> {
     state.db.get_provider_stats()
 }
 
-/// 获取模型统计
+/// Get per-model stats
 #[tauri::command]
 pub fn get_model_stats(state: State<'_, AppState>) -> Result<Vec<ModelStats>, AppError> {
     state.db.get_model_stats()
 }
 
-/// 获取请求日志列表
+/// Get the request log list
 #[tauri::command]
 pub fn get_request_logs(
     state: State<'_, AppState>,
@@ -48,7 +48,7 @@ pub fn get_request_logs(
     state.db.get_request_logs(&filters, page, page_size)
 }
 
-/// 获取单个请求详情
+/// Get a single request's details
 #[tauri::command]
 pub fn get_request_detail(
     state: State<'_, AppState>,
@@ -57,16 +57,16 @@ pub fn get_request_detail(
     state.db.get_request_detail(&request_id)
 }
 
-/// 获取模型定价列表
+/// Get the model pricing list
 #[tauri::command]
 pub fn get_model_pricing(state: State<'_, AppState>) -> Result<Vec<ModelPricingInfo>, AppError> {
-    log::info!("获取模型定价列表");
+    log::info!("Getting the model pricing list");
     state.db.ensure_model_pricing_seeded()?;
 
     let db = state.db.clone();
     let conn = crate::database::lock_conn!(db.conn);
 
-    // 检查表是否存在
+    // Check that the table exists
     let table_exists: bool = conn
         .query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='model_pricing'",
@@ -76,7 +76,7 @@ pub fn get_model_pricing(state: State<'_, AppState>) -> Result<Vec<ModelPricingI
         .unwrap_or(false);
 
     if !table_exists {
-        log::error!("model_pricing 表不存在,可能需要重启应用以触发数据库迁移");
+        log::error!("The model_pricing table does not exist; the app may need a restart to run the database migration");
         return Ok(Vec::new());
     }
 
@@ -103,11 +103,11 @@ pub fn get_model_pricing(state: State<'_, AppState>) -> Result<Vec<ModelPricingI
         pricing.push(row?);
     }
 
-    log::info!("成功获取 {} 条模型定价数据", pricing.len());
+    log::info!("Loaded {} model pricing entries", pricing.len());
     Ok(pricing)
 }
 
-/// 更新模型定价
+/// Update model pricing
 #[tauri::command]
 pub fn update_model_pricing(
     state: State<'_, AppState>,
@@ -135,12 +135,12 @@ pub fn update_model_pricing(
             cache_creation_cost
         ],
     )
-    .map_err(|e| AppError::Database(format!("更新模型定价失败: {e}")))?;
+    .map_err(|e| AppError::Database(format!("Failed to update model pricing: {e}")))?;
 
     Ok(())
 }
 
-/// 检查 Provider 使用限额
+/// Check a provider's usage limits
 #[tauri::command]
 pub fn check_provider_limits(
     state: State<'_, AppState>,
@@ -150,7 +150,7 @@ pub fn check_provider_limits(
     state.db.check_provider_limits(&provider_id, &app_type)
 }
 
-/// 删除模型定价
+/// Delete model pricing
 #[tauri::command]
 pub fn delete_model_pricing(state: State<'_, AppState>, model_id: String) -> Result<(), AppError> {
     let db = state.db.clone();
@@ -160,13 +160,13 @@ pub fn delete_model_pricing(state: State<'_, AppState>, model_id: String) -> Res
         "DELETE FROM model_pricing WHERE model_id = ?1",
         rusqlite::params![model_id],
     )
-    .map_err(|e| AppError::Database(format!("删除模型定价失败: {e}")))?;
+    .map_err(|e| AppError::Database(format!("Failed to delete model pricing: {e}")))?;
 
-    log::info!("已删除模型定价: {model_id}");
+    log::info!("Deleted model pricing: {model_id}");
     Ok(())
 }
 
-/// 模型定价信息
+/// Model pricing info
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelPricingInfo {

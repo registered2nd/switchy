@@ -7,15 +7,12 @@ import {
   providersApi,
   settingsApi,
   usageApi,
-  sessionsApi,
   type AppId,
 } from "@/lib/api";
 import type {
   Provider,
   Settings,
   UsageResult,
-  SessionMeta,
-  SessionMessage,
 } from "@/types";
 
 const sortProviders = (
@@ -133,22 +130,3 @@ export const useUsageQuery = (
   };
 };
 
-export const useSessionsQuery = () => {
-  return useQuery<SessionMeta[]>({
-    queryKey: ["sessions"],
-    queryFn: async () => sessionsApi.list(),
-    staleTime: 30 * 1000,
-  });
-};
-
-export const useSessionMessagesQuery = (
-  providerId?: string,
-  sourcePath?: string,
-) => {
-  return useQuery<SessionMessage[]>({
-    queryKey: ["sessionMessages", providerId, sourcePath],
-    queryFn: async () => sessionsApi.getMessages(providerId!, sourcePath!),
-    enabled: Boolean(providerId && sourcePath),
-    staleTime: 30 * 1000,
-  });
-};

@@ -102,7 +102,10 @@ pub async fn query_usage(
     let (script_code, timeout, api_key, base_url, access_token, user_id, template_type) = {
         let providers = state.db.get_all_providers(app_type.as_str())?;
         let provider = providers.get(provider_id).ok_or_else(|| {
-            AppError::localized("provider.not_found", format!("Provider not found: {provider_id}"))
+            AppError::localized(
+                "provider.not_found",
+                format!("Provider not found: {provider_id}"),
+            )
         })?;
 
         let usage_script = provider
@@ -116,7 +119,10 @@ pub async fn query_usage(
                 )
             })?;
         if !usage_script.enabled {
-            return Err(AppError::localized("provider.usage.disabled", "Usage query is disabled"));
+            return Err(AppError::localized(
+                "provider.usage.disabled",
+                "Usage query is disabled",
+            ));
         }
 
         // Get credentials: prioritize UsageScript values, fallback to provider config

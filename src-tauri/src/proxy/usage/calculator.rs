@@ -1,12 +1,12 @@
-//! Cost Calculator - 计算 API 请求成本
+//! Cost Calculator - computes API request cost
 //!
-//! 使用高精度 Decimal 类型避免浮点数精度问题
+//! Uses high-precision Decimal to avoid floating-point errors
 
 use super::parser::TokenUsage;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
-/// 成本明细
+/// Cost breakdown
 #[derive(Debug, Clone)]
 pub struct CostBreakdown {
     pub input_cost: Decimal,
@@ -16,7 +16,7 @@ pub struct CostBreakdown {
     pub total_cost: Decimal,
 }
 
-/// 模型定价信息
+/// Model pricing
 #[derive(Debug, Clone)]
 pub struct ModelPricing {
     pub input_cost_per_million: Decimal,
@@ -25,22 +25,22 @@ pub struct ModelPricing {
     pub cache_creation_cost_per_million: Decimal,
 }
 
-/// 成本计算器
+/// Cost calculator
 pub struct CostCalculator;
 
 impl CostCalculator {
-    /// 计算请求成本
+    /// Calculates the request cost
     ///
-    /// # 参数
-    /// - `usage`: Token 使用量
-    /// - `pricing`: 模型定价
-    /// - `cost_multiplier`: 成本倍数 (provider 自定义)
+    /// # Parameters
+    /// - `usage`: token usage
+    /// - `pricing`: model pricing
+    /// - `cost_multiplier`: cost multiplier (set per provider)
     ///
-    /// # 计算逻辑
-    /// - input_cost: (input_tokens - cache_read_tokens) × 输入价格
-    /// - cache_read_cost: cache_read_tokens × 缓存读取价格
-    /// - 这样避免缓存部分被重复计费
-    /// - total_cost: 各项成本之和 × 倍率（倍率只作用于最终总价）
+    /// # Calculation
+    /// - input_cost: (input_tokens - cache_read_tokens) × input price
+    /// - cache_read_cost: cache_read_tokens × cache read price
+    /// - so cached tokens are not billed twice
+    /// - total_cost: sum of the component costs × multiplier (the multiplier applies only to the total)
     pub fn calculate(
         usage: &TokenUsage,
         pricing: &ModelPricing,
@@ -48,10 +48,10 @@ impl CostCalculator {
     ) -> CostBreakdown {
         let million = Decimal::from(1_000_000);
 
-        // 计算实际需要按输入价格计费的 token 数（减去缓存命中部分）
+        // Tokens billed at the input price (cache hits excluded)
         let billable_input_tokens = usage.input_tokens.saturating_sub(usage.cache_read_tokens);
 
-        // 各项基础成本（不含倍率）
+        // Component base costs (before the multiplier)
         let input_cost =
             Decimal::from(billable_input_tokens) * pricing.input_cost_per_million / million;
         let output_cost =
@@ -62,7 +62,7 @@ impl CostCalculator {
             * pricing.cache_creation_cost_per_million
             / million;
 
-        // 总成本 = 各项基础成本之和 × 倍率
+        // Total = sum of the component base costs × multiplier
         let base_total = input_cost + output_cost + cache_read_cost + cache_creation_cost;
         let total_cost = base_total * cost_multiplier;
 
@@ -75,7 +75,7 @@ impl CostCalculator {
         }
     }
 
-    /// 尝试计算成本，如果模型未知则返回 None
+    /// Calculates the cost, or returns None if the model is unknown
     pub fn try_calculate(
         usage: &TokenUsage,
         pricing: Option<&ModelPricing>,
@@ -86,7 +86,7 @@ impl CostCalculator {
 }
 
 impl ModelPricing {
-    /// 从字符串创建定价信息
+    /// Creates pricing from strings
     pub fn from_strings(
         input: &str,
         output: &str,
@@ -121,7 +121,7 @@ mod tests {
 
         let cost = CostCalculator::calculate(&usage, &pricing, multiplier);
 
-        // input: (1000 - 200) * 3.0 / 1M = 0.0024 (只计算非缓存部分)
+        // input: (1000 - 200) * 3.0 / 1M = 0.0024 (non-cached part only)
         assert_eq!(cost.input_cost, Decimal::from_str("0.0024").unwrap());
         // output: 500 * 15.0 / 1M = 0.0075
         assert_eq!(cost.output_cost, Decimal::from_str("0.0075").unwrap());
@@ -151,9 +151,9 @@ mod tests {
 
         let cost = CostCalculator::calculate(&usage, &pricing, multiplier);
 
-        // input_cost: 基础价格（不含倍率）= 1000 * 3.0 / 1M = 0.003
+        // input_cost: base price (no multiplier) = 1000 * 3.0 / 1M = 0.003
         assert_eq!(cost.input_cost, Decimal::from_str("0.003").unwrap());
-        // total_cost: 基础价格 × 倍率 = 0.003 * 1.5 = 0.0045
+        // total_cost: base price × multiplier = 0.003 * 1.5 = 0.0045
         assert_eq!(cost.total_cost, Decimal::from_str("0.0045").unwrap());
     }
 
@@ -188,8 +188,8 @@ mod tests {
 
         let cost = CostCalculator::calculate(&usage, &pricing, multiplier);
 
-        // 验证高精度计算
+        // Check the high-precision result
         assert!(cost.total_cost > Decimal::ZERO);
-        assert!(cost.total_cost.to_string().len() > 2); // 确保保留了小数位
+        assert!(cost.total_cost.to_string().len() > 2); // decimal places are kept
     }
 }

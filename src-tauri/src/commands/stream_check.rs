@@ -1,4 +1,4 @@
-//! 流式健康检查命令
+//! Stream health check commands
 
 use crate::app_config::AppType;
 use crate::commands::copilot::CopilotAuthState;
@@ -10,7 +10,7 @@ use crate::store::AppState;
 use std::collections::HashSet;
 use tauri::State;
 
-/// 流式健康检查（单个供应商）
+/// Stream health check (single provider)
 #[tauri::command]
 pub async fn stream_check_provider(
     state: State<'_, AppState>,
@@ -23,7 +23,7 @@ pub async fn stream_check_provider(
     let providers = state.db.get_all_providers(app_type.as_str())?;
     let provider = providers
         .get(&provider_id)
-        .ok_or_else(|| AppError::Message(format!("供应商 {provider_id} 不存在")))?;
+        .ok_or_else(|| AppError::Message(format!("Provider {provider_id} not found")))?;
 
     let auth_override = resolve_copilot_auth_override(provider, &copilot_state).await?;
     let base_url_override = resolve_copilot_base_url_override(provider, &copilot_state).await?;
@@ -45,7 +45,7 @@ pub async fn stream_check_provider(
     )
     .await?;
 
-    // 记录日志
+    // Log it
     let _ =
         state
             .db
@@ -54,7 +54,7 @@ pub async fn stream_check_provider(
     Ok(result)
 }
 
-/// 批量流式健康检查
+/// Batch stream health check
 #[tauri::command]
 pub async fn stream_check_all_providers(
     state: State<'_, AppState>,
@@ -137,13 +137,13 @@ pub async fn stream_check_all_providers(
     Ok(results)
 }
 
-/// 获取流式检查配置
+/// Get the stream check config
 #[tauri::command]
 pub fn get_stream_check_config(state: State<'_, AppState>) -> Result<StreamCheckConfig, AppError> {
     state.db.get_stream_check_config()
 }
 
-/// 保存流式检查配置
+/// Save the stream check config
 #[tauri::command]
 pub fn save_stream_check_config(
     state: State<'_, AppState>,
@@ -172,11 +172,11 @@ async fn resolve_copilot_auth_override(
         Some(id) => auth_manager
             .get_valid_token_for_account(id)
             .await
-            .map_err(|e| AppError::Message(format!("GitHub Copilot 认证失败: {e}")))?,
+            .map_err(|e| AppError::Message(format!("GitHub Copilot authentication failed: {e}")))?,
         None => auth_manager
             .get_valid_token()
             .await
-            .map_err(|e| AppError::Message(format!("GitHub Copilot 认证失败: {e}")))?,
+            .map_err(|e| AppError::Message(format!("GitHub Copilot authentication failed: {e}")))?,
     };
 
     Ok(Some(crate::proxy::providers::AuthInfo::new(

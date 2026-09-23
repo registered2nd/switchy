@@ -1,13 +1,13 @@
-//! 故障转移队列 DAO
+//! Failover queue DAO
 //!
-//! 管理代理模式下的故障转移队列（基于 providers 表的 in_failover_queue 字段）
+//! Manages the proxy-mode failover queue (the in_failover_queue column of the providers table)
 
 use crate::database::{lock_conn, Database};
 use crate::error::AppError;
 use crate::provider::Provider;
 use serde::{Deserialize, Serialize};
 
-/// 故障转移队列条目（简化版，用于前端展示）
+/// Failover queue entry (simplified, for the frontend)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FailoverQueueItem {
@@ -47,7 +47,7 @@ impl Database {
         Ok(items)
     }
 
-    /// 获取故障转移队列中的供应商（完整 Provider 信息，按顺序）
+    /// Get the providers in the failover queue (full Provider data, in order)
     pub fn get_failover_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
         let all_providers = self.get_all_providers(app_type)?;
 
@@ -59,7 +59,7 @@ impl Database {
         Ok(result)
     }
 
-    /// 添加供应商到故障转移队列
+    /// Add a provider to the failover queue
     pub fn add_to_failover_queue(&self, app_type: &str, provider_id: &str) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);
 
@@ -72,7 +72,7 @@ impl Database {
         Ok(())
     }
 
-    /// 从故障转移队列中移除供应商
+    /// Remove a provider from the failover queue
     pub fn remove_from_failover_queue(
         &self,
         app_type: &str,
@@ -80,26 +80,26 @@ impl Database {
     ) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);
 
-        // 1. 从队列中移除
+        // 1. Remove from the queue
         conn.execute(
             "UPDATE providers SET in_failover_queue = 0 WHERE id = ?1 AND app_type = ?2",
             rusqlite::params![provider_id, app_type],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
-        // 2. 清除该供应商的健康状态（退出队列后不再需要健康监控）
+        // 2. Clear its health state (no health monitoring once out of the queue)
         conn.execute(
             "DELETE FROM provider_health WHERE provider_id = ?1 AND app_type = ?2",
             rusqlite::params![provider_id, app_type],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
-        log::info!("已从故障转移队列移除供应商 {provider_id} ({app_type}), 并清除其健康状态");
+        log::info!("Removed provider {provider_id} ({app_type}) from the failover queue and cleared its health state");
 
         Ok(())
     }
 
-    /// 清空故障转移队列
+    /// Clear the failover queue
     pub fn clear_failover_queue(&self, app_type: &str) -> Result<(), AppError> {
         let conn = lock_conn!(self.conn);
 
@@ -112,7 +112,7 @@ impl Database {
         Ok(())
     }
 
-    /// 检查供应商是否在故障转移队列中
+    /// Check whether a provider is in the failover queue
     pub fn is_in_failover_queue(
         &self,
         app_type: &str,
@@ -131,7 +131,7 @@ impl Database {
         Ok(in_queue)
     }
 
-    /// 获取可添加到故障转移队列的供应商（不在队列中的）
+    /// Get providers that can be added to the failover queue (those not in it)
     pub fn get_available_providers_for_failover(
         &self,
         app_type: &str,

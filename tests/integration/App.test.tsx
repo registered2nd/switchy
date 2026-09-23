@@ -129,22 +129,7 @@ vi.mock("@/components/AppSwitcher", () => ({
   ),
 }));
 
-vi.mock("@/components/UpdateBadge", () => ({
-  UpdateBadge: ({ onClick }: any) => (
-    <button onClick={onClick}>update-badge</button>
-  ),
-}));
 
-vi.mock("@/components/mcp/McpPanel", () => ({
-  default: ({ open, onOpenChange }: any) =>
-    open ? (
-      <div data-testid="mcp-panel">
-        <button onClick={() => onOpenChange(false)}>close-mcp</button>
-      </div>
-    ) : (
-      <button onClick={() => onOpenChange(true)}>open-mcp</button>
-    ),
-}));
 
 const renderApp = (AppComponent: ComponentType) => {
   const client = new QueryClient();
@@ -222,31 +207,6 @@ describe("App integration with MSW", () => {
 
       expect(toastErrorMock).not.toHaveBeenCalled();
       expect(toastSuccessMock).toHaveBeenCalled();
-    },
-  );
-
-  it(
-    "shows toast when auto sync fails in background",
-    { timeout: 15000 },
-    async () => {
-      const { default: App } = await import("@/App");
-      renderApp(App);
-
-      await waitFor(() =>
-        expect(screen.getByTestId("provider-list").textContent).toContain(
-          "claude-1",
-        ),
-      );
-
-      emitTauriEvent("webdav-sync-status-updated", {
-        source: "auto",
-        status: "error",
-        error: "network timeout",
-      });
-
-      await waitFor(() => {
-        expect(toastErrorMock).toHaveBeenCalled();
-      });
     },
   );
 

@@ -2,14 +2,14 @@ use crate::database::Database;
 use crate::services::ProxyService;
 use std::sync::Arc;
 
-/// 全局应用状态
+/// Global application state
 pub struct AppState {
     pub db: Arc<Database>,
     pub proxy_service: ProxyService,
 }
 
 impl AppState {
-    /// 创建新的应用状态
+    /// Create a new application state
     pub fn new(db: Arc<Database>) -> Self {
         let proxy_service = ProxyService::new(db.clone());
 

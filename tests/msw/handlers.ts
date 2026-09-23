@@ -1,16 +1,13 @@
 import { http, HttpResponse } from "msw";
 import type { AppId } from "@/lib/api/types";
-import type { McpServer, Provider, Settings } from "@/types";
+import type { Provider, Settings } from "@/types";
 import {
   addProvider,
   deleteProvider,
-  deleteSession,
   getCurrentProviderId,
   getLiveProviderIds,
-  getSessionMessages,
   getProviders,
   listProviders,
-  listSessions,
   resetProviderState,
   setCurrentProviderId,
   updateProvider,
@@ -19,10 +16,6 @@ import {
   setSettings,
   getAppConfigDirOverride,
   setAppConfigDirOverrideState,
-  getMcpConfig,
-  setMcpServerEnabled,
-  upsertMcpServer,
-  deleteMcpServer,
 } from "./state";
 
 const TAURI_ENDPOINT = "http://tauri.local";
@@ -40,10 +33,6 @@ const withJson = async <T>(request: Request): Promise<T> => {
 const success = <T>(payload: T) => HttpResponse.json(payload as any);
 
 export const handlers = [
-  http.post(`${TAURI_ENDPOINT}/get_migration_result`, () => success(false)),
-  http.post(`${TAURI_ENDPOINT}/get_skills_migration_result`, () =>
-    success(null),
-  ),
   http.post(`${TAURI_ENDPOINT}/get_providers`, async ({ request }) => {
     const { app } = await withJson<{ app: AppId }>(request);
     return success(getProviders(app));
@@ -125,88 +114,15 @@ export const handlers = [
 
   http.post(`${TAURI_ENDPOINT}/open_external`, () => success(true)),
 
-  http.post(`${TAURI_ENDPOINT}/list_sessions`, () => success(listSessions())),
 
-  http.post(`${TAURI_ENDPOINT}/get_session_messages`, async ({ request }) => {
-    const { providerId, sourcePath } = await withJson<{
-      providerId: string;
-      sourcePath: string;
-    }>(request);
-    return success(getSessionMessages(providerId, sourcePath));
-  }),
 
-  http.post(`${TAURI_ENDPOINT}/delete_session`, async ({ request }) => {
-    const { providerId, sessionId, sourcePath } = await withJson<{
-      providerId: string;
-      sessionId: string;
-      sourcePath: string;
-    }>(request);
-    return success(deleteSession(providerId, sessionId, sourcePath));
-  }),
 
-  http.post(`${TAURI_ENDPOINT}/delete_sessions`, async ({ request }) => {
-    const { items = [] } = await withJson<{
-      items?: {
-        providerId: string;
-        sessionId: string;
-        sourcePath: string;
-      }[];
-    }>(request);
-
-    return success(
-      items.map((item) => ({
-        providerId: item.providerId,
-        sessionId: item.sessionId,
-        sourcePath: item.sourcePath,
-        success: deleteSession(
-          item.providerId,
-          item.sessionId,
-          item.sourcePath,
-        ),
-      })),
-    );
-  }),
 
   // MCP APIs
-  http.post(`${TAURI_ENDPOINT}/get_mcp_config`, async ({ request }) => {
-    const { app } = await withJson<{ app: AppId }>(request);
-    return success(getMcpConfig(app));
-  }),
 
-  http.post(`${TAURI_ENDPOINT}/import_mcp_from_claude`, () => success(1)),
-  http.post(`${TAURI_ENDPOINT}/import_mcp_from_codex`, () => success(1)),
 
-  http.post(`${TAURI_ENDPOINT}/set_mcp_enabled`, async ({ request }) => {
-    const { app, id, enabled } = await withJson<{
-      app: AppId;
-      id: string;
-      enabled: boolean;
-    }>(request);
-    setMcpServerEnabled(app, id, enabled);
-    return success(true);
-  }),
 
-  http.post(
-    `${TAURI_ENDPOINT}/upsert_mcp_server_in_config`,
-    async ({ request }) => {
-      const { app, id, spec } = await withJson<{
-        app: AppId;
-        id: string;
-        spec: McpServer;
-      }>(request);
-      upsertMcpServer(app, id, spec);
-      return success(true);
-    },
-  ),
 
-  http.post(
-    `${TAURI_ENDPOINT}/delete_mcp_server_in_config`,
-    async ({ request }) => {
-      const { app, id } = await withJson<{ app: AppId; id: string }>(request);
-      deleteMcpServer(app, id);
-      return success(true);
-    },
-  ),
 
   http.post(`${TAURI_ENDPOINT}/restart_app`, () => success(true)),
 
@@ -241,29 +157,14 @@ export const handlers = [
     success(null),
   ),
 
-  http.post(
-    `${TAURI_ENDPOINT}/apply_claude_plugin_config`,
-    async ({ request }) => {
-      const { official } = await withJson<{ official: boolean }>(request);
-      setSettings({ enableClaudePluginIntegration: !official });
-      return success(true);
-    },
-  ),
 
-  http.post(`${TAURI_ENDPOINT}/apply_claude_onboarding_skip`, () =>
-    success(true),
-  ),
 
-  http.post(`${TAURI_ENDPOINT}/clear_claude_onboarding_skip`, () =>
-    success(true),
-  ),
 
   http.post(`${TAURI_ENDPOINT}/get_config_dir`, async ({ request }) => {
     const { app } = await withJson<{ app: AppId }>(request);
     return success(app === "claude" ? "/default/claude" : "/default/codex");
   }),
 
-  http.post(`${TAURI_ENDPOINT}/is_portable_mode`, () => success(false)),
 
   http.post(
     `${TAURI_ENDPOINT}/select_config_directory`,

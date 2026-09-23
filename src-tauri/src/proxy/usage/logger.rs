@@ -1,4 +1,4 @@
-//! Usage Logger - 记录 API 请求使用情况
+//! Usage Logger - records API request usage
 
 use super::calculator::{CostBreakdown, CostCalculator, ModelPricing};
 use super::parser::TokenUsage;
@@ -8,7 +8,7 @@ use crate::services::usage_stats::find_model_pricing_row;
 use rust_decimal::Decimal;
 use std::{str::FromStr, time::SystemTime};
 
-/// 请求日志
+/// Request log
 #[derive(Debug, Clone)]
 pub struct RequestLog {
     pub request_id: String,
@@ -23,15 +23,15 @@ pub struct RequestLog {
     pub status_code: u16,
     pub error_message: Option<String>,
     pub session_id: Option<String>,
-    /// 供应商类型 (claude, claude_auth, codex, gemini, gemini_cli, openrouter)
+    /// Provider type (claude, claude_auth, codex, gemini, gemini_cli, openrouter)
     pub provider_type: Option<String>,
-    /// 是否为流式请求
+    /// Whether the request is streaming
     pub is_streaming: bool,
-    /// 成本倍数
+    /// Cost multiplier
     pub cost_multiplier: String,
 }
 
-/// 使用量记录器
+/// Usage logger
 pub struct UsageLogger<'a> {
     db: &'a Database,
 }
@@ -41,7 +41,7 @@ impl<'a> UsageLogger<'a> {
         Self { db }
     }
 
-    /// 记录成功的请求
+    /// Logs a successful request
     pub fn log_request(&self, log: &RequestLog) -> Result<(), AppError> {
         let conn = crate::database::lock_conn!(self.db.conn);
 
@@ -106,14 +106,14 @@ impl<'a> UsageLogger<'a> {
                 created_at,
             ],
         )
-        .map_err(|e| AppError::Database(format!("记录请求日志失败: {e}")))?;
+        .map_err(|e| AppError::Database(format!("Failed to write request log: {e}")))?;
 
         Ok(())
     }
 
-    /// 记录失败的请求
+    /// Logs a failed request
     ///
-    /// 用于记录无法从上游获取 usage 信息的失败请求
+    /// For failed requests whose usage could not be read from upstream
     #[allow(dead_code, clippy::too_many_arguments)]
     pub fn log_error(
         &self,
@@ -147,9 +147,9 @@ impl<'a> UsageLogger<'a> {
         self.log_request(&log)
     }
 
-    /// 记录失败的请求（带更多上下文信息）
+    /// Logs a failed request (with more context)
     ///
-    /// 相比 log_error，这个方法接受更多参数以提供完整的请求上下文
+    /// Unlike log_error, this takes extra parameters for the full request context
     #[allow(clippy::too_many_arguments)]
     pub fn log_error_with_context(
         &self,
@@ -186,7 +186,7 @@ impl<'a> UsageLogger<'a> {
         self.log_request(&log)
     }
 
-    /// 获取模型定价
+    /// Returns the model pricing
     pub fn get_model_pricing(&self, model_id: &str) -> Result<Option<ModelPricing>, AppError> {
         let conn = crate::database::lock_conn!(self.db.conn);
         let row = find_model_pricing_row(&conn, model_id)?;
@@ -194,13 +194,13 @@ impl<'a> UsageLogger<'a> {
             Some((input, output, cache_read, cache_creation)) => {
                 ModelPricing::from_strings(&input, &output, &cache_read, &cache_creation)
                     .map(Some)
-                    .map_err(|e| AppError::Database(format!("解析定价数据失败: {e}")))
+                    .map_err(|e| AppError::Database(format!("Failed to parse pricing data: {e}")))
             }
             None => Ok(None),
         }
     }
 
-    /// 获取有效的倍率与计费模式来源（供应商优先，未配置则回退全局默认）
+    /// Returns the effective cost multiplier and pricing-model source (provider setting first, else the global default)
     pub async fn resolve_pricing_config(
         &self,
         provider_id: &str,
@@ -209,7 +209,7 @@ impl<'a> UsageLogger<'a> {
         let default_multiplier_raw = match self.db.get_default_cost_multiplier(app_type).await {
             Ok(value) => value,
             Err(e) => {
-                log::warn!("[USG-003] 获取默认倍率失败 (app_type={app_type}): {e}");
+                log::warn!("[USG-003] Failed to get default multiplier (app_type={app_type}): {e}");
                 "1".to_string()
             }
         };
@@ -217,7 +217,7 @@ impl<'a> UsageLogger<'a> {
             Ok(value) => value,
             Err(e) => {
                 log::warn!(
-                    "[USG-003] 默认倍率解析失败 (app_type={app_type}): {default_multiplier_raw} - {e}"
+                    "[USG-003] Failed to parse default multiplier (app_type={app_type}): {default_multiplier_raw} - {e}"
                 );
                 Decimal::from(1)
             }
@@ -226,19 +226,23 @@ impl<'a> UsageLogger<'a> {
         let default_pricing_source_raw = match self.db.get_pricing_model_source(app_type).await {
             Ok(value) => value,
             Err(e) => {
-                log::warn!("[USG-003] 获取默认计费模式失败 (app_type={app_type}): {e}");
+                log::warn!(
+                    "[USG-003] Failed to get default pricing mode (app_type={app_type}): {e}"
+                );
                 "response".to_string()
             }
         };
-        let default_pricing_source =
-            if matches!(default_pricing_source_raw.as_str(), "response" | "request") {
-                default_pricing_source_raw
-            } else {
-                log::warn!(
-                "[USG-003] 默认计费模式无效 (app_type={app_type}): {default_pricing_source_raw}"
+        let default_pricing_source = if matches!(
+            default_pricing_source_raw.as_str(),
+            "response" | "request"
+        ) {
+            default_pricing_source_raw
+        } else {
+            log::warn!(
+                "[USG-003] Invalid default pricing mode (app_type={app_type}): {default_pricing_source_raw}"
             );
-                "response".to_string()
-            };
+            "response".to_string()
+        };
 
         let provider = self
             .db
@@ -262,7 +266,7 @@ impl<'a> UsageLogger<'a> {
                 Ok(parsed) => parsed,
                 Err(e) => {
                     log::warn!(
-                        "[USG-003] 供应商倍率解析失败 (provider_id={provider_id}): {value} - {e}"
+                        "[USG-003] Failed to parse provider multiplier (provider_id={provider_id}): {value} - {e}"
                     );
                     default_multiplier
                 }
@@ -273,7 +277,9 @@ impl<'a> UsageLogger<'a> {
         let pricing_model_source = match provider_pricing_source {
             Some(value) if matches!(value, "response" | "request") => value.to_string(),
             Some(value) => {
-                log::warn!("[USG-003] 供应商计费模式无效 (provider_id={provider_id}): {value}");
+                log::warn!(
+                    "[USG-003] Invalid provider pricing mode (provider_id={provider_id}): {value}"
+                );
                 default_pricing_source.clone()
             }
             None => default_pricing_source.clone(),
@@ -282,7 +288,7 @@ impl<'a> UsageLogger<'a> {
         (cost_multiplier, pricing_model_source)
     }
 
-    /// 计算并记录请求
+    /// Calculates the cost and logs the request
     #[allow(clippy::too_many_arguments)]
     pub fn log_with_calculation(
         &self,
@@ -304,7 +310,9 @@ impl<'a> UsageLogger<'a> {
         let pricing = self.get_model_pricing(&pricing_model)?;
 
         if pricing.is_none() {
-            log::warn!("[USG-002] 模型定价未找到，成本将记录为 0: {pricing_model}");
+            log::warn!(
+                "[USG-002] No pricing for model; cost will be recorded as 0: {pricing_model}"
+            );
         }
 
         let cost = CostCalculator::try_calculate(&usage, pricing.as_ref(), cost_multiplier);
@@ -339,7 +347,7 @@ mod tests {
     fn test_log_request() -> Result<(), AppError> {
         let db = Database::memory()?;
 
-        // 插入测试定价
+        // Insert test pricing
         {
             let conn = crate::database::lock_conn!(db.conn);
             conn.execute(
@@ -377,7 +385,7 @@ mod tests {
             false,
         )?;
 
-        // 验证记录已插入
+        // Check the record was inserted
         let conn = crate::database::lock_conn!(db.conn);
         let (count, request_model): (i64, String) = conn
             .query_row(
@@ -406,7 +414,7 @@ mod tests {
             50,
         )?;
 
-        // 验证错误记录已插入
+        // Check the error record was inserted
         let conn = crate::database::lock_conn!(db.conn);
         let (status, error): (i64, Option<String>) = conn
             .query_row(

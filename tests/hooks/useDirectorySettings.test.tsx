@@ -49,7 +49,6 @@ const createSettings = (
 ): SettingsFormState => ({
   showInTray: true,
   minimizeToTrayOnClose: true,
-  enableClaudePluginIntegration: false,
   claudeConfigDir: "/claude/custom",
   codexConfigDir: "/codex/custom",
   language: "zh",

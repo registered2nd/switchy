@@ -1,21 +1,21 @@
-//! Thinking Budget 整流器
+//! Thinking budget rectifier
 //!
-//! 用于自动修复 Anthropic API 中因 thinking budget 约束导致的请求错误。
-//! 当上游 API 返回 budget_tokens 相关错误时，系统会自动调整 budget 参数并重试。
+//! Automatically fixes Anthropic API request errors caused by thinking budget constraints.
+//! When the upstream API returns a budget_tokens error, the budget parameters are adjusted and the request retried.
 
 use super::types::RectifierConfig;
 use serde_json::Value;
 
-/// 最大 thinking budget tokens
+/// Maximum thinking budget tokens
 const MAX_THINKING_BUDGET: u64 = 32000;
 
-/// 最大 max_tokens 值
+/// Maximum max_tokens value
 const MAX_TOKENS_VALUE: u64 = 64000;
 
-/// max_tokens 必须大于 budget_tokens
+/// max_tokens must exceed budget_tokens
 const MIN_MAX_TOKENS_FOR_BUDGET: u64 = MAX_THINKING_BUDGET + 1;
 
-/// Budget 整流结果
+/// Budget rectification snapshot
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BudgetRectifySnapshot {
     /// max_tokens
@@ -26,29 +26,29 @@ pub struct BudgetRectifySnapshot {
     pub thinking_budget_tokens: Option<u64>,
 }
 
-/// Budget 整流结果
+/// Budget rectification result
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BudgetRectifyResult {
-    /// 是否应用了整流
+    /// Whether rectification was applied
     pub applied: bool,
-    /// 整流前快照
+    /// Snapshot before rectification
     pub before: BudgetRectifySnapshot,
-    /// 整流后快照
+    /// Snapshot after rectification
     pub after: BudgetRectifySnapshot,
 }
 
-/// 检测是否需要触发 thinking budget 整流器
+/// Whether the thinking budget rectifier should trigger
 ///
-/// 检测条件：error message 同时包含 `budget_tokens` + `thinking` 相关约束
+/// Condition: the error message mentions both `budget_tokens` and a `thinking` constraint
 pub fn should_rectify_thinking_budget(
     error_message: Option<&str>,
     config: &RectifierConfig,
 ) -> bool {
-    // 检查总开关
+    // Check the master switch
     if !config.enabled {
         return false;
     }
-    // 检查子开关
+    // Check the sub-switch
     if !config.request_thinking_budget {
         return false;
     }
@@ -58,7 +58,7 @@ pub fn should_rectify_thinking_budget(
     };
     let lower = msg.to_lowercase();
 
-    // 与 CCH 对齐：仅在包含 budget_tokens + thinking + 1024 约束时触发
+    // Matches CCH: trigger only on the budget_tokens + thinking + 1024 constraint
     let has_budget_tokens_reference =
         lower.contains("budget_tokens") || lower.contains("budget tokens");
     let has_thinking_reference = lower.contains("thinking");
@@ -72,16 +72,16 @@ pub fn should_rectify_thinking_budget(
     false
 }
 
-/// 对请求体执行 budget 整流
+/// Rectify the budget in the request body
 ///
-/// 整流动作：
+/// Actions:
 /// - `thinking.type = "enabled"`
 /// - `thinking.budget_tokens = 32000`
-/// - 如果 `max_tokens < 32001`，设为 `64000`
+/// - if `max_tokens < 32001`, set it to `64000`
 pub fn rectify_thinking_budget(body: &mut Value) -> BudgetRectifyResult {
     let before = snapshot_budget(body);
 
-    // 与 CCH 对齐：adaptive 请求不改写
+    // Matches CCH: adaptive requests are left unchanged
     if before.thinking_type.as_deref() == Some("adaptive") {
         return BudgetRectifyResult {
             applied: false,
@@ -90,7 +90,7 @@ pub fn rectify_thinking_budget(body: &mut Value) -> BudgetRectifyResult {
         };
     }
 
-    // 与 CCH 对齐：缺少/非法 thinking 时自动创建后再整流
+    // Matches CCH: create thinking when missing or invalid, then rectify
     if !body.get("thinking").is_some_and(Value::is_object) {
         body["thinking"] = Value::Object(serde_json::Map::new());
     }
@@ -167,7 +167,7 @@ mod tests {
         }
     }
 
-    // ==================== should_rectify_thinking_budget 测试 ====================
+    // ==================== should_rectify_thinking_budget tests ====================
 
     #[test]
     fn test_detect_budget_tokens_thinking_error() {
@@ -226,7 +226,7 @@ mod tests {
         ));
     }
 
-    // ==================== rectify_thinking_budget 测试 ====================
+    // ==================== rectify_thinking_budget tests ====================
 
     #[test]
     fn test_rectify_budget_basic() {

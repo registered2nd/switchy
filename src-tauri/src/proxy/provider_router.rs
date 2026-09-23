@@ -1,6 +1,6 @@
-//! 供应商路由器模块
+//! Provider router
 //!
-//! 负责选择和管理代理目标供应商，实现智能故障转移
+//! Selects and manages proxy target providers, with failover
 
 use crate::app_config::AppType;
 use crate::database::Database;
@@ -12,16 +12,16 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// 供应商路由器
+/// Provider router
 pub struct ProviderRouter {
-    /// 数据库连接
+    /// Database connection
     db: Arc<Database>,
-    /// 熔断器管理器 - key 格式: "app_type:provider_id"
+    /// Circuit breakers, keyed "app_type:provider_id"
     circuit_breakers: Arc<RwLock<HashMap<String, Arc<CircuitBreaker>>>>,
 }
 
 impl ProviderRouter {
-    /// 创建新的供应商路由器
+    /// Create a provider router
     pub fn new(db: Arc<Database>) -> Self {
         Self {
             db,
@@ -34,11 +34,11 @@ impl ProviderRouter {
         &self.db
     }
 
-    /// 选择可用的供应商（支持故障转移）
+    /// Select available providers (with failover)
     ///
-    /// 返回按优先级排序的可用供应商列表：
-    /// - 故障转移关闭时：仅返回当前供应商
-    /// - 故障转移开启时：仅使用故障转移队列，当前供应商在前，其余按队列顺序依次尝试（P1 → P2 → ...）
+    /// Returns available providers in priority order:
+    /// - failover off: only the current provider
+    /// - failover on: only the failover queue, current provider first, then the rest in queue order (P1 → P2 → ...)
     ///
     /// `model` is the model the request asks for; rotation counts only the
     /// quota windows that apply to it.
@@ -55,20 +55,22 @@ impl ProviderRouter {
             super::codex_pool::file_live_login(&self.db);
         }
 
-        // 检查该应用的自动故障转移开关是否开启（从 proxy_config 表读取）
+        // Check whether auto failover is on for this app (read from the proxy_config table)
         let auto_failover_enabled = match self.db.get_proxy_config_for_app(app_type).await {
             Ok(config) => config.auto_failover_enabled,
             Err(e) => {
-                log::error!("[{app_type}] 读取 proxy_config 失败: {e}，默认禁用故障转移");
+                log::error!(
+                    "[{app_type}] Failed to read proxy_config: {e}; failover disabled by default"
+                );
                 false
             }
         };
 
         if auto_failover_enabled {
-            // 故障转移开启：仅按队列顺序依次尝试（P1 → P2 → ...）
+            // Failover on: try providers in queue order (P1 → P2 → ...)
             let all_providers = self.db.get_all_providers(app_type)?;
 
-            // 使用 DAO 返回的排序结果，确保和前端展示一致
+            // Use the DAO's ordering so it matches what the frontend shows
             let ordered_ids: Vec<String> = self
                 .db
                 .get_failover_queue(app_type)?
@@ -93,7 +95,7 @@ impl ProviderRouter {
                 }
             }
         } else {
-            // 故障转移关闭：仅使用当前供应商，跳过熔断器检查
+            // Failover off: use only the current provider, skip the circuit breaker check
             let current_id = AppType::from_str(app_type)
                 .ok()
                 .and_then(|app_enum| {
@@ -121,10 +123,10 @@ impl ProviderRouter {
 
         if result.is_empty() {
             if total_providers > 0 && circuit_open_count == total_providers {
-                log::warn!("[{app_type}] [FO-004] 所有供应商均已熔断");
+                log::warn!("[{app_type}] [FO-004] All providers are circuit-broken");
                 return Err(AppError::AllProvidersCircuitOpen);
             } else {
-                log::warn!("[{app_type}] [FO-005] 未配置供应商");
+                log::warn!("[{app_type}] [FO-005] No provider configured");
                 return Err(AppError::NoProvidersConfigured);
             }
         }
@@ -132,21 +134,21 @@ impl ProviderRouter {
         Ok(result)
     }
 
-    /// 请求执行前获取熔断器“放行许可”
+    /// Acquire a circuit breaker permit before running a request
     ///
-    /// - Closed：直接放行
-    /// - Open：超时到达后切到 HalfOpen 并放行一次探测
-    /// - HalfOpen：按限流规则放行探测
+    /// - Closed: allow
+    /// - Open: once the timeout passes, switch to HalfOpen and allow one probe
+    /// - HalfOpen: allow probes per the rate limit
     ///
-    /// 注意：调用方必须在请求结束后通过 `record_result()` 释放 HalfOpen 名额，
-    /// 否则会导致该 Provider 长时间无法进入探测状态。
+    /// The caller must release the HalfOpen slot with `record_result()` after the request,
+    /// or the provider can stay unable to enter the probe state for a long time.
     pub async fn allow_provider_request(&self, provider_id: &str, app_type: &str) -> AllowResult {
         let circuit_key = format!("{app_type}:{provider_id}");
         let breaker = self.get_or_create_circuit_breaker(&circuit_key).await;
         breaker.allow_request().await
     }
 
-    /// 记录供应商请求结果
+    /// Record a provider request result
     pub async fn record_result(
         &self,
         provider_id: &str,
@@ -155,13 +157,13 @@ impl ProviderRouter {
         success: bool,
         error_msg: Option<String>,
     ) -> Result<(), AppError> {
-        // 1. 按应用独立获取熔断器配置
+        // 1. Get this app's circuit breaker config
         let failure_threshold = match self.db.get_proxy_config_for_app(app_type).await {
             Ok(app_config) => app_config.circuit_failure_threshold,
-            Err(_) => 5, // 默认值
+            Err(_) => 5, // default
         };
 
-        // 2. 更新熔断器状态
+        // 2. Update circuit breaker state
         let circuit_key = format!("{app_type}:{provider_id}");
         let breaker = self.get_or_create_circuit_breaker(&circuit_key).await;
 
@@ -171,7 +173,7 @@ impl ProviderRouter {
             breaker.record_failure(used_half_open_permit).await;
         }
 
-        // 3. 更新数据库健康状态（使用配置的阈值）
+        // 3. Update health status in the database (using the configured threshold)
         self.db
             .update_provider_health_with_threshold(
                 provider_id,
@@ -185,7 +187,7 @@ impl ProviderRouter {
         Ok(())
     }
 
-    /// 重置熔断器（手动恢复）
+    /// Reset circuit breakers (manual recovery)
     pub async fn reset_circuit_breaker(&self, circuit_key: &str) {
         let breakers = self.circuit_breakers.read().await;
         if let Some(breaker) = breakers.get(circuit_key) {
@@ -193,16 +195,16 @@ impl ProviderRouter {
         }
     }
 
-    /// 重置指定供应商的熔断器
+    /// Reset the circuit breaker for one provider
     pub async fn reset_provider_breaker(&self, provider_id: &str, app_type: &str) {
         let circuit_key = format!("{app_type}:{provider_id}");
         self.reset_circuit_breaker(&circuit_key).await;
     }
 
-    /// 仅释放 HalfOpen permit，不影响健康统计（neutral 接口）
+    /// Release the HalfOpen permit only, without touching health stats (neutral)
     ///
-    /// 用于整流器等场景：请求结果不应计入 Provider 健康度，
-    /// 但仍需释放占用的探测名额，避免 HalfOpen 状态卡死
+    /// For cases such as rectifiers: the result should not count toward provider health,
+    /// but the probe slot must still be released so HalfOpen does not get stuck
     pub async fn release_permit_neutral(
         &self,
         provider_id: &str,
@@ -217,7 +219,7 @@ impl ProviderRouter {
         breaker.release_half_open_permit();
     }
 
-    /// 更新所有熔断器的配置（热更新）
+    /// Update the config of all circuit breakers (hot reload)
     pub async fn update_all_configs(&self, config: CircuitBreakerConfig) {
         let breakers = self.circuit_breakers.read().await;
         for breaker in breakers.values() {
@@ -225,7 +227,7 @@ impl ProviderRouter {
         }
     }
 
-    /// 获取熔断器状态
+    /// Get circuit breaker state
     #[allow(dead_code)]
     pub async fn get_circuit_breaker_stats(
         &self,
@@ -242,9 +244,9 @@ impl ProviderRouter {
         }
     }
 
-    /// 获取或创建熔断器
+    /// Get or create a circuit breaker
     async fn get_or_create_circuit_breaker(&self, key: &str) -> Arc<CircuitBreaker> {
-        // 先尝试读锁获取
+        // Try the read lock first
         {
             let breakers = self.circuit_breakers.read().await;
             if let Some(breaker) = breakers.get(key) {
@@ -252,18 +254,18 @@ impl ProviderRouter {
             }
         }
 
-        // 如果不存在，获取写锁创建
+        // Not found: take the write lock to create it
         let mut breakers = self.circuit_breakers.write().await;
 
-        // 双重检查，防止竞争条件
+        // Double-check to avoid a race
         if let Some(breaker) = breakers.get(key) {
             return breaker.clone();
         }
 
-        // 从 key 中提取 app_type (格式: "app_type:provider_id")
+        // Extract app_type from the key (format: "app_type:provider_id")
         let app_type = key.split(':').next().unwrap_or("claude");
 
-        // 按应用独立读取熔断器配置
+        // Read this app's circuit breaker config
         let config = match self.db.get_proxy_config_for_app(app_type).await {
             Ok(app_config) => crate::proxy::circuit_breaker::CircuitBreakerConfig {
                 failure_threshold: app_config.circuit_failure_threshold,
@@ -379,7 +381,7 @@ mod tests {
         let _home = TempHome::new();
         let db = Arc::new(Database::memory().unwrap());
 
-        // 设置 sort_index 来控制顺序：b=1, a=2
+        // Set sort_index to control order: b=1, a=2
         let mut provider_a =
             Provider::with_id("a".to_string(), "Provider A".to_string(), json!({}), None);
         provider_a.sort_index = Some(2);
@@ -394,7 +396,7 @@ mod tests {
         db.add_to_failover_queue("claude", "b").unwrap();
         db.add_to_failover_queue("claude", "a").unwrap();
 
-        // 启用自动故障转移（使用新的 proxy_config API）
+        // Enable auto failover (via the new proxy_config API)
         let mut config = db.get_proxy_config_for_app("claude").await.unwrap();
         config.auto_failover_enabled = true;
         db.update_proxy_config_for_app(config).await.unwrap();
@@ -425,7 +427,7 @@ mod tests {
         db.save_provider("claude", &provider_b).unwrap();
         db.set_current_provider("claude", "a").unwrap();
 
-        // 只把 b 加入故障转移队列（模拟“当前供应商不在队列里”的常见配置）
+        // Only b is in the failover queue (the common setup where the current provider is not queued)
         db.add_to_failover_queue("claude", "b").unwrap();
 
         let mut config = db.get_proxy_config_for_app("claude").await.unwrap();
@@ -464,7 +466,7 @@ mod tests {
         db.add_to_failover_queue("claude", "a").unwrap();
         db.add_to_failover_queue("claude", "b").unwrap();
 
-        // 启用自动故障转移（使用新的 proxy_config API）
+        // Enable auto failover (via the new proxy_config API)
         let mut config = db.get_proxy_config_for_app("claude").await.unwrap();
         config.auto_failover_enabled = true;
         db.update_proxy_config_for_app(config).await.unwrap();
@@ -488,7 +490,7 @@ mod tests {
         let _home = TempHome::new();
         let db = Arc::new(Database::memory().unwrap());
 
-        // 配置熔断器：1 次失败即熔断，0 秒超时立即进入 HalfOpen
+        // Circuit breaker config: trip after 1 failure, 0s timeout goes straight to HalfOpen
         db.update_circuit_breaker_config(&CircuitBreakerConfig {
             failure_threshold: 1,
             timeout_seconds: 0,
@@ -502,34 +504,34 @@ mod tests {
         db.save_provider("claude", &provider_a).unwrap();
         db.add_to_failover_queue("claude", "a").unwrap();
 
-        // 启用自动故障转移
+        // Enable auto failover
         let mut config = db.get_proxy_config_for_app("claude").await.unwrap();
         config.auto_failover_enabled = true;
         db.update_proxy_config_for_app(config).await.unwrap();
 
         let router = ProviderRouter::new(db.clone());
 
-        // 触发熔断：1 次失败
+        // Trip the breaker: 1 failure
         router
             .record_result("a", "claude", false, false, Some("fail".to_string()))
             .await
             .unwrap();
 
-        // 第一次请求：获取 HalfOpen 探测名额
+        // First request: takes the HalfOpen probe slot
         let first = router.allow_provider_request("a", "claude").await;
         assert!(first.allowed);
         assert!(first.used_half_open_permit);
 
-        // 第二次请求应被拒绝（名额已被占用）
+        // Second request should be rejected (slot taken)
         let second = router.allow_provider_request("a", "claude").await;
         assert!(!second.allowed);
 
-        // 使用 release_permit_neutral 释放名额（不影响健康统计）
+        // Release the slot with release_permit_neutral (does not affect health stats)
         router
             .release_permit_neutral("a", "claude", first.used_half_open_permit)
             .await;
 
-        // 第三次请求应被允许（名额已释放）
+        // Third request should be allowed (slot released)
         let third = router.allow_provider_request("a", "claude").await;
         assert!(third.allowed);
         assert!(third.used_half_open_permit);

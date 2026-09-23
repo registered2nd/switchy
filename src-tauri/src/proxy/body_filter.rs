@@ -1,30 +1,30 @@
-//! 请求体过滤模块
+//! Request body filter
 //!
-//! 过滤不应透传到上游的私有参数，防止内部信息泄露。
+//! Strips private parameters that must not reach upstream, so internal data does not leak.
 //!
-//! ## 过滤规则
-//! - 以 `_` 开头的字段被视为私有参数，会被递归过滤
-//! - 支持白名单机制，允许透传特定的 `_` 前缀字段
-//! - 支持嵌套对象和数组的深度过滤
+//! ## Rules
+//! - Fields starting with `_` are private and are removed recursively
+//! - A whitelist can let specific `_`-prefixed fields through
+//! - Nested objects and arrays are filtered at any depth
 //!
-//! ## 使用场景
-//! - `_internal_id`: 内部追踪 ID
-//! - `_debug_mode`: 调试标记
-//! - `_session_token`: 会话令牌
-//! - `_client_version`: 客户端版本
+//! ## Examples
+//! - `_internal_id`: internal tracking ID
+//! - `_debug_mode`: debug flag
+//! - `_session_token`: session token
+//! - `_client_version`: client version
 
 use serde_json::Value;
 use std::collections::HashSet;
 
-/// 过滤私有参数（以 `_` 开头的字段）
+/// Removes private parameters (fields starting with `_`)
 ///
-/// 递归遍历 JSON 结构，移除所有以下划线开头的字段。
+/// Walks the JSON recursively and removes every field starting with an underscore.
 ///
 /// # Arguments
-/// * `body` - 原始请求体
+/// * `body` - the original request body
 ///
 /// # Returns
-/// 过滤后的请求体
+/// The filtered request body
 ///
 /// # Example
 /// ```ignore
@@ -34,41 +34,41 @@ use std::collections::HashSet;
 ///     "messages": [{"role": "user", "content": "hello", "_token": "secret"}]
 /// });
 /// let output = filter_private_params(input);
-/// // output 中不包含 _internal_id 和 _token
+/// // output contains neither _internal_id nor _token
 /// ```
 #[cfg(test)]
 pub fn filter_private_params(body: Value) -> Value {
     filter_private_params_with_whitelist(body, &[])
 }
 
-/// 过滤私有参数（支持白名单）
+/// Removes private parameters, with a whitelist
 ///
-/// 递归遍历 JSON 结构，移除所有以下划线开头的字段，
-/// 但保留白名单中指定的字段。
+/// Walks the JSON recursively and removes every field starting with an underscore,
+/// except the fields named in the whitelist.
 ///
 /// # Arguments
-/// * `body` - 原始请求体
-/// * `whitelist` - 白名单字段列表（不过滤这些字段）
+/// * `body` - the original request body
+/// * `whitelist` - fields to keep
 ///
 /// # Returns
-/// 过滤后的请求体
+/// The filtered request body
 ///
 /// # Example
 /// ```ignore
 /// let input = json!({
 ///     "model": "claude-3",
-///     "_metadata": {"key": "value"},  // 白名单中，保留
-///     "_internal_id": "abc123"        // 不在白名单中，过滤
+///     "_metadata": {"key": "value"},  // whitelisted, kept
+///     "_internal_id": "abc123"        // not whitelisted, removed
 /// });
 /// let output = filter_private_params_with_whitelist(input, &["_metadata"]);
-/// // output 包含 _metadata，不包含 _internal_id
+/// // output contains _metadata but not _internal_id
 /// ```
 pub fn filter_private_params_with_whitelist(body: Value, whitelist: &[String]) -> Value {
     let whitelist_set: HashSet<&str> = whitelist.iter().map(|s| s.as_str()).collect();
     filter_recursive_with_whitelist(body, &mut Vec::new(), &whitelist_set)
 }
 
-/// 递归过滤实现（支持白名单）
+/// Recursive filter (with whitelist)
 fn filter_recursive_with_whitelist(
     value: Value,
     removed_keys: &mut Vec<String>,
@@ -79,7 +79,7 @@ fn filter_recursive_with_whitelist(
             let filtered: serde_json::Map<String, Value> = map
                 .into_iter()
                 .filter_map(|(key, val)| {
-                    // 以 _ 开头且不在白名单中的字段被过滤
+                    // Remove fields that start with _ and are not whitelisted
                     if key.starts_with('_') && !whitelist.contains(key.as_str()) {
                         removed_keys.push(key);
                         None
@@ -92,9 +92,9 @@ fn filter_recursive_with_whitelist(
                 })
                 .collect();
 
-            // 仅在有过滤时记录日志（避免每次请求都打印）
+            // Log only when something was removed (not on every request)
             if !removed_keys.is_empty() {
-                log::debug!("[BodyFilter] 过滤私有参数: {removed_keys:?}");
+                log::debug!("[BodyFilter] Removed private parameters: {removed_keys:?}");
                 removed_keys.clear();
             }
 
@@ -150,18 +150,18 @@ mod tests {
 
         let output = filter_private_params(input);
 
-        // 顶级字段保留
+        // Top-level fields kept
         assert!(output.get("model").is_some());
         assert!(output.get("messages").is_some());
         assert!(output.get("metadata").is_some());
 
-        // messages 数组中的私有参数被过滤
+        // Private parameters inside the messages array removed
         let messages = output.get("messages").unwrap().as_array().unwrap();
         assert!(messages[0].get("role").is_some());
         assert!(messages[0].get("content").is_some());
         assert!(messages[0].get("_session_token").is_none());
 
-        // metadata 对象中的私有参数被过滤
+        // Private parameters inside the metadata object removed
         let metadata = output.get("metadata").unwrap();
         assert!(metadata.get("user_id").is_some());
         assert!(metadata.get("_tracking_id").is_none());
@@ -222,7 +222,7 @@ mod tests {
 
         let output = filter_private_params(input.clone());
 
-        // 无私有参数时，输出应与输入相同
+        // With no private parameters, output equals input
         assert_eq!(input, output);
     }
 
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn test_primitive_values() {
-        // 原始值不应被修改
+        // Primitive values are left unchanged
         assert_eq!(filter_private_params(json!(42)), json!(42));
         assert_eq!(filter_private_params(json!("string")), json!("string"));
         assert_eq!(filter_private_params(json!(true)), json!(true));
@@ -254,12 +254,12 @@ mod tests {
         let whitelist = vec!["_metadata".to_string(), "_stream_options".to_string()];
         let output = filter_private_params_with_whitelist(input, &whitelist);
 
-        // 白名单中的字段保留
+        // Whitelisted fields kept
         assert!(output.get("_metadata").is_some());
         assert!(output.get("_stream_options").is_some());
-        // 不在白名单中的私有字段被过滤
+        // Private fields not on the whitelist removed
         assert!(output.get("_internal_id").is_none());
-        // 普通字段保留
+        // Ordinary fields kept
         assert!(output.get("model").is_some());
     }
 

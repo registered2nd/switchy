@@ -1,13 +1,13 @@
-//! 模型列表获取命令
+//! Model list commands
 //!
-//! 提供 Tauri 命令，供前端在供应商表单中获取可用模型列表。
+//! Tauri commands the frontend uses to fetch available models in the provider form.
 
 use crate::services::model_fetch::{self, FetchedModel};
 
-/// 获取供应商的可用模型列表
+/// Get the available models for a provider
 ///
-/// 使用 OpenAI 兼容的 GET /v1/models 端点。
-/// 主要面向第三方聚合站（硅基流动、OpenRouter 等）。
+/// Uses the OpenAI-compatible GET /v1/models endpoint.
+/// Mainly for third-party aggregators (SiliconFlow, OpenRouter, etc.).
 #[tauri::command(rename_all = "camelCase")]
 pub async fn fetch_models_for_config(
     base_url: String,

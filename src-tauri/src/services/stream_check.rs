@@ -1,6 +1,6 @@
-//! 流式健康检查服务
+//! Stream health check service
 //!
-//! 使用流式 API 进行快速健康检查，只需接收首个 chunk 即判定成功。
+//! Fast health checks over the streaming API: receiving the first chunk counts as success.
 
 use futures::StreamExt;
 use regex::Regex;
@@ -17,7 +17,7 @@ use crate::proxy::providers::transform::anthropic_to_openai;
 use crate::proxy::providers::transform_responses::anthropic_to_responses;
 use crate::proxy::providers::{get_adapter, AuthInfo, AuthStrategy};
 
-/// 健康状态枚举
+/// Health status
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum HealthStatus {
@@ -26,20 +26,20 @@ pub enum HealthStatus {
     Failed,
 }
 
-/// 流式检查配置
+/// Stream check config
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamCheckConfig {
     pub timeout_secs: u64,
     pub max_retries: u32,
     pub degraded_threshold_ms: u64,
-    /// Claude 测试模型
+    /// Claude test model
     pub claude_model: String,
-    /// Codex 测试模型
+    /// Codex test model
     pub codex_model: String,
-    /// Gemini 测试模型
+    /// Gemini test model
     pub gemini_model: String,
-    /// 检查提示词
+    /// Check prompt
     #[serde(default = "default_test_prompt")]
     pub test_prompt: String,
 }
@@ -62,7 +62,7 @@ impl Default for StreamCheckConfig {
     }
 }
 
-/// 流式检查结果
+/// Stream check result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamCheckResult {
@@ -76,13 +76,13 @@ pub struct StreamCheckResult {
     pub retry_count: u32,
 }
 
-/// 流式健康检查服务
+/// Stream health check service
 pub struct StreamCheckService;
 
 impl StreamCheckService {
-    /// 执行流式健康检查（带重试）
+    /// Run a stream health check (with retries)
     ///
-    /// 如果 Provider 配置了单独的测试配置（meta.testConfig），则使用该配置覆盖全局配置
+    /// If the provider has its own test config (meta.testConfig), it overrides the global config
     pub async fn check_with_retry(
         app_type: &AppType,
         provider: &Provider,
@@ -91,7 +91,7 @@ impl StreamCheckService {
         base_url_override: Option<String>,
         claude_api_format_override: Option<String>,
     ) -> Result<StreamCheckResult, AppError> {
-        // 合并供应商单独配置和全局配置
+        // Merge the provider's own config with the global config
         let effective_config = Self::merge_provider_config(provider, config);
         let mut last_result = None;
 
@@ -114,7 +114,7 @@ impl StreamCheckService {
                     });
                 }
                 Ok(r) => {
-                    // 失败但非异常，判断是否重试
+                    // Failed without an exception; decide whether to retry
                     if Self::should_retry(&r.message) && attempt < effective_config.max_retries {
                         last_result = Some(r.clone());
                         continue;
@@ -146,9 +146,9 @@ impl StreamCheckService {
         }))
     }
 
-    /// 合并供应商单独配置和全局配置
+    /// Merge the provider's own config with the global config
     ///
-    /// 如果供应商配置了 meta.testConfig 且 enabled 为 true，则使用供应商配置覆盖全局配置
+    /// If the provider has meta.testConfig with enabled set to true, it overrides the global config
     fn merge_provider_config(
         provider: &Provider,
         global_config: &StreamCheckConfig,
@@ -187,7 +187,7 @@ impl StreamCheckService {
         }
     }
 
-    /// 单次流式检查
+    /// Single stream check
     async fn check_once(
         app_type: &AppType,
         provider: &Provider,
@@ -210,7 +210,7 @@ impl StreamCheckService {
             .or_else(|| adapter.extract_auth(provider))
             .ok_or_else(|| AppError::Message("API Key not found".to_string()))?;
 
-        // 获取 HTTP 客户端：优先使用供应商单独代理配置，否则使用全局客户端
+        // Get the HTTP client: prefer the provider's own proxy config, otherwise the global client
         let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
         let client = crate::proxy::http_client::get_for_provider(proxy_config);
         let request_timeout = std::time::Duration::from_secs(config.timeout_secs);
@@ -308,10 +308,10 @@ impl StreamCheckService {
         }
     }
 
-    /// Claude 流式检查
+    /// Claude stream check
     ///
-    /// 根据供应商的 api_format 选择请求格式：
-    /// - "anthropic" (默认): Anthropic Messages API (/v1/messages)
+    /// Picks the request format from the provider's api_format:
+    /// - "anthropic" (default): Anthropic Messages API (/v1/messages)
     /// - "openai_chat": OpenAI Chat Completions API (/v1/chat/completions)
     #[allow(clippy::too_many_arguments)]
     async fn check_claude_stream(
@@ -374,7 +374,7 @@ impl StreamCheckService {
         let mut request_builder = client.post(&url);
 
         if is_github_copilot {
-            // 生成请求追踪 ID
+            // Generate a request trace ID
             let request_id = uuid::Uuid::new_v4().to_string();
             request_builder = request_builder
                 .header("authorization", format!("Bearer {}", auth.api_key))
@@ -392,7 +392,7 @@ impl StreamCheckService {
                     copilot_auth::COPILOT_INTEGRATION_ID,
                 )
                 .header("x-github-api-version", copilot_auth::COPILOT_API_VERSION)
-                // 260401 新增copilot 的关键 headers
+                // 260401: key headers added for Copilot
                 .header("openai-intent", "conversation-agent")
                 .header("x-initiator", "user")
                 .header("x-interaction-type", "conversation-agent")
@@ -463,7 +463,7 @@ impl StreamCheckService {
             return Err(AppError::Message(format!("HTTP {status}: {error_text}")));
         }
 
-        // 流式读取：只需首个 chunk
+        // Stream read: only the first chunk is needed
         let mut stream = response.bytes_stream();
         if let Some(chunk) = stream.next().await {
             match chunk {
@@ -475,9 +475,9 @@ impl StreamCheckService {
         }
     }
 
-    /// Codex 流式检查
+    /// Codex stream check
     ///
-    /// 严格按照 Codex CLI 真实请求格式构建请求 (Responses API)
+    /// Builds the request exactly like a real Codex CLI request (Responses API)
     async fn check_codex_stream(
         client: &Client,
         base_url: &str,
@@ -494,27 +494,27 @@ impl StreamCheckService {
             .unwrap_or(false);
         let urls = Self::resolve_codex_stream_urls(base_url, is_full_url);
 
-        // 解析模型名和推理等级 (支持 model@level 或 model#level 格式)
+        // Parse the model name and reasoning level (model@level or model#level)
         let (actual_model, reasoning_effort) = Self::parse_model_with_effort(model);
 
-        // 获取本地系统信息
+        // Get local system info
         let os_name = Self::get_os_name();
         let arch_name = Self::get_arch_name();
 
-        // Responses API 请求体格式 (input 必须是数组)
+        // Responses API request body (input must be an array)
         let mut body = json!({
             "model": actual_model,
             "input": [{ "role": "user", "content": test_prompt }],
             "stream": true
         });
 
-        // 如果是推理模型，添加 reasoning_effort
+        // For reasoning models, add reasoning_effort
         if let Some(effort) = reasoning_effort {
             body["reasoning"] = json!({ "effort": effort });
         }
 
         for (i, url) in urls.iter().enumerate() {
-            // 严格按照 Codex CLI 请求格式设置 headers
+            // Set headers exactly as the Codex CLI does
             let response = client
                 .post(url)
                 .header("authorization", format!("Bearer {}", auth.api_key))
@@ -536,7 +536,7 @@ impl StreamCheckService {
 
             if !response.status().is_success() {
                 let error_text = response.text().await.unwrap_or_default();
-                // 回退策略：仅当首选 URL 返回 404 时尝试下一个
+                // Fallback: try the next URL only when the preferred one returns 404
                 if i == 0 && status == 404 && urls.len() > 1 {
                     continue;
                 }
@@ -559,9 +559,9 @@ impl StreamCheckService {
         ))
     }
 
-    /// Gemini 流式检查
+    /// Gemini stream check
     ///
-    /// 使用 Gemini 原生 API 格式 (streamGenerateContent)
+    /// Uses the native Gemini API format (streamGenerateContent)
     async fn check_gemini_stream(
         client: &Client,
         base_url: &str,
@@ -571,16 +571,16 @@ impl StreamCheckService {
         timeout: std::time::Duration,
     ) -> Result<(u16, String), AppError> {
         let base = base_url.trim_end_matches('/');
-        // Gemini 原生 API: /v1beta/models/{model}:streamGenerateContent?alt=sse
-        // 智能处理 /v1beta 路径：如果 base_url 不包含版本路径，则添加 /v1beta
-        // alt=sse 参数使 API 返回 SSE 格式（text/event-stream）而非 JSON 数组
+        // Native Gemini API: /v1beta/models/{model}:streamGenerateContent?alt=sse
+        // Handle the /v1beta path: if base_url has no version path, add /v1beta
+        // alt=sse makes the API return SSE (text/event-stream) instead of a JSON array
         let url = if base.contains("/v1beta") || base.contains("/v1/") {
             format!("{base}/models/{model}:streamGenerateContent?alt=sse")
         } else {
             format!("{base}/v1beta/models/{model}:streamGenerateContent?alt=sse")
         };
 
-        // Gemini 原生请求体格式
+        // Native Gemini request body
         let body = json!({
             "contents": [{
                 "role": "user",
@@ -625,8 +625,8 @@ impl StreamCheckService {
         }
     }
 
-    /// 解析模型名和推理等级 (支持 model@level 或 model#level 格式)
-    /// 返回 (实际模型名, Option<推理等级>)
+    /// Parse the model name and reasoning level (model@level or model#level)
+    /// Returns (actual model name, Option<reasoning level>)
     pub(crate) fn parse_model_with_effort(model: &str) -> (String, Option<String>) {
         if let Some(pos) = model.find('@').or_else(|| model.find('#')) {
             let actual_model = model[..pos].to_string();
@@ -742,7 +742,7 @@ impl StreamCheckService {
             .filter(|value| !value.is_empty())
     }
 
-    /// 获取操作系统名称（映射为 Claude CLI 使用的格式）
+    /// Get the OS name (in the format the Claude CLI uses)
     pub(crate) fn get_os_name() -> &'static str {
         match std::env::consts::OS {
             "macos" => "MacOS",
@@ -752,7 +752,7 @@ impl StreamCheckService {
         }
     }
 
-    /// 获取 CPU 架构名称（映射为 Claude CLI 使用的格式）
+    /// Get the CPU architecture name (in the format the Claude CLI uses)
     pub(crate) fn get_arch_name() -> &'static str {
         match std::env::consts::ARCH {
             "aarch64" => "arm64",
@@ -860,17 +860,17 @@ mod tests {
 
     #[test]
     fn test_parse_model_with_effort() {
-        // 带 @ 分隔符
+        // With the @ separator
         let (model, effort) = StreamCheckService::parse_model_with_effort("gpt-5.1-codex@low");
         assert_eq!(model, "gpt-5.1-codex");
         assert_eq!(effort, Some("low".to_string()));
 
-        // 带 # 分隔符
+        // With the # separator
         let (model, effort) = StreamCheckService::parse_model_with_effort("o1-preview#high");
         assert_eq!(model, "o1-preview");
         assert_eq!(effort, Some("high".to_string()));
 
-        // 无分隔符
+        // Without a separator
         let (model, effort) = StreamCheckService::parse_model_with_effort("gpt-4o-mini");
         assert_eq!(model, "gpt-4o-mini");
         assert_eq!(effort, None);
@@ -879,15 +879,15 @@ mod tests {
     #[test]
     fn test_get_os_name() {
         let os_name = StreamCheckService::get_os_name();
-        // 确保返回非空字符串
+        // Must return a non-empty string
         assert!(!os_name.is_empty());
-        // 在 macOS 上应该返回 "MacOS"
+        // Should return "MacOS" on macOS
         #[cfg(target_os = "macos")]
         assert_eq!(os_name, "MacOS");
-        // 在 Linux 上应该返回 "Linux"
+        // Should return "Linux" on Linux
         #[cfg(target_os = "linux")]
         assert_eq!(os_name, "Linux");
-        // 在 Windows 上应该返回 "Windows"
+        // Should return "Windows" on Windows
         #[cfg(target_os = "windows")]
         assert_eq!(os_name, "Windows");
     }
@@ -895,29 +895,29 @@ mod tests {
     #[test]
     fn test_get_arch_name() {
         let arch_name = StreamCheckService::get_arch_name();
-        // 确保返回非空字符串
+        // Must return a non-empty string
         assert!(!arch_name.is_empty());
-        // 在 ARM64 上应该返回 "arm64"
+        // Should return "arm64" on ARM64
         #[cfg(target_arch = "aarch64")]
         assert_eq!(arch_name, "arm64");
-        // 在 x86_64 上应该返回 "x86_64"
+        // Should return "x86_64" on x86_64
         #[cfg(target_arch = "x86_64")]
         assert_eq!(arch_name, "x86_64");
     }
 
     #[test]
     fn test_auth_strategy_imports() {
-        // 验证 AuthStrategy 枚举可以正常使用
+        // Check that the AuthStrategy enum is usable
         let anthropic = AuthStrategy::Anthropic;
         let claude_auth = AuthStrategy::ClaudeAuth;
         let bearer = AuthStrategy::Bearer;
 
-        // 验证不同的策略是不相等的
+        // Different strategies are not equal
         assert_ne!(anthropic, claude_auth);
         assert_ne!(anthropic, bearer);
         assert_ne!(claude_auth, bearer);
 
-        // 验证相同策略是相等的
+        // The same strategy is equal to itself
         assert_eq!(anthropic, AuthStrategy::Anthropic);
         assert_eq!(claude_auth, AuthStrategy::ClaudeAuth);
         assert_eq!(bearer, AuthStrategy::Bearer);

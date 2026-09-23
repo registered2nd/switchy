@@ -1,19 +1,19 @@
-//! Proxy Session - 请求会话管理
+//! Proxy session: request session management
 //!
-//! 为每个代理请求创建会话上下文，在整个请求生命周期中跟踪状态和元数据。
+//! Creates a session context for each proxy request and tracks state and metadata over its lifetime.
 //!
-//! ## Session ID 提取
+//! ## Session ID extraction
 //!
-//! 支持从客户端请求中提取 Session ID，用于关联同一对话的多个请求：
-//! - Claude: 从 `metadata.user_id` (格式: `user_xxx_session_yyy`) 或 `metadata.session_id` 提取
-//! - Codex: 从 `previous_response_id` 或 headers 中的 `session_id` 提取
-//! - 其他: 生成新的 UUID
+//! Extracts a session ID from the client request to link requests in the same conversation:
+//! - Claude: from `metadata.user_id` (format: `user_xxx_session_yyy`) or `metadata.session_id`
+//! - Codex: from `previous_response_id` or `session_id` in the headers
+//! - Others: generate a new UUID
 
 use axum::http::HeaderMap;
 use std::time::Instant;
 use uuid::Uuid;
 
-/// 客户端请求格式
+/// Client request format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum ClientFormat {
@@ -27,13 +27,13 @@ pub enum ClientFormat {
     Gemini,
     /// Gemini CLI API (/v1internal/models/*/generateContent)
     GeminiCli,
-    /// 未知格式
+    /// Unknown format
     Unknown,
 }
 
 #[allow(dead_code)]
 impl ClientFormat {
-    /// 从请求路径检测格式
+    /// Detect the format from the request path
     pub fn from_path(path: &str) -> Self {
         if path.contains("/v1/messages") {
             ClientFormat::Claude
@@ -42,42 +42,42 @@ impl ClientFormat {
         } else if path.contains("/v1/chat/completions") {
             ClientFormat::OpenAI
         } else if path.contains("/v1internal/") && path.contains("generateContent") {
-            // Gemini CLI 使用 /v1internal/ 路径
+            // Gemini CLI uses the /v1internal/ path
             ClientFormat::GeminiCli
         } else if (path.contains("/v1beta/") || path.contains("/v1/"))
             && path.contains("generateContent")
         {
-            // Gemini API 使用 /v1beta/ 或 /v1/ 路径
+            // Gemini API uses the /v1beta/ or /v1/ path
             ClientFormat::Gemini
         } else if path.contains("generateContent") {
-            // 通用 Gemini 端点
+            // Generic Gemini endpoint
             ClientFormat::Gemini
         } else {
             ClientFormat::Unknown
         }
     }
 
-    /// 从请求体内容检测格式（回退方案）
+    /// Detect the format from the request body (fallback)
     pub fn from_body(body: &serde_json::Value) -> Self {
-        // Claude 格式特征: messages 数组 + model 字段 + 无 response_format
+        // Claude format: messages array + model field + no response_format
         if body.get("messages").is_some()
             && body.get("model").is_some()
             && body.get("response_format").is_none()
             && body.get("contents").is_none()
         {
-            // 区分 Claude 和 OpenAI
+            // Tell Claude and OpenAI apart
             if body.get("max_tokens").is_some() {
                 return ClientFormat::Claude;
             }
             return ClientFormat::OpenAI;
         }
 
-        // Codex 格式特征: input 字段
+        // Codex format: input field
         if body.get("input").is_some() {
             return ClientFormat::Codex;
         }
 
-        // Gemini 格式特征: contents 数组
+        // Gemini format: contents array
         if body.get("contents").is_some() {
             return ClientFormat::Gemini;
         }
@@ -85,7 +85,7 @@ impl ClientFormat {
         ClientFormat::Unknown
     }
 
-    /// 转换为字符串
+    /// Convert to a string
     pub fn as_str(&self) -> &'static str {
         match self {
             ClientFormat::Claude => "claude",
@@ -104,42 +104,42 @@ impl std::fmt::Display for ClientFormat {
     }
 }
 
-/// 代理会话
+/// Proxy session
 ///
-/// 包含请求全生命周期的上下文数据
+/// Context data for the whole request lifetime
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct ProxySession {
-    /// 唯一会话 ID
+    /// Unique session ID
     pub session_id: String,
-    /// 请求开始时间
+    /// Request start time
     pub start_time: Instant,
-    /// HTTP 方法
+    /// HTTP method
     pub method: String,
-    /// 请求 URL
+    /// Request URL
     pub request_url: String,
     /// User-Agent
     pub user_agent: Option<String>,
-    /// 客户端请求格式
+    /// Client request format
     pub client_format: ClientFormat,
-    /// 选定的供应商 ID
+    /// Selected provider ID
     pub provider_id: Option<String>,
-    /// 模型名称
+    /// Model name
     pub model: Option<String>,
-    /// 是否为流式请求
+    /// Whether the request is streaming
     pub is_streaming: bool,
 }
 
 #[allow(dead_code)]
 impl ProxySession {
-    /// 从请求创建会话
+    /// Create a session from a request
     pub fn from_request(
         method: &str,
         request_url: &str,
         user_agent: Option<&str>,
         body: Option<&serde_json::Value>,
     ) -> Self {
-        // 检测客户端格式
+        // Detect the client format
         let mut client_format = ClientFormat::from_path(request_url);
         if client_format == ClientFormat::Unknown {
             if let Some(body) = body {
@@ -147,13 +147,13 @@ impl ProxySession {
             }
         }
 
-        // 检测是否为流式请求
+        // Detect whether the request is streaming
         let is_streaming = body
             .and_then(|b| b.get("stream"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        // 提取模型名称
+        // Extract the model name
         let model = body
             .and_then(|b| b.get("model"))
             .and_then(|v| v.as_str())
@@ -172,66 +172,66 @@ impl ProxySession {
         }
     }
 
-    /// 设置供应商 ID
+    /// Set the provider ID
     pub fn with_provider(mut self, provider_id: &str) -> Self {
         self.provider_id = Some(provider_id.to_string());
         self
     }
 
-    /// 获取请求延迟（毫秒）
+    /// Get the request latency (ms)
     pub fn latency_ms(&self) -> u64 {
         self.start_time.elapsed().as_millis() as u64
     }
 }
 
 // ============================================================================
-// Session ID 提取器
+// Session ID extractor
 // ============================================================================
 
-/// Session ID 来源
+/// Session ID source
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionIdSource {
-    /// 从 metadata.user_id 提取 (Claude)
+    /// From metadata.user_id (Claude)
     MetadataUserId,
-    /// 从 metadata.session_id 提取
+    /// From metadata.session_id
     MetadataSessionId,
-    /// 从 headers 提取 (Codex)
+    /// From headers (Codex)
     Header,
-    /// 从 previous_response_id 提取 (Codex)
+    /// From previous_response_id (Codex)
     PreviousResponseId,
-    /// 新生成
+    /// Newly generated
     Generated,
 }
 
-/// Session ID 提取结果
+/// Session ID extraction result
 #[derive(Debug, Clone)]
 pub struct SessionIdResult {
-    /// 提取或生成的 Session ID
+    /// Extracted or generated session ID
     pub session_id: String,
-    /// Session ID 来源
+    /// Session ID source
     pub source: SessionIdSource,
-    /// 是否为客户端提供的 ID（非新生成）
+    /// Whether the ID came from the client (not newly generated)
     pub client_provided: bool,
 }
 
-/// 从请求中提取或生成 Session ID
+/// Extract or generate a session ID from the request
 ///
-/// 轻量化实现，仅提取 session_id 用于日志记录，不做复杂的 Session 管理。
+/// Lightweight: extracts session_id for logging only, with no full session management.
 ///
-/// ## 提取优先级
+/// ## Extraction priority
 ///
-/// ### Claude 请求
-/// 1. `metadata.user_id` (格式: `user_xxx_session_yyy`) → 提取 `yyy` 部分
-/// 2. `metadata.session_id` → 直接使用
-/// 3. 生成新 UUID
+/// ### Claude requests
+/// 1. `metadata.user_id` (format: `user_xxx_session_yyy`) → take the `yyy` part
+/// 2. `metadata.session_id` → use as is
+/// 3. Generate a new UUID
 ///
-/// ### Codex 请求
-/// 1. Headers: `session_id` 或 `x-session-id`
+/// ### Codex requests
+/// 1. Headers: `session_id` or `x-session-id`
 /// 2. `metadata.session_id`
-/// 3. `previous_response_id` (对话延续)
-/// 4. 生成新 UUID
+/// 3. `previous_response_id` (conversation continuation)
+/// 4. Generate a new UUID
 ///
-/// ## 示例
+/// ## Example
 ///
 /// ```ignore
 /// let result = extract_session_id(&headers, &body, "claude");
@@ -242,29 +242,29 @@ pub fn extract_session_id(
     body: &serde_json::Value,
     client_format: &str,
 ) -> SessionIdResult {
-    // Codex 请求特殊处理
+    // Codex requests get special handling
     if client_format == "codex" || client_format == "openai" {
         if let Some(result) = extract_codex_session(headers, body) {
             return result;
         }
     }
 
-    // Claude 请求：从 metadata 提取
+    // Claude requests: extract from metadata
     if let Some(result) = extract_from_metadata(body) {
         return result;
     }
 
-    // 兜底：生成新 Session ID
+    // Fallback: generate a new session ID
     generate_new_session_id()
 }
 
-/// 提取 Codex Session ID
+/// Extract the Codex session ID
 fn extract_codex_session(headers: &HeaderMap, body: &serde_json::Value) -> Option<SessionIdResult> {
-    // 1. 从 headers 提取
+    // 1. From headers
     for header_name in &["session_id", "x-session-id"] {
         if let Some(value) = headers.get(*header_name) {
             if let Ok(session_id) = value.to_str() {
-                // Codex Session ID 通常较长（UUID 格式）
+                // Codex session IDs are usually long (UUID format)
                 if session_id.len() > 20 {
                     return Some(SessionIdResult {
                         session_id: format!("codex_{session_id}"),
@@ -276,7 +276,7 @@ fn extract_codex_session(headers: &HeaderMap, body: &serde_json::Value) -> Optio
         }
     }
 
-    // 2. 从 body.metadata.session_id 提取
+    // 2. From body.metadata.session_id
     if let Some(session_id) = body
         .get("metadata")
         .and_then(|m| m.get("session_id"))
@@ -291,7 +291,7 @@ fn extract_codex_session(headers: &HeaderMap, body: &serde_json::Value) -> Optio
         }
     }
 
-    // 3. 从 previous_response_id 提取（对话延续）
+    // 3. From previous_response_id (conversation continuation)
     if let Some(prev_id) = body.get("previous_response_id").and_then(|v| v.as_str()) {
         if prev_id.len() > 10 {
             return Some(SessionIdResult {
@@ -305,11 +305,11 @@ fn extract_codex_session(headers: &HeaderMap, body: &serde_json::Value) -> Optio
     None
 }
 
-/// 从 metadata 提取 Session ID (Claude)
+/// Extract the session ID from metadata (Claude)
 fn extract_from_metadata(body: &serde_json::Value) -> Option<SessionIdResult> {
     let metadata = body.get("metadata")?;
 
-    // 1. 从 metadata.user_id 提取（格式: user_xxx_session_yyy）
+    // 1. From metadata.user_id (format: user_xxx_session_yyy)
     if let Some(user_id) = metadata.get("user_id").and_then(|v| v.as_str()) {
         if let Some(session_id) = parse_session_from_user_id(user_id) {
             return Some(SessionIdResult {
@@ -320,7 +320,7 @@ fn extract_from_metadata(body: &serde_json::Value) -> Option<SessionIdResult> {
         }
     }
 
-    // 2. 直接从 metadata.session_id 提取
+    // 2. Directly from metadata.session_id
     if let Some(session_id) = metadata.get("session_id").and_then(|v| v.as_str()) {
         if !session_id.is_empty() {
             return Some(SessionIdResult {
@@ -334,13 +334,13 @@ fn extract_from_metadata(body: &serde_json::Value) -> Option<SessionIdResult> {
     None
 }
 
-/// 从 user_id 解析 session_id
+/// Parse session_id from user_id
 ///
-/// 格式: `user_identifier_session_actual_session_id`
+/// Format: `user_identifier_session_actual_session_id`
 fn parse_session_from_user_id(user_id: &str) -> Option<String> {
-    // 查找 "_session_" 分隔符
+    // Find the "_session_" separator
     if let Some(pos) = user_id.find("_session_") {
-        let session_id = &user_id[pos + 9..]; // "_session_" 长度为 9
+        let session_id = &user_id[pos + 9..]; // "_session_" is 9 chars long
         if !session_id.is_empty() {
             return Some(session_id.to_string());
         }
@@ -348,7 +348,7 @@ fn parse_session_from_user_id(user_id: &str) -> Option<String> {
     None
 }
 
-/// 生成新的 Session ID
+/// Generate a new session ID
 fn generate_new_session_id() -> SessionIdResult {
     SessionIdResult {
         session_id: Uuid::new_v4().to_string(),
@@ -477,7 +477,7 @@ mod tests {
         assert_eq!(ClientFormat::Unknown.as_str(), "unknown");
     }
 
-    // ========== Session ID 提取测试 ==========
+    // ========== Session ID extraction tests ==========
 
     #[test]
     fn test_extract_session_from_claude_metadata_user_id() {
@@ -555,12 +555,12 @@ mod tests {
             parse_session_from_user_id("my_app_session_xyz789"),
             Some("xyz789".to_string())
         );
-        // 注意: "_session_" 是分隔符，所以下面的字符串会匹配
+        // "_session_" is the separator, so the string below matches
         assert_eq!(
             parse_session_from_user_id("no_session_marker"),
             Some("marker".to_string())
         );
-        // 没有 "_session_" 分隔符的情况
+        // No "_session_" separator
         assert_eq!(parse_session_from_user_id("user_john_abc123"), None);
         assert_eq!(parse_session_from_user_id("_session_"), None);
     }

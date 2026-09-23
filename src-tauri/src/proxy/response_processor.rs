@@ -1,6 +1,6 @@
-//! 响应处理器模块
+//! Response processor
 //!
-//! 统一处理流式和非流式 API 响应
+//! Unified handling of streaming and non-streaming API responses
 
 use super::{
     handler_config::UsageParserConfig,
@@ -27,12 +27,12 @@ use std::{
 use tokio::sync::Mutex;
 
 // ============================================================================
-// 响应解压
+// Response decompression
 // ============================================================================
 
-/// 根据 content-encoding 解压响应体字节
+/// Decompress response body bytes according to content-encoding
 ///
-/// reqwest 自动解压已禁用（为了透传 accept-encoding），需要手动解压。
+/// reqwest's automatic decompression is disabled (to pass accept-encoding through), so decompress manually.
 fn decompress_body(content_encoding: &str, body: &[u8]) -> Result<Vec<u8>, std::io::Error> {
     match content_encoding {
         "gzip" | "x-gzip" => {
@@ -53,13 +53,13 @@ fn decompress_body(content_encoding: &str, body: &[u8]) -> Result<Vec<u8>, std::
             Ok(decompressed)
         }
         _ => {
-            log::warn!("未知的 content-encoding: {content_encoding}，跳过解压");
+            log::warn!("Unknown content-encoding: {content_encoding}, skipping decompression");
             Ok(body.to_vec())
         }
     }
 }
 
-/// 从响应头提取 content-encoding（忽略 identity 和 chunked）
+/// Extract content-encoding from the response headers (ignoring identity and chunked)
 fn get_content_encoding(headers: &HeaderMap) -> Option<String> {
     headers
         .get("content-encoding")
@@ -68,7 +68,7 @@ fn get_content_encoding(headers: &HeaderMap) -> Option<String> {
         .filter(|s| !s.is_empty() && s != "identity")
 }
 
-/// 移除在重建响应体后会失真的实体头。
+/// Remove entity headers that become inaccurate once the body is rebuilt.
 ///
 /// A buffered body is sent with a content-length. Leaving the upstream
 /// `transfer-encoding: chunked` on that response makes hyper abort the
@@ -87,11 +87,11 @@ fn strip_framing_headers(headers: &mut HeaderMap) {
     headers.remove(axum::http::header::CONNECTION);
 }
 
-/// 读取响应体并在需要时解压，确保 headers 与返回 body 一致。
+/// Read the response body and decompress it when needed, so headers match the returned body.
 ///
-/// `body_timeout`: 整包超时。当非零时用 `tokio::time::timeout` 包住 `.bytes()` 调用，
-/// 防止上游发完响应头后卡住 body 导致请求永远挂住。
-/// 传入 `Duration::ZERO` 表示不启用超时（故障转移关闭时）。
+/// `body_timeout`: whole-body timeout. When non-zero, `.bytes()` is wrapped in `tokio::time::timeout`
+/// so an upstream that stalls the body after sending headers cannot hang the request forever.
+/// Pass `Duration::ZERO` to disable the timeout (when failover is off).
 pub(crate) async fn read_decoded_body(
     response: ProxyResponse,
     tag: &str,
@@ -113,7 +113,7 @@ pub(crate) async fn read_decoded_body(
     };
 
     log::debug!(
-        "[{tag}] 已接收上游响应体: status={}, bytes={}, headers={}",
+        "[{tag}] Received upstream response body: status={}, bytes={}, headers={}",
         status.as_u16(),
         raw_bytes.len(),
         format_headers(&headers)
@@ -123,14 +123,14 @@ pub(crate) async fn read_decoded_body(
     let mut decoded = false;
 
     if let Some(encoding) = get_content_encoding(&headers) {
-        log::debug!("[{tag}] 解压非流式响应: content-encoding={encoding}");
+        log::debug!("[{tag}] Decompressing non-streaming response: content-encoding={encoding}");
         match decompress_body(&encoding, &raw_bytes) {
             Ok(decompressed) => {
                 body_bytes = Bytes::from(decompressed);
                 decoded = true;
             }
             Err(e) => {
-                log::warn!("[{tag}] 解压失败 ({encoding}): {e}，使用原始数据");
+                log::warn!("[{tag}] Decompression failed ({encoding}): {e}, using raw data");
             }
         }
     }
@@ -146,16 +146,16 @@ pub(crate) async fn read_decoded_body(
 }
 
 // ============================================================================
-// 公共接口
+// Public interface
 // ============================================================================
 
-/// 检测响应是否为 SSE 流式响应
+/// Whether the response is an SSE stream
 #[inline]
 pub fn is_sse_response(response: &ProxyResponse) -> bool {
     response.is_sse()
 }
 
-/// 处理流式响应
+/// Handle a streaming response
 pub async fn handle_streaming(
     response: ProxyResponse,
     ctx: &RequestContext,
@@ -164,16 +164,16 @@ pub async fn handle_streaming(
 ) -> Response {
     let status = response.status();
     log::debug!(
-        "[{}] 已接收上游流式响应: status={}, headers={}",
+        "[{}] Received upstream streaming response: status={}, headers={}",
         ctx.tag,
         status.as_u16(),
         format_headers(response.headers())
     );
-    // 检查流式响应是否被压缩（SSE 通常不压缩，如果压缩则 SSE 解析会失败）
+    // Check whether the stream is compressed (SSE is normally uncompressed; if compressed, SSE parsing fails)
     if let Some(encoding) = get_content_encoding(response.headers()) {
         log::warn!(
-            "[{}] 流式响应含 content-encoding={encoding}，SSE 解析可能失败。\
-             上游在 accept-encoding 透传后压缩了 SSE 流。",
+            "[{}] Streaming response has content-encoding={encoding}; SSE parsing may fail. \
+             The upstream compressed the SSE stream after accept-encoding passthrough.",
             ctx.tag
         );
     }
@@ -194,16 +194,16 @@ pub async fn handle_streaming(
         builder = builder.header(key, value);
     }
 
-    // 创建字节流
+    // Create the byte stream
     let stream = response.bytes_stream();
 
-    // 创建使用量收集器
+    // Create the usage collector
     let usage_collector = create_usage_collector(ctx, state, status.as_u16(), parser_config);
 
-    // 获取流式超时配置
+    // Get the streaming timeout config
     let timeout_config = ctx.streaming_timeout_config();
 
-    // 创建带日志和超时的透传流
+    // Create the passthrough stream with logging and timeouts
     let logged_stream =
         create_logged_passthrough_stream(stream, ctx.tag, Some(usage_collector), timeout_config);
 
@@ -211,20 +211,20 @@ pub async fn handle_streaming(
     match builder.body(body) {
         Ok(resp) => resp,
         Err(e) => {
-            log::error!("[{}] 构建流式响应失败: {e}", ctx.tag);
+            log::error!("[{}] Failed to build streaming response: {e}", ctx.tag);
             ProxyError::Internal(format!("Failed to build streaming response: {e}")).into_response()
         }
     }
 }
 
-/// 处理非流式响应
+/// Handle a non-streaming response
 pub async fn handle_non_streaming(
     response: ProxyResponse,
     ctx: &RequestContext,
     state: &ProxyState,
     parser_config: &UsageParserConfig,
 ) -> Result<Response, ProxyError> {
-    // 整包超时：仅在故障转移开启且配置值非零时生效
+    // Whole-body timeout: only when failover is on and the configured value is non-zero
     let body_timeout =
         if ctx.app_config.auto_failover_enabled && ctx.app_config.non_streaming_timeout > 0 {
             Duration::from_secs(ctx.app_config.non_streaming_timeout as u64)
@@ -235,16 +235,16 @@ pub async fn handle_non_streaming(
         read_decoded_body(response, ctx.tag, body_timeout).await?;
 
     log::debug!(
-        "[{}] 上游响应体内容: {}",
+        "[{}] Upstream response body: {}",
         ctx.tag,
         String::from_utf8_lossy(&body_bytes)
     );
 
-    // 解析并记录使用量
+    // Parse and record usage
     if let Ok(json_value) = serde_json::from_slice::<Value>(&body_bytes) {
-        // 解析使用量
+        // Parse usage
         if let Some(usage) = (parser_config.response_parser)(&json_value) {
-            // 优先使用 usage 中解析出的模型名称，其次使用响应中的 model 字段，最后回退到请求模型
+            // Prefer the model name parsed from usage, then the response's model field, then the request model
             let model = if let Some(ref m) = usage.model {
                 m.clone()
             } else if let Some(m) = json_value.get("model").and_then(|m| m.as_str()) {
@@ -278,13 +278,13 @@ pub async fn handle_non_streaming(
                 false,
             );
             log::debug!(
-                "[{}] 未能解析 usage 信息，跳过记录",
+                "[{}] Could not parse usage info, skipping record",
                 parser_config.app_type_str
             );
         }
     } else {
         log::debug!(
-            "[{}] <<< 响应 (非 JSON): {} bytes",
+            "[{}] <<< Response (non-JSON): {} bytes",
             ctx.tag,
             body_bytes.len()
         );
@@ -299,7 +299,7 @@ pub async fn handle_non_streaming(
         );
     }
 
-    // 构建响应
+    // Build the response
     let mut builder = axum::response::Response::builder().status(status);
     for (key, value) in response_headers.iter() {
         builder = builder.header(key, value);
@@ -307,14 +307,14 @@ pub async fn handle_non_streaming(
 
     let body = axum::body::Body::from(body_bytes);
     builder.body(body).map_err(|e| {
-        log::error!("[{}] 构建响应失败: {e}", ctx.tag);
+        log::error!("[{}] Failed to build response: {e}", ctx.tag);
         ProxyError::Internal(format!("Failed to build response: {e}"))
     })
 }
 
-/// 通用响应处理入口
+/// Common response handling entry point
 ///
-/// 根据响应类型自动选择流式或非流式处理
+/// Picks streaming or non-streaming handling by response type
 pub async fn process_response(
     response: ProxyResponse,
     ctx: &RequestContext,
@@ -329,12 +329,12 @@ pub async fn process_response(
 }
 
 // ============================================================================
-// SSE 使用量收集器
+// SSE usage collector
 // ============================================================================
 
 type UsageCallbackWithTiming = Arc<dyn Fn(Vec<Value>, Option<u64>) + Send + Sync + 'static>;
 
-/// SSE 使用量收集器
+/// SSE usage collector
 #[derive(Clone)]
 pub struct SseUsageCollector {
     inner: Arc<SseUsageCollectorInner>,
@@ -349,7 +349,7 @@ struct SseUsageCollectorInner {
 }
 
 impl SseUsageCollector {
-    /// 创建新的使用量收集器
+    /// Create a usage collector
     pub fn new(
         start_time: std::time::Instant,
         callback: impl Fn(Vec<Value>, Option<u64>) + Send + Sync + 'static,
@@ -366,9 +366,9 @@ impl SseUsageCollector {
         }
     }
 
-    /// 推送 SSE 事件
+    /// Push an SSE event
     pub async fn push(&self, event: Value) {
-        // 记录首个事件时间
+        // Record the time of the first event
         {
             let mut first_time = self.inner.first_event_time.lock().await;
             if first_time.is_none() {
@@ -379,7 +379,7 @@ impl SseUsageCollector {
         events.push(event);
     }
 
-    /// 完成收集并触发回调
+    /// Finish collecting and fire the callback
     pub async fn finish(&self) {
         if self.inner.finished.swap(true, Ordering::SeqCst) {
             return;
@@ -400,10 +400,10 @@ impl SseUsageCollector {
 }
 
 // ============================================================================
-// 内部辅助函数
+// Internal helpers
 // ============================================================================
 
-/// 创建使用量收集器
+/// Create a usage collector
 fn create_usage_collector(
     ctx: &RequestContext,
     state: &ProxyState,
@@ -478,12 +478,12 @@ fn create_usage_collector(
                 )
                 .await;
             });
-            log::debug!("[{tag}] 流式响应缺少 usage 统计，跳过消费记录");
+            log::debug!("[{tag}] Streaming response has no usage stats, skipping usage record");
         }
     })
 }
 
-/// 异步记录使用量
+/// Record usage asynchronously
 fn spawn_log_usage(
     state: &ProxyState,
     ctx: &RequestContext,
@@ -526,7 +526,7 @@ fn spawn_log_usage(
     });
 }
 
-/// 内部使用量记录函数
+/// Internal usage recording
 #[allow(clippy::too_many_arguments)]
 async fn log_usage_internal(
     state: &ProxyState,
@@ -555,7 +555,7 @@ async fn log_usage_internal(
     let request_id = uuid::Uuid::new_v4().to_string();
 
     log::debug!(
-        "[{app_type}] 记录请求日志: id={request_id}, provider={provider_id}, model={model}, streaming={is_streaming}, status={status_code}, latency_ms={latency_ms}, first_token_ms={first_token_ms:?}, session={}, input={}, output={}, cache_read={}, cache_creation={}",
+        "[{app_type}] Recording request log: id={request_id}, provider={provider_id}, model={model}, streaming={is_streaming}, status={status_code}, latency_ms={latency_ms}, first_token_ms={first_token_ms:?}, session={}, input={}, output={}, cache_read={}, cache_creation={}",
         session_id.as_deref().unwrap_or("none"),
         usage.input_tokens,
         usage.output_tokens,
@@ -579,11 +579,11 @@ async fn log_usage_internal(
         None, // provider_type
         is_streaming,
     ) {
-        log::warn!("[USG-001] 记录使用量失败: {e}");
+        log::warn!("[USG-001] Failed to record usage: {e}");
     }
 }
 
-/// 创建带日志记录和超时控制的透传流
+/// Create a passthrough stream with logging and timeout control
 pub fn create_logged_passthrough_stream(
     stream: impl Stream<Item = Result<Bytes, std::io::Error>> + Send + 'static,
     tag: &'static str,
@@ -595,7 +595,7 @@ pub fn create_logged_passthrough_stream(
         let mut collector = usage_collector;
         let mut is_first_chunk = true;
 
-        // 超时配置
+        // Timeout config
         let first_byte_timeout = if timeout_config.first_byte_timeout > 0 {
             Some(Duration::from_secs(timeout_config.first_byte_timeout))
         } else {
@@ -610,7 +610,7 @@ pub fn create_logged_passthrough_stream(
         tokio::pin!(stream);
 
         loop {
-            // 选择超时时间：首字节超时或静默期超时
+            // Pick the timeout: first-byte timeout or idle timeout
             let timeout_duration = if is_first_chunk {
                 first_byte_timeout
             } else {
@@ -621,9 +621,9 @@ pub fn create_logged_passthrough_stream(
                 Some(duration) => {
                     match tokio::time::timeout(duration, stream.next()).await {
                         Ok(Some(chunk)) => Some(chunk),
-                        Ok(None) => None, // 流结束
+                        Ok(None) => None, // stream ended
                         Err(_) => {
-                            // 超时
+                            // Timed out
                             let timeout_type = if is_first_chunk { "first byte" } else { "idle" };
                             log::error!("[{tag}] the streamed response timed out ({timeout_type}, {}s)", duration.as_secs());
                             yield Err(std::io::Error::other(format!("the streamed response timed out ({timeout_type})")));
@@ -631,14 +631,14 @@ pub fn create_logged_passthrough_stream(
                         }
                     }
                 }
-                None => stream.next().await, // 无超时限制
+                None => stream.next().await, // no timeout
             };
 
             match chunk_result {
                 Some(Ok(bytes)) => {
                     if is_first_chunk {
                         log::debug!(
-                            "[{tag}] 已接收上游流式首包: bytes={}",
+                            "[{tag}] Received first upstream stream chunk: bytes={}",
                             bytes.len()
                         );
                     }
@@ -646,13 +646,13 @@ pub fn create_logged_passthrough_stream(
                     let text = String::from_utf8_lossy(&bytes);
                     buffer.push_str(&text);
 
-                    // 尝试解析并记录完整的 SSE 事件
+                    // Try to parse and log complete SSE events
                     while let Some(pos) = buffer.find("\n\n") {
                         let event_text = buffer[..pos].to_string();
                         buffer = buffer[pos + 2..].to_string();
 
                         if !event_text.trim().is_empty() {
-                            // 提取 data 部分并尝试解析为 JSON
+                            // Extract the data part and try to parse it as JSON
                             for line in event_text.lines() {
                                 if let Some(data) = strip_sse_field(line, "data") {
                                     if data.trim() != "[DONE]" {
@@ -660,9 +660,9 @@ pub fn create_logged_passthrough_stream(
                                             if let Some(c) = &collector {
                                                 c.push(json_value.clone()).await;
                                             }
-                                            log::debug!("[{tag}] <<< SSE 事件: {data}");
+                                            log::debug!("[{tag}] <<< SSE event: {data}");
                                         } else {
-                                            log::debug!("[{tag}] <<< SSE 数据: {data}");
+                                            log::debug!("[{tag}] <<< SSE data: {data}");
                                         }
                                     } else {
                                         log::debug!("[{tag}] <<< SSE: [DONE]");
@@ -675,12 +675,12 @@ pub fn create_logged_passthrough_stream(
                     yield Ok(bytes);
                 }
                 Some(Err(e)) => {
-                    log::error!("[{tag}] 流错误: {e}");
+                    log::error!("[{tag}] Stream error: {e}");
                     yield Err(std::io::Error::other(e.to_string()));
                     break;
                 }
                 None => {
-                    // 流正常结束
+                    // Stream ended normally
                     break;
                 }
             }

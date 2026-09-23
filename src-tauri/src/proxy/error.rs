@@ -62,12 +62,12 @@ pub enum ProxyError {
     #[error("Timed out: {0}")]
     Timeout(String),
 
-    /// 流式响应空闲超时
+    /// Streamed response idle timeout
     #[allow(dead_code)]
     #[error("The streamed response went idle: no data for {0}s")]
     StreamIdleTimeout(u64),
 
-    /// 认证错误
+    /// Authentication error
     #[error("Authentication failed: {0}")]
     AuthError(String),
 
@@ -86,13 +86,13 @@ impl IntoResponse for ProxyError {
                 let http_status =
                     StatusCode::from_u16(*upstream_status).unwrap_or(StatusCode::BAD_GATEWAY);
 
-                // 尝试解析上游响应体为 JSON，如果失败则包装为字符串
+                // Parse the upstream body as JSON; if that fails, wrap it as a string
                 let error_body = if let Some(body_str) = upstream_body {
                     if let Ok(json_body) = serde_json::from_str::<serde_json::Value>(body_str) {
-                        // 上游返回的是 JSON，直接透传
+                        // Upstream returned JSON: pass it through
                         json_body
                     } else {
-                        // 上游返回的不是 JSON，包装为错误消息
+                        // Upstream did not return JSON: wrap it as an error message
                         json!({
                             "error": {
                                 "message": body_str,
@@ -174,18 +174,18 @@ impl IntoResponse for ProxyError {
     }
 }
 
-/// 错误分类
+/// Error category
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCategory {
-    /// 可重试错误（网络问题、5xx）
-    Retryable, // 网络超时、5xx 错误
-    /// 不可重试错误（4xx、认证失败）
-    NonRetryable, // 认证失败、参数错误、4xx 错误
+    /// Retryable (network problems, 5xx)
+    Retryable, // network timeout, 5xx
+    /// Not retryable (4xx, authentication failure)
+    NonRetryable, // auth failure, bad parameters, 4xx
     #[allow(dead_code)]
-    ClientAbort, // 客户端主动中断
+    ClientAbort, // client aborted
 }
 
-/// 判断错误是否可重试
+/// Whether an error is retryable
 #[allow(dead_code)]
 pub fn categorize_error(error: &reqwest::Error) -> ErrorCategory {
     if error.is_timeout() || error.is_connect() {

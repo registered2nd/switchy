@@ -1,7 +1,7 @@
-//! 格式转换模块
+//! Format conversion
 //!
-//! 实现 Anthropic ↔ OpenAI 格式转换，用于 OpenRouter 支持
-//! 参考: anthropic-proxy-rs
+//! Anthropic ↔ OpenAI format conversion, used for OpenRouter support
+//! Reference: anthropic-proxy-rs
 
 use crate::proxy::error::ProxyError;
 use serde_json::{json, Value};
@@ -71,26 +71,26 @@ pub fn resolve_reasoning_effort(body: &Value) -> Option<&'static str> {
     }
 }
 
-/// Anthropic 请求 → OpenAI 请求
+/// Anthropic request → OpenAI request
 ///
 /// `cache_key`: optional prompt_cache_key to inject for improved cache routing
 pub fn anthropic_to_openai(body: Value, cache_key: Option<&str>) -> Result<Value, ProxyError> {
     let mut result = json!({});
 
-    // NOTE: 模型映射由上游统一处理（proxy::model_mapper），格式转换层只做结构转换。
+    // NOTE: model mapping happens upstream (proxy::model_mapper); this layer only converts structure.
     if let Some(model) = body.get("model").and_then(|m| m.as_str()) {
         result["model"] = json!(model);
     }
 
     let mut messages = Vec::new();
 
-    // 处理 system prompt
+    // Handle the system prompt
     if let Some(system) = body.get("system") {
         if let Some(text) = system.as_str() {
-            // 单个字符串
+            // A single string
             messages.push(json!({"role": "system", "content": text}));
         } else if let Some(arr) = system.as_array() {
-            // 多个 system message — preserve cache_control for compatible proxies
+            // Multiple system messages — preserve cache_control for compatible proxies
             for msg in arr {
                 if let Some(text) = msg.get("text").and_then(|t| t.as_str()) {
                     let mut sys_msg = json!({"role": "system", "content": text});
@@ -103,7 +103,7 @@ pub fn anthropic_to_openai(body: Value, cache_key: Option<&str>) -> Result<Value
         }
     }
 
-    // 转换 messages
+    // Convert messages
     if let Some(msgs) = body.get("messages").and_then(|m| m.as_array()) {
         for msg in msgs {
             let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
@@ -115,7 +115,7 @@ pub fn anthropic_to_openai(body: Value, cache_key: Option<&str>) -> Result<Value
 
     result["messages"] = json!(messages);
 
-    // 转换参数 — o-series 模型需要 max_completion_tokens
+    // Convert parameters — o-series models need max_completion_tokens
     let model = body.get("model").and_then(|m| m.as_str()).unwrap_or("");
     if let Some(v) = body.get("max_tokens") {
         if is_openai_o_series(model) {
@@ -144,7 +144,7 @@ pub fn anthropic_to_openai(body: Value, cache_key: Option<&str>) -> Result<Value
         }
     }
 
-    // 转换 tools (过滤 BatchTool)
+    // Convert tools (BatchTool filtered out)
     if let Some(tools) = body.get("tools").and_then(|t| t.as_array()) {
         let openai_tools: Vec<Value> = tools
             .iter()
@@ -182,7 +182,7 @@ pub fn anthropic_to_openai(body: Value, cache_key: Option<&str>) -> Result<Value
     Ok(result)
 }
 
-/// 转换单条消息到 OpenAI 格式（可能产生多条消息）
+/// Converts one message to OpenAI format (may yield several messages)
 fn convert_message_to_openai(
     role: &str,
     content: Option<&Value>,
@@ -197,13 +197,13 @@ fn convert_message_to_openai(
         }
     };
 
-    // 字符串内容
+    // String content
     if let Some(text) = content.as_str() {
         result.push(json!({"role": role, "content": text}));
         return Ok(result);
     }
 
-    // 数组内容（多模态/工具调用）
+    // Array content (multimodal / tool calls)
     if let Some(blocks) = content.as_array() {
         let mut content_parts = Vec::new();
         let mut tool_calls = Vec::new();
@@ -248,7 +248,7 @@ fn convert_message_to_openai(
                     }));
                 }
                 "tool_result" => {
-                    // tool_result 变成单独的 tool role 消息
+                    // A tool_result becomes its own tool-role message
                     let tool_use_id = block
                         .get("tool_use_id")
                         .and_then(|i| i.as_str())
@@ -266,17 +266,17 @@ fn convert_message_to_openai(
                     }));
                 }
                 "thinking" => {
-                    // 跳过 thinking blocks
+                    // Skip thinking blocks
                 }
                 _ => {}
             }
         }
 
-        // 添加带内容和/或工具调用的消息
+        // Add the message with its content and/or tool calls
         if !content_parts.is_empty() || !tool_calls.is_empty() {
             let mut msg = json!({"role": role});
 
-            // 内容处理
+            // Content
             if content_parts.is_empty() {
                 msg["content"] = Value::Null;
             } else if content_parts.len() == 1 {
@@ -295,7 +295,7 @@ fn convert_message_to_openai(
                 msg["content"] = json!(content_parts);
             }
 
-            // 工具调用
+            // Tool calls
             if !tool_calls.is_empty() {
                 msg["tool_calls"] = json!(tool_calls);
             }
@@ -306,20 +306,20 @@ fn convert_message_to_openai(
         return Ok(result);
     }
 
-    // 其他情况直接透传
+    // Anything else passes through unchanged
     result.push(json!({"role": role, "content": content}));
     Ok(result)
 }
 
-/// 清理 JSON schema（移除不支持的 format）
+/// Cleans a JSON schema (removes unsupported formats)
 pub fn clean_schema(mut schema: Value) -> Value {
     if let Some(obj) = schema.as_object_mut() {
-        // 移除 "format": "uri"
+        // Remove "format": "uri"
         if obj.get("format").and_then(|v| v.as_str()) == Some("uri") {
             obj.remove("format");
         }
 
-        // 递归清理嵌套 schema
+        // Recurse into nested schemas
         if let Some(properties) = obj.get_mut("properties").and_then(|v| v.as_object_mut()) {
             for (_, value) in properties.iter_mut() {
                 *value = clean_schema(value.clone());
@@ -333,7 +333,7 @@ pub fn clean_schema(mut schema: Value) -> Value {
     schema
 }
 
-/// OpenAI 响应 → Anthropic 响应
+/// OpenAI response → Anthropic response
 pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
     let choices = body
         .get("choices")
@@ -351,7 +351,7 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
     let mut content = Vec::new();
     let mut has_tool_use = false;
 
-    // 文本/拒绝内容
+    // Text/refusal content
     if let Some(msg_content) = message.get("content") {
         if let Some(text) = msg_content.as_str() {
             if !text.is_empty() {
@@ -387,7 +387,7 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
         }
     }
 
-    // 工具调用（tool_calls）
+    // Tool calls (tool_calls)
     if let Some(tool_calls) = message.get("tool_calls").and_then(|t| t.as_array()) {
         if !tool_calls.is_empty() {
             has_tool_use = true;
@@ -411,7 +411,7 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
             }));
         }
     }
-    // 兼容旧格式（function_call）
+    // Legacy format (function_call)
     if !has_tool_use {
         if let Some(function_call) = message.get("function_call") {
             let id = function_call
@@ -442,7 +442,7 @@ pub fn openai_to_anthropic(body: Value) -> Result<Value, ProxyError> {
         }
     }
 
-    // 映射 finish_reason → stop_reason
+    // Map finish_reason → stop_reason
     let stop_reason = choice
         .get("finish_reason")
         .and_then(|r| r.as_str())
@@ -659,7 +659,7 @@ mod tests {
 
     #[test]
     fn test_model_passthrough() {
-        // 格式转换层只做结构转换，模型映射由上游 proxy::model_mapper 处理
+        // The conversion layer only converts structure; model mapping happens upstream in proxy::model_mapper
         let input = json!({
             "model": "gpt-4o",
             "max_tokens": 1024,

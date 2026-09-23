@@ -1,12 +1,12 @@
 //! Proxy Usage Tracking Module
 //!
-//! 提供 API 请求的使用量跟踪、成本计算和日志记录功能
+//! Usage tracking, cost calculation and logging for API requests
 
 pub mod calculator;
 pub mod logger;
 pub mod parser;
 
-// 仅导出内部使用的类型,避免未使用警告
+// Export only the types used internally, to avoid unused warnings
 #[allow(unused_imports)]
 pub use calculator::{CostBreakdown, CostCalculator, ModelPricing};
 #[allow(unused_imports)]

@@ -19,13 +19,13 @@ pub fn enter_lightweight_mode(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         window
             .destroy()
-            .map_err(|e| format!("销毁主窗口失败: {e}"))?;
+            .map_err(|e| format!("Failed to destroy the main window: {e}"))?;
     }
     // else: already in lightweight mode or window not found, just set the flag
 
     LIGHTWEIGHT_MODE.store(true, Ordering::Release);
     crate::tray::refresh_tray_menu(app);
-    log::info!("进入轻量模式");
+    log::info!("Entering lightweight mode");
     Ok(())
 }
 
@@ -46,7 +46,7 @@ pub fn exit_lightweight_mode(app: &tauri::AppHandle) -> Result<(), String> {
         }
         LIGHTWEIGHT_MODE.store(false, Ordering::Release);
         crate::tray::refresh_tray_menu(app);
-        log::info!("退出轻量模式");
+        log::info!("Exiting lightweight mode");
         return Ok(());
     }
 
@@ -56,13 +56,13 @@ pub fn exit_lightweight_mode(app: &tauri::AppHandle) -> Result<(), String> {
         .windows
         .iter()
         .find(|w| w.label == "main")
-        .ok_or("主窗口配置未找到")?;
+        .ok_or("Main window config not found")?;
 
     WebviewWindowBuilder::from_config(app, window_config)
-        .map_err(|e| format!("加载主窗口配置失败: {e}"))?
+        .map_err(|e| format!("Failed to load the main window config: {e}"))?
         .visible(true)
         .build()
-        .map_err(|e| format!("创建主窗口失败: {e}"))?;
+        .map_err(|e| format!("Failed to create the main window: {e}"))?;
 
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.set_focus();
@@ -81,7 +81,7 @@ pub fn exit_lightweight_mode(app: &tauri::AppHandle) -> Result<(), String> {
 
     LIGHTWEIGHT_MODE.store(false, Ordering::Release);
     crate::tray::refresh_tray_menu(app);
-    log::info!("退出轻量模式");
+    log::info!("Exiting lightweight mode");
     Ok(())
 }
 

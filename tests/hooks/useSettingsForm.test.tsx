@@ -33,7 +33,6 @@ describe("useSettingsForm Hook", () => {
       data: {
         showInTray: undefined,
         minimizeToTrayOnClose: undefined,
-        enableClaudePluginIntegration: undefined,
         claudeConfigDir: "  /Users/demo  ",
         codexConfigDir: "   ",
         language: "en",
@@ -50,7 +49,6 @@ describe("useSettingsForm Hook", () => {
     const settings = result.current.settings!;
     expect(settings.showInTray).toBe(true);
     expect(settings.minimizeToTrayOnClose).toBe(true);
-    expect(settings.enableClaudePluginIntegration).toBe(false);
     expect(settings.claudeConfigDir).toBe("/Users/demo");
     expect(settings.codexConfigDir).toBeUndefined();
     expect(settings.language).toBe("en");
@@ -63,7 +61,6 @@ describe("useSettingsForm Hook", () => {
       data: {
         showInTray: true,
         minimizeToTrayOnClose: true,
-        enableClaudePluginIntegration: false,
         claudeConfigDir: "/Users/demo",
         codexConfigDir: null,
         language: "ja",
@@ -123,7 +120,6 @@ describe("useSettingsForm Hook", () => {
       data: {
         showInTray: true,
         minimizeToTrayOnClose: true,
-        enableClaudePluginIntegration: false,
         claudeConfigDir: "/origin",
         codexConfigDir: null,
         language: "en",
@@ -144,7 +140,6 @@ describe("useSettingsForm Hook", () => {
       result.current.resetSettings({
         showInTray: false,
         minimizeToTrayOnClose: false,
-        enableClaudePluginIntegration: true,
         claudeConfigDir: "  /reset  ",
         codexConfigDir: "   ",
         language: "zh",
@@ -154,7 +149,6 @@ describe("useSettingsForm Hook", () => {
     const settings = result.current.settings!;
     expect(settings.showInTray).toBe(false);
     expect(settings.minimizeToTrayOnClose).toBe(false);
-    expect(settings.enableClaudePluginIntegration).toBe(true);
     expect(settings.claudeConfigDir).toBe("/reset");
     expect(settings.codexConfigDir).toBeUndefined();
     expect(settings.language).toBe("zh");
@@ -167,7 +161,6 @@ describe("useSettingsForm Hook", () => {
       data: {
         showInTray: true,
         minimizeToTrayOnClose: true,
-        enableClaudePluginIntegration: false,
         claudeConfigDir: null,
         codexConfigDir: null,
         language: "zh",

@@ -5,11 +5,11 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("配置错误: {0}")]
+    #[error("Configuration error: {0}")]
     Config(String),
-    #[error("无效输入: {0}")]
+    #[error("Invalid input: {0}")]
     InvalidInput(String),
-    #[error("IO 错误: {path}: {source}")]
+    #[error("IO error: {path}: {source}")]
     Io {
         path: String,
         #[source]
@@ -21,38 +21,38 @@ pub enum AppError {
         #[source]
         source: std::io::Error,
     },
-    #[error("JSON 解析错误: {path}: {source}")]
+    #[error("JSON parse error: {path}: {source}")]
     Json {
         path: String,
         #[source]
         source: serde_json::Error,
     },
-    #[error("JSON 序列化失败: {source}")]
+    #[error("JSON serialization failed: {source}")]
     JsonSerialize {
         #[source]
         source: serde_json::Error,
     },
-    #[error("TOML 解析错误: {path}: {source}")]
+    #[error("TOML parse error: {path}: {source}")]
     Toml {
         path: String,
         #[source]
         source: toml::de::Error,
     },
-    #[error("锁获取失败: {0}")]
+    #[error("Failed to acquire lock: {0}")]
     Lock(String),
-    #[error("MCP 校验失败: {0}")]
+    #[error("MCP validation failed: {0}")]
     McpValidation(String),
     #[error("{0}")]
     Message(String),
     #[error("{en}")]
     Localized { key: &'static str, en: String },
-    #[error("数据库错误: {0}")]
+    #[error("Database error: {0}")]
     Database(String),
-    #[error("OMO 配置文件不存在")]
+    #[error("OMO config file does not exist")]
     OmoConfigNotFound,
-    #[error("所有供应商已熔断，无可用渠道")]
+    #[error("All providers are circuit-broken; no channel available")]
     AllProvidersCircuitOpen,
-    #[error("未配置供应商")]
+    #[error("No providers configured")]
     NoProvidersConfigured,
 }
 
@@ -79,10 +79,7 @@ impl AppError {
     }
 
     pub fn localized(key: &'static str, en: impl Into<String>) -> Self {
-        Self::Localized {
-            key,
-            en: en.into(),
-        }
+        Self::Localized { key, en: en.into() }
     }
 }
 
@@ -112,4 +109,3 @@ impl serde::Serialize for AppError {
         serializer.serialize_str(&self.to_string())
     }
 }
-
