@@ -2,6 +2,23 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-22 — Rotation counts the requested model's own limit window, not only the account-wide ones
+
+- Context: live `anthropic-ratelimit-unified-*` headers show a Fable answer carries a model-scoped 7-day bucket (`7d_oi`, 83% on the account tested) that Opus and Sonnet answers do not. Counting only account-wide buckets let an account out of Fable allowance look fresh for Fable; the overall `rejected` status of a Fable-only refusal then benched it for every model; and each answer replaced all stored windows, so an Opus answer erased the Fable reading.
+- Decision:
+  1. **Rotation is per request model.** `select_providers` takes the request's model; an account is passed over when an account-wide window, or a window that applies to that model, is at the threshold.
+  2. **Which scoped window applies to a model is learned from answers**, since Anthropic's bucket names (`7d_oi`) do not name the model and each answer carries only the buckets that apply to the model that answered. Codex names its scoped windows after the model, so there they match by name.
+  3. **A scoped refusal benches the account for that model only**; account-wide windows are replaced per answer, scoped ones merged by name.
+- Why: the user's case — a session on Fable must move when Fable is spent across accounts, while Opus on the same account may still be free.
+- Consequence: after a restart, the first request for a model sees only the account-wide windows until an account has answered that model once. Partly supersedes point 4 of both 2026-09-21 pool entries below.
+- Files: `src-tauri/src/proxy/account_pool.rs` (`MODEL_SCOPES`, `record_windows`, `is_spent`), `parse_quota_headers` / `record_quota` in `proxy/claude_pool.rs`, `select_providers` in `proxy/provider_router.rs`.
+
+## 2026-09-22 — The fork's own account-pool controls are the Pool tab; upstream's "failover" is renamed Switch automatically
+
+- Decision: the inherited Settings → Proxy tab is **Pool**, led by one card with the switches in dependency order (local proxy, per-app routing, per-app *Switch automatically*, rotation, keep-warm); the proxy server, switching order, rectifier and outbound proxy sit collapsed below. "Auto failover" / "failover queue" are **Switch automatically** / **switching order** in all English UI text; i18n keys keep their upstream names.
+- Why: the user found the upstream framing hid the pool behind a proxy tab and the word "failover" did not say what the switch does. A merge from upstream cc-switch would otherwise bring both back.
+- Files: `src/components/settings/PoolTabContent.tsx`, `src/components/proxy/PoolControls.tsx`, `src/i18n/locales/*.json`.
+
 ## 2026-09-21 — Keep-warm opens pooled accounts' session windows on a timer, off by default, reversing the rest of 2026-04-20's refusal of unattended calls
 
 - Context: rotation moves the session onto the next account in the queue, but a subscription's session window (Anthropic's five hours, ChatGPT's equivalent) only opens on a real request. An account nobody has used is therefore cold when rotation reaches it: the whole window starts then, and that account is the one holding the session with its reset furthest away. It also reports no quota at all, so `is_spent` knows nothing about it until the first request has already been spent finding out. the user directed keep-warm after it was established that a request which opens the window necessarily refreshes the credential too, so one feature covers both.
@@ -21,6 +38,8 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
 
 ## 2026-09-21 — Official Claude accounts are served through the proxy behind a toggle that is off by default, partly superseding 2026-04-20
 
+> **Point 4 partly superseded 2026-09-22** — a window scoped to the requested model now counts too; see "Rotation counts the requested model's own limit window".
+
 > **Amended the same day (1.0.13)** — the separate toggle was removed at the user's direction. Taking Claude over with the per-app Local Proxy switch is the opt-in; an Official account is then served with its captured login, and a takeover is refused only when that login has not been captured. The toggle had left Local Proxy for Claude broken for an Official account unless a second, initially greyed-out switch was set first.
 
 - Context: Claude Code re-reads its credentials per request, so the file swap already moves an open session; what it cannot do is rotate accounts on quota without a global swap that hits every session at once and trips the open terminal-corruption finding. the user asked for the TeamClaude functions on the Claude side as well, knowing the 2026-04-20 entry had ruled out Switchy renewing Pro/Max tokens.
@@ -37,6 +56,8 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
 - Files: `src-tauri/src/proxy/claude_pool.rs`; `account_pool.rs` (settings, quota store, exit check shared with Codex); the `ClaudeOAuth` arms of `proxy/providers/claude.rs`, `proxy/forwarder.rs` and `handle_claude_passthrough` in `proxy/handlers.rs`; `apply_claude_takeover_fields` in `services/proxy.rs`.
 
 ## 2026-09-21 — Codex accounts switch in an open session through the proxy, which holds ChatGPT logins under the existing newest-wins rules
+
+> **Point 4 partly superseded 2026-09-22** — a window scoped to the requested model now counts too; see "Rotation counts the requested model's own limit window".
 
 - Context: Codex reads `auth.json` once at start and reloads it only when the account id on disk matches the one it started as (`reload_if_account_id_matches` in its auth manager), so writing another account's login cannot move an open session. Claude Code re-reads its credentials per request, which is why the file swap is enough there.
 - Decision:
