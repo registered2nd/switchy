@@ -38,7 +38,7 @@ impl ProviderRouter {
     ///
     /// 返回按优先级排序的可用供应商列表：
     /// - 故障转移关闭时：仅返回当前供应商
-    /// - 故障转移开启时：仅使用故障转移队列，按队列顺序依次尝试（P1 → P2 → ...）
+    /// - 故障转移开启时：仅使用故障转移队列，当前供应商在前，其余按队列顺序依次尝试（P1 → P2 → ...）
     ///
     /// `model` is the model the request asks for; rotation counts only the
     /// quota windows that apply to it.
@@ -375,7 +375,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_failover_enabled_uses_queue_order_ignoring_current() {
+    async fn test_failover_enabled_serves_the_current_provider_first_then_the_queue_order() {
         let _home = TempHome::new();
         let db = Arc::new(Database::memory().unwrap());
 
@@ -403,9 +403,10 @@ mod tests {
         let providers = router.select_providers("claude", None).await.unwrap();
 
         assert_eq!(providers.len(), 2);
-        // 故障转移开启时：仅按队列顺序选择（忽略当前供应商）
-        assert_eq!(providers[0].id, "b");
-        assert_eq!(providers[1].id, "a");
+        // The provider enabled by hand is served first; the rest follow in
+        // queue order.
+        assert_eq!(providers[0].id, "a");
+        assert_eq!(providers[1].id, "b");
     }
 
     #[tokio::test]

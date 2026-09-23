@@ -6,10 +6,10 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
 
 - Context: upstream replaces a card's Enable with a queue toggle while an app switches automatically, so no account could be picked by hand and none made current. Signing in depends on the account being current, and under the proxy a switch is a hot switch with no switch-away backfill, so a `codex login` was never stored unless the account already held a login.
 - Decision:
-  1. **Enable is always Enable.** With Switch automatically on, enabling also adds the provider to the switching order at the front (the order is the providers' sort order, so the card moves to the top). Queue membership is a separate list button on the card.
+  1. **Enable is always Enable.** With Switch automatically on, enabling also adds the provider to the switching order, which lists the current provider first and the rest in sort order. The cards keep their places: moving the enabled card to the top put the other card under the pointer, and a second click switched back. Queue membership is a separate list button on the card.
   2. **Before each Codex request is routed, the live `auth.json` is filed**: a login of an account a provider holds goes to that provider under the existing newest-wins rules; a login of an account no provider holds goes to the current Official provider only when that holds no usable login.
 - Why: the user — Enable should never disappear, and there was no way to sign a new account in. A merge from upstream would bring the queue-toggle button back.
-- Files: `put_first_in_switching_order` in `services/provider/mod.rs`; `file_live_login` in `proxy/codex_pool.rs`, called from `select_providers`; `src/components/providers/ProviderActions.tsx`.
+- Files: `add_to_switching_order` in `services/provider/mod.rs`; `get_failover_queue` in `database/dao/failover.rs`; `file_live_login` in `proxy/codex_pool.rs`, called from `select_providers`; `src/components/providers/ProviderActions.tsx`.
 
 ## 2026-09-22 — Rotation counts the requested model's own limit window, not only the account-wide ones
 

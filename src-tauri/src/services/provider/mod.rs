@@ -1400,7 +1400,7 @@ impl ProviderService {
             return Self::switch_normal(state, app_type, id, &providers);
         }
 
-        Self::put_first_in_switching_order(state, &app_type, id)?;
+        Self::add_to_switching_order(state, &app_type, id)?;
 
         // Check if proxy takeover mode is active AND proxy server is actually running
         // Both conditions must be true to use hot-switch mode
@@ -1442,11 +1442,11 @@ impl ProviderService {
         Self::switch_normal(state, app_type, id, &providers)
     }
 
-    /// With Switch automatically on, the proxy serves the app's switching order
-    /// rather than its current provider, so a provider enabled by hand joins
-    /// that order at the front. Switching automatically still moves off it
-    /// when a request fails or its account is spent.
-    fn put_first_in_switching_order(
+    /// With Switch automatically on, the proxy serves the app's switching order,
+    /// which puts the current provider first; a provider enabled by hand joins
+    /// it if it is not already there. Switching automatically still moves off
+    /// it when a request fails or its account is spent.
+    fn add_to_switching_order(
         state: &AppState,
         app_type: &AppType,
         id: &str,
@@ -1454,30 +1454,8 @@ impl ProviderService {
         let switches_automatically =
             futures::executor::block_on(state.db.get_proxy_config_for_app(app_type.as_str()))
                 .is_ok_and(|config| config.auto_failover_enabled);
-        if !switches_automatically {
-            return Ok(());
-        }
-        state.db.add_to_failover_queue(app_type.as_str(), id)?;
-
-        // The order is the providers' sort order, the one the cards are shown in.
-        let mut providers: Vec<Provider> = state
-            .db
-            .get_all_providers(app_type.as_str())?
-            .into_values()
-            .collect();
-        providers.sort_by(|a, b| {
-            (a.id != id)
-                .cmp(&(b.id != id))
-                .then(a.sort_index.is_none().cmp(&b.sort_index.is_none()))
-                .then(a.sort_index.cmp(&b.sort_index))
-                .then(a.created_at.unwrap_or(0).cmp(&b.created_at.unwrap_or(0)))
-                .then(a.name.cmp(&b.name))
-        });
-        for (index, mut provider) in providers.into_iter().enumerate() {
-            if provider.sort_index != Some(index) {
-                provider.sort_index = Some(index);
-                state.db.save_provider(app_type.as_str(), &provider)?;
-            }
+        if switches_automatically {
+            state.db.add_to_failover_queue(app_type.as_str(), id)?;
         }
         Ok(())
     }

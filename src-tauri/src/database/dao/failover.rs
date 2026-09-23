@@ -17,7 +17,9 @@ pub struct FailoverQueueItem {
 }
 
 impl Database {
-    /// 获取故障转移队列（按 sort_index 排序）
+    /// The switching order: the current provider first, then the rest in sort
+    /// order. Enabling a card makes it current, so it is served first while the
+    /// cards keep their places.
     pub fn get_failover_queue(&self, app_type: &str) -> Result<Vec<FailoverQueueItem>, AppError> {
         let conn = lock_conn!(self.conn);
 
@@ -26,7 +28,7 @@ impl Database {
                 "SELECT id, name, sort_index
                  FROM providers
                  WHERE app_type = ?1 AND in_failover_queue = 1
-                 ORDER BY COALESCE(sort_index, 999999), id ASC",
+                 ORDER BY is_current DESC, COALESCE(sort_index, 999999), id ASC",
             )
             .map_err(|e| AppError::Database(e.to_string()))?;
 

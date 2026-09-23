@@ -958,9 +958,25 @@ fn enabling_a_provider_with_switch_automatically_on_puts_it_first_in_the_switchi
         Some("c")
     );
 
-    // A provider already in the order moves to its front.
+    // A provider already in the order moves to its front; the others keep
+    // their sort order, and no card moves.
     ProviderService::switch(&state, AppType::Codex, "b").expect("enable b");
-    assert_eq!(codex_switching_order(&state), vec!["b", "c", "a"]);
+    assert_eq!(codex_switching_order(&state), vec!["b", "a", "c"]);
+    let sort: Vec<(String, Option<usize>)> = ["a", "b", "c"]
+        .iter()
+        .map(|id| {
+            let p = state.db.get_provider_by_id(id, "codex").unwrap().unwrap();
+            (p.id, p.sort_index)
+        })
+        .collect();
+    assert_eq!(
+        sort,
+        vec![
+            ("a".to_string(), Some(0)),
+            ("b".to_string(), Some(1)),
+            ("c".to_string(), Some(2))
+        ]
+    );
 }
 
 #[test]
