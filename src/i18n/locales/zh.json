@@ -1991,7 +1991,7 @@
       "enabled": "在达到限额前轮换账号",
       "enabledDescription": "开启自动故障转移后，用量达到阈值的官方账号会被移到队列末尾，直到其限额重置；会话由下一个账号继续。同时适用于 Claude 与 Codex。",
       "threshold": "用量阈值（%）",
-      "thresholdDescription": "账号整体用量达到该值后跳过此账号。范围 50–100。",
+      "thresholdDescription": "账号用量达到该值后跳过此账号——既看账号整体用量，也看所请求模型自己的用量（如 Fable 有单独上限；Opus 与 Sonnet 共用账号额度）。范围 50–100。",
       "keepWarm": "保持账号预热",
       "keepWarmDescription": "当官方账号的会话窗口已结束时，向其发送一次单 token 请求，使轮换到该账号时其窗口已经开启，同时让登录保持续期而不会过期失效。此功能会在无人使用时消耗少量额度，因此默认关闭。适用于 Claude 与 Codex，仅在 Switchy 运行期间生效。",
       "keepWarmInterval": "检查间隔（分钟）",

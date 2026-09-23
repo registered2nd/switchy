@@ -128,7 +128,7 @@ async fn sweep(db: &Arc<Database>) {
             if !is_due(
                 last_warmed.get(&provider.id).copied(),
                 account_pool::session_window_reset(&provider.id),
-                account_pool::is_spent(&provider.id, config.threshold_percent, now),
+                account_pool::is_spent(&provider.id, None, config.threshold_percent, now),
                 config.keep_warm_interval_minutes,
                 now,
             ) {
@@ -199,7 +199,7 @@ async fn warm_claude(
         .map_err(|e| ProxyError::ForwardFailed(e.to_string()))?;
 
     let status = response.status();
-    claude_pool::record_quota(&provider.id, response.headers());
+    claude_pool::record_quota(&provider.id, Some(model), response.headers());
     fail_on_error_status(status.as_u16(), response.text().await.ok())
 }
 

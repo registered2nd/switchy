@@ -258,23 +258,67 @@ pub struct QuotaWindow {
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountQuota {
+    /// The account-wide windows from the latest response, and every
+    /// model-scoped window last reported, by name.
     pub windows: Vec<QuotaWindow>,
     /// Unix seconds of the response these came from.
     pub observed_at: i64,
     /// Set when upstream refused the account outright; unix seconds.
     pub limited_until: Option<i64>,
+    /// Model-scoped windows upstream refused, by window name; unix seconds.
+    pub scoped_limited_until: HashMap<String, i64>,
 }
 
 static QUOTAS: Lazy<RwLock<HashMap<String, AccountQuota>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
+/// For each model, the model-scoped windows its responses carry. Anthropic
+/// reports only the windows that apply to the model that answered (a Fable
+/// response carries `7d_oi`, an Opus one does not), so this is learned from
+/// responses rather than known in advance.
+static MODEL_SCOPES: Lazy<RwLock<HashMap<String, Vec<String>>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
+
 /// Stores the windows a response reported for the account that served it.
-pub fn record_windows(provider_id: &str, windows: Vec<QuotaWindow>) {
+/// Account-wide windows replace the previous ones; a model-scoped window
+/// replaces only its own earlier reading, since a response for another model
+/// does not carry it. `model` is the model the response answered, when known.
+pub fn record_windows(provider_id: &str, model: Option<&str>, windows: Vec<QuotaWindow>) {
+    if let Some(model) = model {
+        let scoped = windows
+            .iter()
+            .filter_map(|w| w.limit_name.clone())
+            .collect();
+        MODEL_SCOPES
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(model.to_string(), scoped);
+    }
     let mut quotas = QUOTAS.write().unwrap_or_else(|e| e.into_inner());
     let entry = quotas.entry(provider_id.to_string()).or_default();
-    entry.windows = windows;
+    merge_windows(entry, windows);
     entry.observed_at = chrono::Utc::now().timestamp();
     entry.limited_until = None;
+}
+
+fn merge_windows(entry: &mut AccountQuota, windows: Vec<QuotaWindow>) {
+    entry.windows.retain(|old| {
+        old.limit_name.is_some()
+            && !windows.iter().any(|new| {
+                new.limit_name == old.limit_name && new.window_minutes == old.window_minutes
+            })
+    });
+    for name in windows.iter().filter_map(|w| w.limit_name.as_ref()) {
+        entry.scoped_limited_until.remove(name);
+    }
+    entry.windows.extend(windows);
+    entry.windows.sort_by(|a, b| {
+        (a.limit_name.is_some(), &a.limit_name, a.window_minutes).cmp(&(
+            b.limit_name.is_some(),
+            &b.limit_name,
+            b.window_minutes,
+        ))
+    });
 }
 
 /// Records an outright usage-limit refusal, so the account is passed over
@@ -290,18 +334,58 @@ pub fn record_limited_until(provider_id: &str, until: i64) {
     );
 }
 
-/// Whether the account should be passed over: refused outright and not yet
-/// reset, or an account-wide window at or past the threshold. Model-scoped
-/// windows do not count — they say nothing about requests for other models.
-pub fn is_spent(provider_id: &str, threshold_percent: u8, now: i64) -> bool {
+/// Records a refusal on one model-scoped window, so the account is passed
+/// over for the models that window applies to, and only those, until
+/// `until` (unix seconds).
+pub fn record_scoped_limited_until(provider_id: &str, window: &str, until: i64) {
+    let mut quotas = QUOTAS.write().unwrap_or_else(|e| e.into_inner());
+    quotas
+        .entry(provider_id.to_string())
+        .or_default()
+        .scoped_limited_until
+        .insert(window.to_string(), until);
+    log::info!(
+        "[account_pool] provider={provider_id} hit its {window} limit; passing it over for that model until {until}"
+    );
+}
+
+/// Whether the account should be passed over for a request for `model`:
+/// refused outright and not yet reset, an account-wide window at or past the
+/// threshold, or a window scoped to that model at or past it. Windows scoped
+/// to other models do not count. With no model, only account-wide ones do.
+pub fn is_spent(provider_id: &str, model: Option<&str>, threshold_percent: u8, now: i64) -> bool {
     let quotas = QUOTAS.read().unwrap_or_else(|e| e.into_inner());
     let Some(quota) = quotas.get(provider_id) else {
         return false;
     };
-    quota_is_spent(quota, threshold_percent, now)
+    let scopes = MODEL_SCOPES.read().unwrap_or_else(|e| e.into_inner());
+    quota_is_spent(
+        quota,
+        &applicable_scopes(&scopes, model),
+        threshold_percent,
+        now,
+    )
 }
 
-/// When the account's session window resets — the shortest account-wide
+/// The model-scoped windows that apply to `model`: the ones its responses
+/// carry, and one named for the model itself, which is how Codex names them.
+fn applicable_scopes(scopes: &HashMap<String, Vec<String>>, model: Option<&str>) -> Vec<String> {
+    let Some(model) = model else {
+        return Vec::new();
+    };
+    let mut names = scopes.get(model).cloned().unwrap_or_default();
+    names.push(model.to_ascii_lowercase());
+    names
+}
+
+fn window_applies(name: &str, scopes: &[String]) -> bool {
+    let normalized = name.to_ascii_lowercase().replace(' ', "-");
+    scopes
+        .iter()
+        .any(|s| s == name || s.to_ascii_lowercase() == normalized)
+}
+
+/// When the account's session window resets: the shortest account-wide
 /// window, the one a single request opens. `None` when no response has
 /// reported one, which is also what an account nobody has used looks like.
 pub fn session_window_reset(provider_id: &str) -> Option<i64> {
@@ -318,26 +402,44 @@ fn session_reset_of(quota: &AccountQuota) -> Option<i64> {
         .reset_at
 }
 
-fn quota_is_spent(quota: &AccountQuota, threshold_percent: u8, now: i64) -> bool {
+fn quota_is_spent(
+    quota: &AccountQuota,
+    scopes: &[String],
+    threshold_percent: u8,
+    now: i64,
+) -> bool {
     if quota.limited_until.is_some_and(|until| until > now) {
         return true;
     }
+    if quota
+        .scoped_limited_until
+        .iter()
+        .any(|(name, until)| *until > now && window_applies(name, scopes))
+    {
+        return true;
+    }
     quota.windows.iter().any(|w| {
-        w.limit_name.is_none()
+        w.limit_name
+            .as_deref()
+            .is_none_or(|name| window_applies(name, scopes))
             && w.used_percent >= f64::from(threshold_percent)
             // A window whose reset has passed is a stale reading of a fresh one.
             && w.reset_at.is_none_or(|reset| reset > now)
     })
 }
 
-/// Puts accounts that should be passed over at the back, keeping queue order
-/// otherwise. They stay in the list: when every account is spent the request
-/// still goes out and upstream's own answer reaches the client.
-pub fn order_by_quota(providers: Vec<Provider>, threshold_percent: u8) -> Vec<Provider> {
+/// Puts accounts that should be passed over for `model` at the back, keeping
+/// queue order otherwise. They stay in the list: when every account is spent
+/// the request still goes out and upstream's own answer reaches the client.
+pub fn order_by_quota(
+    providers: Vec<Provider>,
+    model: Option<&str>,
+    threshold_percent: u8,
+) -> Vec<Provider> {
     let now = chrono::Utc::now().timestamp();
     let (fresh, spent): (Vec<_>, Vec<_>) = providers
         .into_iter()
-        .partition(|p| !is_spent(&p.id, threshold_percent, now));
+        .partition(|p| !is_spent(&p.id, model, threshold_percent, now));
     fresh.into_iter().chain(spent).collect()
 }
 
@@ -403,23 +505,83 @@ mod tests {
             }],
             observed_at: 1000,
             limited_until: None,
+            scoped_limited_until: HashMap::new(),
         }
+    }
+
+    fn fable() -> Vec<String> {
+        vec!["7d_oi".to_string(), "claude-fable-5-1".to_string()]
     }
 
     #[test]
     fn account_window_past_threshold_is_spent_until_reset() {
-        assert!(quota_is_spent(&quota(99.0, Some(2000), None), 98, 1500));
-        assert!(!quota_is_spent(&quota(99.0, Some(2000), None), 98, 2500));
-        assert!(!quota_is_spent(&quota(50.0, Some(2000), None), 98, 1500));
-    }
-
-    #[test]
-    fn model_scoped_window_does_not_spend_the_account() {
-        assert!(!quota_is_spent(
-            &quota(100.0, Some(2000), Some("Spark")),
+        assert!(quota_is_spent(
+            &quota(99.0, Some(2000), None),
+            &[],
             98,
             1500
         ));
+        assert!(!quota_is_spent(
+            &quota(99.0, Some(2000), None),
+            &[],
+            98,
+            2500
+        ));
+        assert!(!quota_is_spent(
+            &quota(50.0, Some(2000), None),
+            &[],
+            98,
+            1500
+        ));
+    }
+
+    #[test]
+    fn model_scoped_window_spends_the_account_only_for_its_model() {
+        let q = quota(99.0, Some(2000), Some("7d_oi"));
+        assert!(quota_is_spent(&q, &fable(), 98, 1500));
+        assert!(!quota_is_spent(
+            &q,
+            &["claude-opus-5-5".to_string()],
+            98,
+            1500
+        ));
+        assert!(!quota_is_spent(&q, &[], 98, 1500));
+    }
+
+    #[test]
+    fn a_codex_window_named_for_the_model_applies_to_it() {
+        let q = quota(99.0, Some(2000), Some("GPT-5.3-Codex-Spark"));
+        let spark = applicable_scopes(&HashMap::new(), Some("gpt-5.3-codex-spark"));
+        let other = applicable_scopes(&HashMap::new(), Some("gpt-5.5"));
+        assert!(quota_is_spent(&q, &spark, 98, 1500));
+        assert!(!quota_is_spent(&q, &other, 98, 1500));
+    }
+
+    #[test]
+    fn a_scoped_refusal_passes_the_account_over_only_for_its_model() {
+        let mut q = quota(10.0, None, None);
+        q.scoped_limited_until.insert("7d_oi".to_string(), 2000);
+        assert!(quota_is_spent(&q, &fable(), 98, 1500));
+        assert!(!quota_is_spent(&q, &fable(), 98, 2500));
+        assert!(!quota_is_spent(&q, &[], 98, 1500));
+    }
+
+    #[test]
+    fn a_response_for_another_model_keeps_the_scoped_reading() {
+        let mut q = quota(90.0, Some(2000), Some("7d_oi"));
+        merge_windows(
+            &mut q,
+            vec![QuotaWindow {
+                limit_name: None,
+                window_minutes: 10080,
+                used_percent: 50.0,
+                reset_at: Some(2000),
+            }],
+        );
+        assert_eq!(q.windows.len(), 2);
+        assert_eq!(q.windows[0].used_percent, 50.0);
+        assert_eq!(q.windows[1].limit_name.as_deref(), Some("7d_oi"));
+        assert_eq!(q.windows[1].used_percent, 90.0);
     }
 
     #[test]
@@ -451,7 +613,7 @@ mod tests {
     fn refusal_spends_the_account_until_its_reset() {
         let mut q = quota(10.0, None, None);
         q.limited_until = Some(2000);
-        assert!(quota_is_spent(&q, 98, 1500));
-        assert!(!quota_is_spent(&q, 98, 2500));
+        assert!(quota_is_spent(&q, &[], 98, 1500));
+        assert!(!quota_is_spent(&q, &[], 98, 2500));
     }
 }

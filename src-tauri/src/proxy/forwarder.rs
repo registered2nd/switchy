@@ -1396,7 +1396,8 @@ impl RequestForwarder {
 
         // A pooled account reports its quota on every answer, refusals included.
         if claude_oauth {
-            super::claude_pool::record_quota(&provider.id, response.headers());
+            let model = Some(request_model).filter(|m| *m != "<none>");
+            super::claude_pool::record_quota(&provider.id, model, response.headers());
         } else if adapter.name() == "Codex" && super::codex_pool::is_chatgpt_provider(provider) {
             super::codex_pool::record_quota(&provider.id, response.headers());
         }

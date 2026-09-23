@@ -385,11 +385,22 @@ pub fn patch_account_uuid(body: &mut Value, uuid: &str) -> bool {
 
 // ── Quota ───────────────────────────────────────────────────────────────────
 
+/// What one response's `anthropic-ratelimit-unified-*` headers say.
+#[derive(Debug, Default)]
+pub struct QuotaReport {
+    pub windows: Vec<QuotaWindow>,
+    /// The account as a whole was refused, until this time.
+    pub limited_until: Option<i64>,
+    /// Model-scoped windows that were refused, with their reset.
+    pub scoped_limits: Vec<(String, i64)>,
+}
+
 /// Reads the `anthropic-ratelimit-unified-*` headers. Utilization is a 0–1
 /// fraction; resets are unix seconds. Buckets are named by duration (`5h`,
-/// `7d`); a bucket with a suffix (`7d_oi`) is model-scoped and does not spend
-/// the account as a whole.
-pub fn parse_quota_headers(headers: &http::HeaderMap) -> (Vec<QuotaWindow>, Option<i64>) {
+/// `7d`); a bucket with a suffix (`7d_oi`) is model-scoped: a response
+/// carries it only for the models it applies to, and its refusal does not
+/// spend the account for other models.
+pub fn parse_quota_headers(headers: &http::HeaderMap) -> QuotaReport {
     #[derive(Default)]
     struct Partial {
         utilization: Option<f64>,
@@ -426,6 +437,7 @@ pub fn parse_quota_headers(headers: &http::HeaderMap) -> (Vec<QuotaWindow>, Opti
 
     let now = chrono::Utc::now().timestamp();
     let mut limited_until: Option<i64> = None;
+    let mut scoped_limits = Vec::new();
     let mut windows = Vec::new();
     for (bucket, p) in buckets {
         let (duration, scope) = bucket.split_once('_').unwrap_or((bucket.as_str(), ""));
@@ -440,8 +452,13 @@ pub fn parse_quota_headers(headers: &http::HeaderMap) -> (Vec<QuotaWindow>, Opti
             continue;
         };
         let account_wide = scope.is_empty();
-        if account_wide && p.rejected {
-            limited_until = Some(p.reset.filter(|r| *r > now).unwrap_or(now + 300));
+        if p.rejected {
+            let until = p.reset.filter(|r| *r > now).unwrap_or(now + 300);
+            if account_wide {
+                limited_until = Some(until);
+            } else {
+                scoped_limits.push((bucket.clone(), until));
+            }
         }
         windows.push(QuotaWindow {
             limit_name: (!account_wide).then(|| bucket.clone()),
@@ -450,7 +467,9 @@ pub fn parse_quota_headers(headers: &http::HeaderMap) -> (Vec<QuotaWindow>, Opti
             reset_at: p.reset.filter(|r| *r > 0),
         });
     }
-    if overall_rejected && limited_until.is_none() {
+    // The overall status is `rejected` also when only a model-scoped bucket
+    // refused; that one is already recorded against its model.
+    if overall_rejected && limited_until.is_none() && scoped_limits.is_empty() {
         limited_until = Some(overall_reset.filter(|r| *r > now).unwrap_or(now + 300));
     }
     windows.sort_by(|a, b| {
@@ -460,18 +479,25 @@ pub fn parse_quota_headers(headers: &http::HeaderMap) -> (Vec<QuotaWindow>, Opti
             b.window_minutes,
         ))
     });
-    (windows, limited_until)
+    QuotaReport {
+        windows,
+        limited_until,
+        scoped_limits,
+    }
 }
 
-/// Records what a response said about the account that served it: its
-/// windows, and a refusal when the account-wide status is `rejected`.
-pub fn record_quota(provider_id: &str, headers: &http::HeaderMap) {
-    let (windows, limited_until) = parse_quota_headers(headers);
-    if !windows.is_empty() {
-        account_pool::record_windows(provider_id, windows);
+/// Records what a response for `model` said about the account that served
+/// it: its windows, and any refusal, account-wide or for that model only.
+pub fn record_quota(provider_id: &str, model: Option<&str>, headers: &http::HeaderMap) {
+    let report = parse_quota_headers(headers);
+    if !report.windows.is_empty() {
+        account_pool::record_windows(provider_id, model, report.windows);
     }
-    if let Some(until) = limited_until {
+    if let Some(until) = report.limited_until {
         account_pool::record_limited_until(provider_id, until);
+    }
+    for (window, until) in report.scoped_limits {
+        account_pool::record_scoped_limited_until(provider_id, &window, until);
     }
 }
 
@@ -593,19 +619,22 @@ mod tests {
 
     #[test]
     fn unified_headers_become_windows_by_duration() {
-        let (windows, limited) = parse_quota_headers(&headers(&[
+        let report = parse_quota_headers(&headers(&[
             ("anthropic-ratelimit-unified-5h-utilization", "0.42"),
             ("anthropic-ratelimit-unified-5h-reset", "1900000000"),
             ("anthropic-ratelimit-unified-5h-status", "allowed"),
             ("anthropic-ratelimit-unified-7d-utilization", "0.9"),
             ("anthropic-ratelimit-unified-7d_oi-utilization", "1.1"),
             ("anthropic-ratelimit-unified-7d_oi-status", "rejected"),
-            ("anthropic-ratelimit-unified-status", "allowed"),
+            ("anthropic-ratelimit-unified-status", "rejected"),
         ]));
         assert_eq!(
-            limited, None,
+            report.limited_until, None,
             "a model-scoped refusal does not spend the account"
         );
+        assert_eq!(report.scoped_limits.len(), 1);
+        assert_eq!(report.scoped_limits[0].0, "7d_oi");
+        let windows = report.windows;
         assert_eq!(windows.len(), 3);
         assert_eq!(windows[0].limit_name, None);
         assert_eq!(windows[0].window_minutes, 300);
@@ -617,12 +646,13 @@ mod tests {
 
     #[test]
     fn account_wide_refusal_spends_the_account_until_its_reset() {
-        let (_, limited) = parse_quota_headers(&headers(&[
+        let report = parse_quota_headers(&headers(&[
             ("anthropic-ratelimit-unified-5h-utilization", "1"),
             ("anthropic-ratelimit-unified-5h-status", "rejected"),
             ("anthropic-ratelimit-unified-5h-reset", "4102444800"),
             ("anthropic-ratelimit-unified-status", "rejected"),
         ]));
-        assert_eq!(limited, Some(4_102_444_800));
+        assert_eq!(report.limited_until, Some(4_102_444_800));
+        assert!(report.scoped_limits.is_empty());
     }
 }

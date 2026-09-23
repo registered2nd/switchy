@@ -519,7 +519,7 @@ pub async fn handle_codex_backend_get(
 ) -> Result<axum::response::Response, ProxyError> {
     let providers = state
         .provider_router
-        .select_providers("codex")
+        .select_providers("codex", None)
         .await
         .map_err(|e| ProxyError::Internal(e.to_string()))?;
     let provider = providers
@@ -606,7 +606,7 @@ pub async fn handle_claude_passthrough(
 
     let providers = state
         .provider_router
-        .select_providers("claude")
+        .select_providers("claude", None)
         .await
         .map_err(|e| ProxyError::Internal(e.to_string()))?;
     let Some(provider) = providers.into_iter().next() else {
@@ -662,7 +662,7 @@ pub async fn handle_claude_passthrough(
         .await
         .map_err(|e| ProxyError::ForwardFailed(e.to_string()))?;
     if presents_pool_login {
-        super::claude_pool::record_quota(&provider.id, response.headers());
+        super::claude_pool::record_quota(&provider.id, None, response.headers());
     }
 
     let mut builder = axum::response::Response::builder().status(response.status());

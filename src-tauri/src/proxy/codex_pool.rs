@@ -511,12 +511,14 @@ pub fn parse_quota_headers(headers: &http::HeaderMap) -> Vec<QuotaWindow> {
 }
 
 /// Records the quota a response carried for the account that served it.
+/// Codex names a model-scoped window for its model, so the model is not
+/// needed to tell which windows apply.
 pub fn record_quota(provider_id: &str, headers: &http::HeaderMap) {
     let windows = parse_quota_headers(headers);
     if windows.is_empty() {
         return;
     }
-    account_pool::record_windows(provider_id, windows);
+    account_pool::record_windows(provider_id, None, windows);
 }
 
 /// Records an outright usage-limit refusal, so the account is passed over

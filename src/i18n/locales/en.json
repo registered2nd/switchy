@@ -1991,7 +1991,7 @@
       "enabled": "Rotate accounts before the limit",
       "enabledDescription": "With Switch automatically on, an Official account whose usage reaches the threshold is moved to the back of the switching order until its limit resets, so the session carries on with the next account. Applies to Claude and Codex.",
       "threshold": "Usage threshold (%)",
-      "thresholdDescription": "Pass an account over once its account-wide usage reaches this level. 50–100.",
+      "thresholdDescription": "Pass an account over once its usage reaches this level — its account-wide usage, or its usage of the model being requested where that model has a limit of its own (Fable does; Opus and Sonnet share the account's). 50–100.",
       "keepWarm": "Keep accounts warm",
       "keepWarmDescription": "When an Official account's session window has lapsed, send it one single-token request, so it is already inside a window when rotation reaches it and its login is renewed rather than left to go stale. Spends a little quota with nobody present, which is why it is off. Claude and Codex, while Switchy is running.",
       "keepWarmInterval": "Check every (minutes)",

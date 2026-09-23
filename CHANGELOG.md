@@ -6,7 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
-## [1.0.16] — 2026-09-22 — Settings has a Pool tab
+## [1.0.16] — 2026-09-22 — Settings has a Pool tab, and rotation counts the requested model's own limit
 
 ### Changed
 
@@ -21,6 +21,20 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   the **switching order**: an app with it on is served from that ordered list
   of providers rather than the one selected, moving down it when a request
   fails.
+
+### Fixed
+
+- **Rotation now sees a model's own weekly limit.** Fable has a 7-day limit
+  of its own on top of the account's shared windows; Opus and Sonnet do not.
+  Rotation only looked at the shared windows, so an account whose Fable
+  allowance was used up still looked fresh and kept getting Fable requests
+  until Anthropic refused one — and that refusal then benched the account
+  for every model, Opus included. Now a request skips an account when the
+  shared windows *or* the requested model's own window are at the
+  threshold, and a refusal on a model's own window benches the account for
+  that model only. Which window belongs to which model is learned from the
+  answers themselves, so the first Fable request after Switchy starts sees
+  only the shared windows.
 
 ## [1.0.15] — 2026-09-21 — Pooled accounts can be kept warm, and the proxy speaks English
 
