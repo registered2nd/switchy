@@ -51,6 +51,10 @@ impl ProviderRouter {
         let mut total_providers = 0usize;
         let mut circuit_open_count = 0usize;
 
+        if app_type == "codex" {
+            super::codex_pool::file_live_login(&self.db);
+        }
+
         // 检查该应用的自动故障转移开关是否开启（从 proxy_config 表读取）
         let auto_failover_enabled = match self.db.get_proxy_config_for_app(app_type).await {
             Ok(config) => config.auto_failover_enabled,

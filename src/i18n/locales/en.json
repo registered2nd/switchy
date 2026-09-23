@@ -1846,7 +1846,8 @@
     "disabled": "{{app}}: Switch automatically off",
     "toggleFailed": "Operation failed: {{detail}}",
     "inQueue": "In queue",
-    "addQueue": "Add",
+    "addQueue": "Add to the switching order",
+    "removeQueue": "Remove from the switching order",
     "priority": {
       "tooltip": "Position {{priority}} in the switching order"
     },

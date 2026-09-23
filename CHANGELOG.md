@@ -8,7 +8,19 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+### Changed
+
+- **Enable stays on every card with Switch automatically on.** Enabling an
+  account puts it first in the switching order, so it answers from the next
+  request, in open sessions too. Adding or removing a card from the
+  switching order is the small list button next to it.
+
 ### Fixed
+
+- **Signing in to a Codex account works with the proxy on.** Enable the
+  account's card and run `codex login`: the new login is stored with that
+  card. Before, a login made while the proxy served Codex was never picked
+  up unless the account already had one.
 
 - **Keeping Codex accounts warm works for ChatGPT logins.** It sent the Codex
   test model, an API model that a ChatGPT login refuses, so every warm-up of

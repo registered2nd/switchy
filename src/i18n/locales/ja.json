@@ -1846,7 +1846,8 @@
     "disabled": "{{app}} フェイルオーバーが無効になりました",
     "toggleFailed": "操作に失敗しました: {{detail}}",
     "inQueue": "キュー内",
-    "addQueue": "追加",
+    "addQueue": "切り替え順に追加",
+    "removeQueue": "切り替え順から外す",
     "priority": {
       "tooltip": "フェイルオーバー優先度 {{priority}}"
     },

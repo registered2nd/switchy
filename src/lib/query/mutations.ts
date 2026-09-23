@@ -220,6 +220,9 @@ export const useSwitchProviderMutation = (appId: AppId) => {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["providers", appId] });
+      // With Switch automatically on, the enabled provider moves to the front
+      // of the switching order.
+      await queryClient.invalidateQueries({ queryKey: ["failoverQueue", appId] });
       await queryClient.invalidateQueries({ queryKey: ["codexAccount"] });
       await queryClient.invalidateQueries({
         queryKey: ["subscription", "quota"],

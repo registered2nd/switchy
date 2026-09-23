@@ -1846,7 +1846,8 @@
     "disabled": "{{app}} 故障转移已关闭",
     "toggleFailed": "操作失败: {{detail}}",
     "inQueue": "已加入",
-    "addQueue": "加入",
+    "addQueue": "加入切换顺序",
+    "removeQueue": "移出切换顺序",
     "priority": {
       "tooltip": "故障转移优先级 {{priority}}"
     },

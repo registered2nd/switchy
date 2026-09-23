@@ -3,6 +3,8 @@ import {
   Check,
   Copy,
   Edit,
+  ListMinus,
+  ListPlus,
   Loader2,
   Minus,
   Play,
@@ -93,8 +95,6 @@ export function ProviderActions({
       } else {
         onSwitch(); // 添加到配置
       }
-    } else if (isFailoverMode) {
-      onToggleFailover(!isInFailoverQueue);
     } else {
       onSwitch();
     }
@@ -142,27 +142,6 @@ export function ProviderActions({
           "bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-700",
         icon: <Plus className="h-4 w-4" />,
         text: t("provider.addToConfig", { defaultValue: "添加" }),
-      };
-    }
-
-    if (isFailoverMode) {
-      if (isInFailoverQueue) {
-        return {
-          disabled: false,
-          variant: "secondary" as const,
-          className:
-            "bg-blue-100 text-blue-600 hover:bg-blue-200 dark:bg-blue-900/50 dark:text-blue-400 dark:hover:bg-blue-900/70",
-          icon: <Check className="h-4 w-4" />,
-          text: t("failover.inQueue", { defaultValue: "已加入" }),
-        };
-      }
-      return {
-        disabled: false,
-        variant: "default" as const,
-        className:
-          "bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700",
-        icon: <Plus className="h-4 w-4" />,
-        text: t("failover.addQueue", { defaultValue: "加入" }),
       };
     }
 
@@ -226,6 +205,35 @@ export function ProviderActions({
       </Button>
 
       <div className="flex items-center gap-1">
+        {isFailoverMode && (
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => onToggleFailover(!isInFailoverQueue)}
+            title={
+              isInFailoverQueue
+                ? t("failover.removeQueue", {
+                    defaultValue: "Remove from the switching order",
+                  })
+                : t("failover.addQueue", {
+                    defaultValue: "Add to the switching order",
+                  })
+            }
+            className={cn(
+              iconButtonClass,
+              isInFailoverQueue
+                ? "text-blue-600 dark:text-blue-400"
+                : "text-muted-foreground",
+            )}
+          >
+            {isInFailoverQueue ? (
+              <ListMinus className="h-4 w-4" />
+            ) : (
+              <ListPlus className="h-4 w-4" />
+            )}
+          </Button>
+        )}
+
         <Button
           size="icon"
           variant="ghost"

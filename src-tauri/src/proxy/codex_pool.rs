@@ -193,6 +193,95 @@ fn adopt_newer_live_login(db: &Database, provider: &mut Provider) {
     }
 }
 
+/// A `codex login` run while the proxy serves Codex only reaches `auth.json`:
+/// switching is a hot switch then, so no switch-away backfill ever reads it.
+/// Called before each Codex request is routed, this files it under the rules
+/// that backfill applies. The provider holding that account takes a newer
+/// login of it; a login of an account no provider holds goes to the current
+/// Official provider when that holds no usable login of its own — the one
+/// enabled so it could be signed in.
+pub fn file_live_login(db: &Database) {
+    let live = read_live_auth();
+    let Ok(providers) = db.get_all_providers("codex") else {
+        return;
+    };
+    let current_id =
+        crate::settings::get_effective_current_provider(db, &crate::app_config::AppType::Codex)
+            .ok()
+            .flatten();
+    let providers: Vec<Provider> = providers.into_values().collect();
+
+    match live_login_home(&providers, current_id.as_deref(), &live) {
+        None => {}
+        Some(LiveLoginHome::Holder(id)) => {
+            if let Some(mut holder) = providers.into_iter().find(|p| p.id == id) {
+                adopt_newer_live_login(db, &mut holder);
+            }
+        }
+        Some(LiveLoginHome::Current(id)) => {
+            let Some(mut current) = providers.into_iter().find(|p| p.id == id) else {
+                return;
+            };
+            let merged = codex_account::transplant_login(&stored_auth(&current), &live);
+            if let Some(obj) = current.settings_config.as_object_mut() {
+                obj.insert("auth".to_string(), merged);
+            }
+            match db.save_provider("codex", &current) {
+                Ok(()) => log::info!(
+                    "[codex_pool] provider={} took the new login from auth.json",
+                    current.id
+                ),
+                Err(e) => log::warn!(
+                    "[codex_pool] could not store the new login under provider={}: {e}",
+                    current.id
+                ),
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum LiveLoginHome {
+    /// This provider already holds the account; its own rules decide.
+    Holder(String),
+    /// No provider holds the account; the current one, holding no usable
+    /// login, takes it.
+    Current(String),
+}
+
+/// Which provider a live login belongs to, if any.
+fn live_login_home(
+    providers: &[Provider],
+    current_id: Option<&str>,
+    live: &Value,
+) -> Option<LiveLoginHome> {
+    let live_login = codex_account::inspect(live).filter(|l| l.alive)?;
+    let live_key = live_login.account_key()?;
+
+    let key_of = |p: &Provider| {
+        codex_account::inspect(&stored_auth(p)).and_then(|l| l.account_key().map(str::to_string))
+    };
+    if let Some(holder) = providers
+        .iter()
+        .find(|p| key_of(p).as_deref() == Some(live_key))
+    {
+        return Some(LiveLoginHome::Holder(holder.id.clone()));
+    }
+
+    let current = providers
+        .iter()
+        .find(|p| Some(p.id.as_str()) == current_id)?;
+    let stored = stored_auth(current);
+    let has_api_key = stored
+        .get("OPENAI_API_KEY")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .is_some_and(|k| !k.is_empty() && k != "PROXY_MANAGED");
+    let holds_usable_login = codex_account::inspect(&stored).is_some_and(|l| l.alive);
+    (current.category.as_deref() == Some("official") && !has_api_key && !holds_usable_login)
+        .then(|| LiveLoginHome::Current(current.id.clone()))
+}
+
 /// Called before a stored Codex config replaces the live one. Files the live
 /// login under the provider that owns its account, and carries it into
 /// `incoming` when that holds an older login of the same account — so a login
@@ -640,6 +729,76 @@ mod tests {
     #[test]
     fn refresh_reply_without_access_token_is_rejected() {
         assert!(apply_refresh_response(&chatgpt_auth(), &json!({})).is_none());
+    }
+
+    fn login_for(email: &str, account: &str) -> Value {
+        json!({
+            "tokens": {
+                "id_token": jwt(json!({
+                    "email": email,
+                    "https://api.openai.com/auth": { "chatgpt_account_id": account }
+                })),
+                "access_token": jwt(json!({ "exp": 4_102_444_800i64 })),
+                "refresh_token": "RRR",
+                "account_id": account,
+            },
+            "last_refresh": "2026-09-22T00:00:00Z",
+        })
+    }
+
+    fn official(id: &str, auth: Value) -> Provider {
+        let mut p = Provider::with_id(
+            id.into(),
+            id.into(),
+            json!({ "auth": auth, "config": "" }),
+            None,
+        );
+        p.category = Some("official".into());
+        p
+    }
+
+    #[test]
+    fn a_login_of_a_held_account_goes_to_its_holder() {
+        let providers = vec![
+            official("empty", json!({})),
+            official("holder", login_for("a@x.io", "acct-a")),
+        ];
+        assert_eq!(
+            live_login_home(&providers, Some("empty"), &login_for("a@x.io", "acct-a")),
+            Some(LiveLoginHome::Holder("holder".into()))
+        );
+    }
+
+    #[test]
+    fn a_login_of_a_new_account_goes_to_the_current_official_provider_with_no_login() {
+        let providers = vec![
+            official("empty", json!({})),
+            official("holder", login_for("a@x.io", "acct-a")),
+        ];
+        let live = login_for("b@x.io", "acct-b");
+        assert_eq!(
+            live_login_home(&providers, Some("empty"), &live),
+            Some(LiveLoginHome::Current("empty".into()))
+        );
+        // The current provider already holds a usable login of another
+        // account: nothing is overwritten.
+        assert_eq!(live_login_home(&providers, Some("holder"), &live), None);
+        // Not an Official provider: an API-key provider never takes a login.
+        let mut keyed = official("keyed", json!({ "OPENAI_API_KEY": "sk-x" }));
+        keyed.category = Some("third_party".into());
+        assert_eq!(live_login_home(&[keyed], Some("keyed"), &live), None);
+    }
+
+    #[test]
+    fn a_logged_out_live_file_goes_nowhere() {
+        let providers = vec![official("empty", json!({}))];
+        let mut blanked = login_for("b@x.io", "acct-b");
+        blanked["tokens"]["refresh_token"] = json!("");
+        assert_eq!(live_login_home(&providers, Some("empty"), &blanked), None);
+        assert_eq!(
+            live_login_home(&providers, Some("empty"), &Value::Null),
+            None
+        );
     }
 
     fn headers(pairs: &[(&str, &str)]) -> http::HeaderMap {

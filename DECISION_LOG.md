@@ -2,6 +2,15 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-22 — Enable stays under Switch automatically and puts the account first; a Codex login made under the proxy is filed before routing
+
+- Context: upstream replaces a card's Enable with a queue toggle while an app switches automatically, so no account could be picked by hand and none made current. Signing in depends on the account being current, and under the proxy a switch is a hot switch with no switch-away backfill, so a `codex login` was never stored unless the account already held a login.
+- Decision:
+  1. **Enable is always Enable.** With Switch automatically on, enabling also adds the provider to the switching order at the front (the order is the providers' sort order, so the card moves to the top). Queue membership is a separate list button on the card.
+  2. **Before each Codex request is routed, the live `auth.json` is filed**: a login of an account a provider holds goes to that provider under the existing newest-wins rules; a login of an account no provider holds goes to the current Official provider only when that holds no usable login.
+- Why: the user — Enable should never disappear, and there was no way to sign a new account in. A merge from upstream would bring the queue-toggle button back.
+- Files: `put_first_in_switching_order` in `services/provider/mod.rs`; `file_live_login` in `proxy/codex_pool.rs`, called from `select_providers`; `src/components/providers/ProviderActions.tsx`.
+
 ## 2026-09-22 — Rotation counts the requested model's own limit window, not only the account-wide ones
 
 - Context: live `anthropic-ratelimit-unified-*` headers show a Fable answer carries a model-scoped 7-day bucket (`7d_oi`, 83% on the account tested) that Opus and Sonnet answers do not. Counting only account-wide buckets let an account out of Fable allowance look fresh for Fable; the overall `rejected` status of a Fable-only refusal then benched it for every model; and each answer replaced all stored windows, so an Opus answer erased the Fable reading.

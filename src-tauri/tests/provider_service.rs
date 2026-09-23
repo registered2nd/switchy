@@ -902,3 +902,87 @@ fn provider_service_delete_current_provider_returns_error() {
         other => panic!("expected Config/Message error, got {other:?}"),
     }
 }
+
+fn codex_key_provider(id: &str, sort_index: Option<usize>) -> Provider {
+    let mut provider = Provider::with_id(
+        id.to_string(),
+        id.to_string(),
+        json!({ "auth": { "OPENAI_API_KEY": format!("key-{id}") }, "config": "" }),
+        None,
+    );
+    provider.sort_index = sort_index;
+    provider
+}
+
+fn codex_switching_order(state: &switchy_lib::AppState) -> Vec<String> {
+    state
+        .db
+        .get_failover_queue(AppType::Codex.as_str())
+        .expect("read switching order")
+        .into_iter()
+        .map(|item| item.provider_id)
+        .collect()
+}
+
+#[test]
+fn enabling_a_provider_with_switch_automatically_on_puts_it_first_in_the_switching_order() {
+    let _guard = test_mutex().lock().expect("acquire test mutex");
+    reset_test_fs();
+    let _home = ensure_test_home();
+
+    let state = create_test_state().expect("create test state");
+    for provider in [
+        codex_key_provider("a", Some(0)),
+        codex_key_provider("b", Some(1)),
+        codex_key_provider("c", Some(2)),
+    ] {
+        state.db.save_provider("codex", &provider).expect("save");
+    }
+    state
+        .db
+        .set_current_provider("codex", "a")
+        .expect("set current");
+    for id in ["a", "b"] {
+        state.db.add_to_failover_queue("codex", id).expect("queue");
+    }
+    state
+        .db
+        .set_proxy_flags_sync("codex", false, true)
+        .expect("switch automatically on");
+
+    ProviderService::switch(&state, AppType::Codex, "c").expect("enable c");
+
+    assert_eq!(codex_switching_order(&state), vec!["c", "a", "b"]);
+    assert_eq!(
+        state.db.get_current_provider("codex").unwrap().as_deref(),
+        Some("c")
+    );
+
+    // A provider already in the order moves to its front.
+    ProviderService::switch(&state, AppType::Codex, "b").expect("enable b");
+    assert_eq!(codex_switching_order(&state), vec!["b", "c", "a"]);
+}
+
+#[test]
+fn enabling_a_provider_with_switch_automatically_off_leaves_the_switching_order_alone() {
+    let _guard = test_mutex().lock().expect("acquire test mutex");
+    reset_test_fs();
+    let _home = ensure_test_home();
+
+    let state = create_test_state().expect("create test state");
+    for provider in [
+        codex_key_provider("a", Some(0)),
+        codex_key_provider("b", Some(1)),
+    ] {
+        state.db.save_provider("codex", &provider).expect("save");
+    }
+    state
+        .db
+        .set_current_provider("codex", "a")
+        .expect("set current");
+    state.db.add_to_failover_queue("codex", "a").expect("queue");
+
+    ProviderService::switch(&state, AppType::Codex, "b").expect("enable b");
+
+    assert_eq!(codex_switching_order(&state), vec!["a"]);
+}
