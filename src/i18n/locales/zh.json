@@ -1440,6 +1440,7 @@
       "none": "尚未保存 Claude 账号登录。"
     },
     "capture": {
+      "short": "保存登录",
       "button": "保存当前登录",
       "success": "已保存 {{email}}",
       "error": {

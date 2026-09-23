@@ -1440,6 +1440,7 @@
       "none": "No Claude account captured yet."
     },
     "capture": {
+      "short": "Capture login",
       "button": "Capture current account",
       "success": "Captured {{email}}",
       "error": {

@@ -16,7 +16,7 @@ A switch changes only what the provider owns — its endpoint, credentials and m
 
 An Official provider holds a subscription login instead of an API key, so switching providers switches accounts.
 
-- **Claude Code.** Sign in with `claude /login` while the Official provider is current, then click *Capture current account* on its card. Switchy stores that login with the card and puts it back whenever the card is enabled.
+- **Claude Code.** Sign in with `claude /login` while the Official provider is current, then click *Capture login* on its line (the button shows on the account in use). Switchy stores that login with the card and puts it back whenever the card is enabled.
 - **Codex and Kimi Code.** Each Official card keeps the login you signed in with while it was current; there is nothing to capture. To add a Codex account, add an OpenAI Official provider, enable it, and run `codex login`.
 - **Usage badges.** An Official card shows the subscription's quota: how much of each window is used and when it resets. What Gemini and Kimi cards can show is under [Known limitations](#what-a-gemini-or-kimi-card-can-show).
 

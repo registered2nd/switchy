@@ -10,7 +10,6 @@ import {
   Minus,
   MoreHorizontal,
   Plus,
-  Terminal,
   TestTube2,
   Trash2,
   Zap,
@@ -41,7 +40,8 @@ interface ProviderActionsProps {
   onDelete: () => void;
   onRemoveFromConfig?: () => void;
   onDisableOmo?: () => void;
-  onOpenTerminal?: () => void;
+  onCaptureLogin?: () => void;
+  isCapturing?: boolean;
   isAutoFailoverEnabled?: boolean;
   isInFailoverQueue?: boolean;
   onToggleFailover?: (enabled: boolean) => void;
@@ -64,7 +64,8 @@ export function ProviderActions({
   onDelete,
   onRemoveFromConfig,
   onDisableOmo,
-  onOpenTerminal,
+  onCaptureLogin,
+  isCapturing = false,
   isAutoFailoverEnabled = false,
   isInFailoverQueue = false,
   onToggleFailover,
@@ -177,7 +178,7 @@ export function ProviderActions({
   const showMainButton = isOmo || isAdditiveMode || !isCurrent;
 
   return (
-    <div className="flex min-w-[6.75rem] items-center justify-end gap-1">
+    <div className="flex min-w-[10.5rem] items-center justify-end gap-1">
       {appId === "openclaw" && isInConfig && onSetAsDefault && (
         <Button
           size="sm"
@@ -197,6 +198,21 @@ export function ProviderActions({
         </Button>
       )}
 
+      {onCaptureLogin && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onCaptureLogin}
+          disabled={isCapturing}
+          title={t("claudeAccount.capture.button", {
+            defaultValue: "Capture current account",
+          })}
+        >
+          {isCapturing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {t("claudeAccount.capture.short", { defaultValue: "Capture login" })}
+        </Button>
+      )}
+
       {showMainButton && (
         <Button
           size="sm"
@@ -209,6 +225,17 @@ export function ProviderActions({
           {buttonState.text}
         </Button>
       )}
+
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8"
+        onClick={onEdit}
+        title={t("common.edit")}
+        aria-label={t("common.edit")}
+      >
+        <Edit className="h-4 w-4" />
+      </Button>
 
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
@@ -248,10 +275,6 @@ export function ProviderActions({
                   })}
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem onSelect={onEdit}>
-            <Edit className="h-4 w-4" />
-            {t("common.edit")}
-          </DropdownMenuItem>
           <DropdownMenuItem onSelect={onDuplicate}>
             <Copy className="h-4 w-4" />
             {t("provider.duplicate")}
@@ -270,12 +293,6 @@ export function ProviderActions({
             <DropdownMenuItem onSelect={onConfigureUsage}>
               <BarChart3 className="h-4 w-4" />
               {t("provider.configureUsage")}
-            </DropdownMenuItem>
-          )}
-          {onOpenTerminal && (
-            <DropdownMenuItem onSelect={onOpenTerminal}>
-              <Terminal className="h-4 w-4" />
-              {t("provider.openTerminal", "Open Terminal")}
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />

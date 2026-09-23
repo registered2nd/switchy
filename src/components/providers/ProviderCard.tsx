@@ -1,4 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { GripVertical, ChevronDown, ChevronUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -22,6 +24,8 @@ import {
 import { useCodexAccountIdentity } from "@/lib/query/codexAccount";
 import { useProviderHealth } from "@/lib/query/failover";
 import { useUsageQuery } from "@/lib/query/queries";
+import { claudeAccountApi, type CaptureOutcome } from "@/lib/api/claudeAccount";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface DragHandleProps {
   attributes: DraggableAttributes;
@@ -141,7 +145,6 @@ export function ProviderCard({
   onOpenWebsite,
   onDuplicate,
   onTest,
-  onOpenTerminal,
   isTesting,
   isProxyRunning,
   isProxyTakeover = false,
@@ -219,6 +222,37 @@ export function ProviderCard({
     usage?.success && usage.data && usage.data.length > 1 && !isTokenPlan;
 
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Capturing saves the login Claude Code holds now, which belongs to the
+  // account in use, so the button sits on that line.
+  const queryClient = useQueryClient();
+  const [capturing, setCapturing] = useState(false);
+  const [captureConfirm, setCaptureConfirm] = useState<Extract<
+    CaptureOutcome,
+    { kind: "needsConfirmation" }
+  > | null>(null);
+  const canCapture = appId === "claude" && isOfficial && isCurrent;
+  const captureLogin = async (force: boolean) => {
+    setCapturing(true);
+    try {
+      const result = await claudeAccountApi.capture(provider.id, force);
+      if (result.kind === "captured") {
+        toast.success(
+          t("claudeAccount.capture.success", {
+            email: result.identity.emailAddress,
+            defaultValue: `Captured ${result.identity.emailAddress}`,
+          }),
+        );
+        await queryClient.invalidateQueries({ queryKey: ["providers", appId] });
+      } else {
+        setCaptureConfirm(result);
+      }
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setCapturing(false);
+    }
+  };
 
   useEffect(() => {
     if (hasMultiplePlans) {
@@ -435,9 +469,8 @@ export function ProviderCard({
                   : undefined
               }
               onDisableOmo={handleDisableAnyOmo}
-              onOpenTerminal={
-                onOpenTerminal ? () => onOpenTerminal(provider) : undefined
-              }
+              onCaptureLogin={canCapture ? () => captureLogin(false) : undefined}
+              isCapturing={capturing}
               isAutoFailoverEnabled={isAutoFailoverEnabled}
               isInFailoverQueue={isInFailoverQueue}
               onToggleFailover={onToggleFailover}
@@ -447,6 +480,26 @@ export function ProviderCard({
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!captureConfirm}
+        title={t("claudeAccount.capture.confirm.title", {
+          defaultValue: "Account UUID changed",
+        })}
+        message={t("claudeAccount.capture.confirm.body", {
+          oldEmail: captureConfirm?.existing.emailAddress ?? "",
+          newEmail: captureConfirm?.incoming.emailAddress ?? "",
+          defaultValue: `Stored: ${captureConfirm?.existing.emailAddress ?? ""}
+Incoming: ${captureConfirm?.incoming.emailAddress ?? ""}
+Overwrite the stored snapshot?`,
+        })}
+        variant="info"
+        onCancel={() => setCaptureConfirm(null)}
+        onConfirm={() => {
+          setCaptureConfirm(null);
+          void captureLogin(true);
+        }}
+      />
 
       {isExpanded && hasMultiplePlans && (
         <div className="mt-4 pt-4 border-t border-border-default">

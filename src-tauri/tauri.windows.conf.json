@@ -7,8 +7,11 @@
         "title": "Switchy",
         "titleBarStyle": "Visible",
         "visible": false,
-        "minWidth": 900,
-        "minHeight": 600
+        "width": 1400,
+        "height": 800,
+        "minWidth": 1320,
+        "minHeight": 600,
+        "center": true
       }
     ]
   }

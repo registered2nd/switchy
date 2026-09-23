@@ -1440,6 +1440,7 @@
       "none": "Claude アカウント未キャプチャ"
     },
     "capture": {
+      "short": "ログインを保存",
       "button": "現在のアカウントをキャプチャ",
       "success": "{{email}} をキャプチャしました",
       "error": {
