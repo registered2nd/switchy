@@ -1,4 +1,3 @@
-use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -65,13 +64,6 @@ impl Provider {
             in_failover_queue: false,
         }
     }
-}
-
-/// 供应商管理器
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ProviderManager {
-    pub providers: IndexMap<String, Provider>,
-    pub current: String,
 }
 
 /// 用量查询脚本配置
@@ -334,13 +326,6 @@ impl ProviderMeta {
         }
 
         None
-    }
-}
-
-impl ProviderManager {
-    /// 获取所有供应商
-    pub fn get_all_providers(&self) -> &IndexMap<String, Provider> {
-        &self.providers
     }
 }
 

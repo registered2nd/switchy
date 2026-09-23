@@ -5,7 +5,6 @@
 use crate::app_config::AppType;
 use crate::error::AppError;
 use crate::provider::{UsageData, UsageResult, UsageScript};
-use crate::settings;
 use crate::store::AppState;
 use crate::usage_script;
 
@@ -35,7 +34,6 @@ pub(crate) async fn execute_and_format_usage_result(
                 serde_json::from_value(data).map_err(|e| {
                     AppError::localized(
                         "usage_script.data_format_error",
-                        format!("数据格式错误: {e}"),
                         format!("Data format error: {e}"),
                     )
                 })?
@@ -43,7 +41,6 @@ pub(crate) async fn execute_and_format_usage_result(
                 let single: UsageData = serde_json::from_value(data).map_err(|e| {
                     AppError::localized(
                         "usage_script.data_format_error",
-                        format!("数据格式错误: {e}"),
                         format!("Data format error: {e}"),
                     )
                 })?;
@@ -57,20 +54,7 @@ pub(crate) async fn execute_and_format_usage_result(
             })
         }
         Err(err) => {
-            let lang = settings::get_settings()
-                .language
-                .unwrap_or_else(|| "zh".to_string());
-
-            let msg = match err {
-                AppError::Localized { zh, en, .. } => {
-                    if lang == "en" {
-                        en
-                    } else {
-                        zh
-                    }
-                }
-                other => other.to_string(),
-            };
+            let msg = err.to_string();
 
             Ok(UsageResult {
                 success: false,
@@ -118,11 +102,7 @@ pub async fn query_usage(
     let (script_code, timeout, api_key, base_url, access_token, user_id, template_type) = {
         let providers = state.db.get_all_providers(app_type.as_str())?;
         let provider = providers.get(provider_id).ok_or_else(|| {
-            AppError::localized(
-                "provider.not_found",
-                format!("供应商不存在: {provider_id}"),
-                format!("Provider not found: {provider_id}"),
-            )
+            AppError::localized("provider.not_found", format!("Provider not found: {provider_id}"))
         })?;
 
         let usage_script = provider
@@ -132,16 +112,11 @@ pub async fn query_usage(
             .ok_or_else(|| {
                 AppError::localized(
                     "provider.usage.script.missing",
-                    "未配置用量查询脚本",
                     "Usage script is not configured",
                 )
             })?;
         if !usage_script.enabled {
-            return Err(AppError::localized(
-                "provider.usage.disabled",
-                "用量查询未启用",
-                "Usage query is disabled",
-            ));
+            return Err(AppError::localized("provider.usage.disabled", "Usage query is disabled"));
         }
 
         // Get credentials: prioritize UsageScript values, fallback to provider config
@@ -216,7 +191,6 @@ pub(crate) fn validate_usage_script(script: &UsageScript) -> Result<(), AppError
         if interval > 1440 {
             return Err(AppError::localized(
                 "usage_script.interval_too_large",
-                format!("自动查询间隔不能超过 1440 分钟（24小时），当前值: {interval}"),
                 format!(
                     "Auto query interval cannot exceed 1440 minutes (24 hours), current: {interval}"
                 ),

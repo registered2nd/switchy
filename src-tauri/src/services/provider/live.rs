@@ -13,7 +13,6 @@ use crate::config::{delete_file, get_claude_settings_path, read_json_file, write
 use crate::database::Database;
 use crate::error::AppError;
 use crate::provider::Provider;
-use crate::services::mcp::McpService;
 use crate::store::AppState;
 
 use super::gemini_auth::{
@@ -1028,8 +1027,6 @@ pub(crate) fn sync_current_provider_for_app_to_live(
         }
     }
 
-    McpService::sync_all_enabled(state)?;
-
     Ok(())
 }
 
@@ -1063,17 +1060,6 @@ pub fn sync_current_to_live(state: &AppState) -> Result<(), AppError> {
         }
     }
 
-    // MCP sync
-    McpService::sync_all_enabled(state)?;
-
-    // Skill sync
-    for app_type in AppType::all() {
-        if let Err(e) = crate::services::skill::SkillService::sync_to_app(&state.db, &app_type) {
-            log::warn!("同步 Skill 到 {app_type:?} 失败: {e}");
-            // Continue syncing other apps, don't abort
-        }
-    }
-
     Ok(())
 }
 
@@ -1085,7 +1071,6 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             if !auth_path.exists() {
                 return Err(AppError::localized(
                     "codex.auth.missing",
-                    "Codex 配置文件不存在：缺少 auth.json",
                     "Codex configuration missing: auth.json not found",
                 ));
             }
@@ -1098,7 +1083,6 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             if !path.exists() {
                 return Err(AppError::localized(
                     "claude.live.missing",
-                    "Claude Code 配置文件不存在",
                     "Claude settings file is missing",
                 ));
             }
@@ -1109,7 +1093,6 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             if !config_path.exists() {
                 return Err(AppError::localized(
                     "kimi.config.missing",
-                    "Kimi 配置文件不存在：缺少 config.toml",
                     "Kimi configuration missing: config.toml not found",
                 ));
             }
@@ -1123,11 +1106,7 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             // Read .env file (environment variables)
             let env_path = get_gemini_env_path();
             if !env_path.exists() {
-                return Err(AppError::localized(
-                    "gemini.env.missing",
-                    "Gemini .env 文件不存在",
-                    "Gemini .env file not found",
-                ));
+                return Err(AppError::localized("gemini.env.missing", "Gemini .env file not found"));
             }
 
             let env_map = read_gemini_env()?;
@@ -1155,7 +1134,6 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             if !config_path.exists() {
                 return Err(AppError::localized(
                     "opencode.config.missing",
-                    "OpenCode 配置文件不存在",
                     "OpenCode configuration file not found",
                 ));
             }
@@ -1170,7 +1148,6 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             if !config_path.exists() {
                 return Err(AppError::localized(
                     "openclaw.config.missing",
-                    "OpenClaw 配置文件不存在",
                     "OpenClaw configuration file not found",
                 ));
             }
@@ -1205,7 +1182,6 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
             if !auth_path.exists() {
                 return Err(AppError::localized(
                     "codex.live.missing",
-                    "Codex 配置文件不存在",
                     "Codex configuration file is missing",
                 ));
             }
@@ -1218,7 +1194,6 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
             if !settings_path.exists() {
                 return Err(AppError::localized(
                     "claude.live.missing",
-                    "Claude Code 配置文件不存在",
                     "Claude settings file is missing",
                 ));
             }
@@ -1230,7 +1205,6 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
             if !crate::kimi_config::get_kimi_config_path().exists() {
                 return Err(AppError::localized(
                     "kimi.live.missing",
-                    "Kimi 配置文件不存在",
                     "Kimi configuration file is missing",
                 ));
             }
@@ -1246,7 +1220,6 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
             if !env_path.exists() {
                 return Err(AppError::localized(
                     "gemini.live.missing",
-                    "Gemini 配置文件不存在",
                     "Gemini configuration file is missing",
                 ));
             }
@@ -1331,7 +1304,6 @@ pub(crate) fn write_gemini_live(provider: &Provider) -> Result<(), AppError> {
         } else if !config_value.is_null() {
             return Err(AppError::localized(
                 "gemini.validation.invalid_config",
-                "Gemini 配置格式错误: config 必须是对象或 null",
                 "Gemini config invalid: config must be an object or null",
             ));
         }

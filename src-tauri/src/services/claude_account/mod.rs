@@ -147,7 +147,6 @@ pub fn capture(
         None => {
             return Err(AppError::localized(
                 "claudeAccount.capture.error.credentials_missing",
-                "未找到 Claude Code 登录凭据，请先运行 `claude /login`",
                 "No Claude Code login found. Run `claude /login` first.",
             ));
         }
@@ -156,7 +155,6 @@ pub fn capture(
     let _: Value = serde_json::from_slice(&credentials_bytes).map_err(|_| {
         AppError::localized(
             "claudeAccount.capture.error.credentials_missing",
-            "Claude Code 登录凭据文件损坏，请重新运行 `claude /login`",
             "Claude Code credentials file is unreadable. Re-run `claude /login`.",
         )
     })?;
@@ -334,7 +332,6 @@ pub(crate) fn write_live_owner(provider_id: &str, account_uuid: &str, access_exp
 fn oauth_missing_err() -> AppError {
     AppError::localized(
         "claudeAccount.capture.error.oauth_missing",
-        "Claude Code 配置缺少 oauthAccount，请先登录一次",
         "Claude Code config is missing the oauthAccount block. Open and use Claude Code once, then retry.",
     )
 }

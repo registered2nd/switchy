@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+#[cfg(unix)]
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{OnceLock, RwLock};
 
 use crate::app_config::AppType;
 use crate::error::AppError;
-use crate::services::skill::SyncMethod;
 
 /// 自定义端点配置（历史兼容，实际存储在 provider.meta.custom_endpoints）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,106 +68,6 @@ impl VisibleApps {
     }
 }
 
-/// WebDAV 同步状态（持久化同步进度信息）
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct WebDavSyncStatus {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_sync_at: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_error_source: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_remote_etag: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_local_manifest_hash: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_remote_manifest_hash: Option<String>,
-}
-
-fn default_remote_root() -> String {
-    "switchy-sync".to_string()
-}
-fn default_profile() -> String {
-    "default".to_string()
-}
-
-/// WebDAV 同步设置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebDavSyncSettings {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub auto_sync: bool,
-    #[serde(default)]
-    pub base_url: String,
-    #[serde(default)]
-    pub username: String,
-    #[serde(default)]
-    pub password: String,
-    #[serde(default = "default_remote_root")]
-    pub remote_root: String,
-    #[serde(default = "default_profile")]
-    pub profile: String,
-    #[serde(default)]
-    pub status: WebDavSyncStatus,
-}
-
-impl Default for WebDavSyncSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            auto_sync: false,
-            base_url: String::new(),
-            username: String::new(),
-            password: String::new(),
-            remote_root: default_remote_root(),
-            profile: default_profile(),
-            status: WebDavSyncStatus::default(),
-        }
-    }
-}
-
-impl WebDavSyncSettings {
-    pub fn validate(&self) -> Result<(), crate::error::AppError> {
-        if self.base_url.trim().is_empty() {
-            return Err(crate::error::AppError::localized(
-                "webdav.base_url.required",
-                "WebDAV 地址不能为空",
-                "WebDAV URL is required.",
-            ));
-        }
-        if self.username.trim().is_empty() {
-            return Err(crate::error::AppError::localized(
-                "webdav.username.required",
-                "WebDAV 用户名不能为空",
-                "WebDAV username is required.",
-            ));
-        }
-        Ok(())
-    }
-
-    pub fn normalize(&mut self) {
-        self.base_url = self.base_url.trim().to_string();
-        self.username = self.username.trim().to_string();
-        self.remote_root = self.remote_root.trim().to_string();
-        self.profile = self.profile.trim().to_string();
-        if self.remote_root.is_empty() {
-            self.remote_root = default_remote_root();
-        }
-        if self.profile.is_empty() {
-            self.profile = default_profile();
-        }
-    }
-
-    /// Returns true if all credential fields are blank (no config to persist).
-    fn is_empty(&self) -> bool {
-        self.base_url.is_empty() && self.username.is_empty() && self.password.is_empty()
-    }
-}
-
 /// 应用设置结构
 ///
 /// 存储设备级别设置，保存在本地 `~/.switchy/settings.json`，不随数据库同步。
@@ -180,12 +80,6 @@ pub struct AppSettings {
     pub show_in_tray: bool,
     #[serde(default = "default_minimize_to_tray_on_close")]
     pub minimize_to_tray_on_close: bool,
-    /// 是否启用 Claude 插件联动
-    #[serde(default)]
-    pub enable_claude_plugin_integration: bool,
-    /// 是否跳过 Claude Code 初次安装确认
-    #[serde(default)]
-    pub skip_claude_onboarding: bool,
     /// 是否开机自启
     #[serde(default)]
     pub launch_on_startup: bool,
@@ -255,19 +149,6 @@ pub struct AppSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_openclaw: Option<String>,
 
-    // ===== Skill 同步设置 =====
-    /// Skill 同步方式：auto（默认，优先 symlink）、symlink、copy
-    #[serde(default)]
-    pub skill_sync_method: SyncMethod,
-
-    // ===== WebDAV 同步设置 =====
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub webdav_sync: Option<WebDavSyncSettings>,
-
-    // ===== WebDAV 备份设置（旧版，保留向后兼容）=====
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub webdav_backup: Option<serde_json::Value>,
-
     // ===== 备份策略设置 =====
     /// Auto-backup interval in hours (default 24, 0 = disabled)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -298,8 +179,6 @@ impl Default for AppSettings {
         Self {
             show_in_tray: true,
             minimize_to_tray_on_close: true,
-            enable_claude_plugin_integration: false,
-            skip_claude_onboarding: false,
             launch_on_startup: false,
             silent_startup: false,
             enable_local_proxy: false,
@@ -324,9 +203,6 @@ impl Default for AppSettings {
             current_provider_kimi: None,
             current_provider_opencode: None,
             current_provider_openclaw: None,
-            skill_sync_method: SyncMethod::default(),
-            webdav_sync: None,
-            webdav_backup: None,
             backup_interval_hours: None,
             backup_retain_count: None,
             preferred_terminal: None,
@@ -407,13 +283,6 @@ impl AppSettings {
             .map(|s| s.trim())
             .filter(|s| matches!(*s, "en" | "zh" | "ja"))
             .map(|s| s.to_string());
-
-        if let Some(sync) = &mut self.webdav_sync {
-            sync.normalize();
-            if sync.is_empty() {
-                self.webdav_sync = None;
-            }
-        }
     }
 
     fn load_from_file() -> Self {
@@ -513,12 +382,7 @@ pub fn get_settings() -> AppSettings {
 }
 
 pub fn get_settings_for_frontend() -> AppSettings {
-    let mut settings = get_settings();
-    if let Some(sync) = &mut settings.webdav_sync {
-        sync.password.clear();
-    }
-    settings.webdav_backup = None;
-    settings
+    get_settings()
 }
 
 pub fn update_settings(mut new_settings: AppSettings) -> Result<(), AppError> {
@@ -569,6 +433,7 @@ pub fn get_claude_override_dir() -> Option<PathBuf> {
         .map(|p| resolve_override_path(p))
 }
 
+#[cfg(test)]
 pub fn set_claude_mirror_config_dir(value: Option<PathBuf>) -> Result<(), AppError> {
     mutate_settings(|s| {
         s.claude_mirror_config_dir = value.map(|p| p.to_string_lossy().to_string());
@@ -723,19 +588,6 @@ pub fn get_effective_current_provider(
     db.get_current_provider(app_type.as_str())
 }
 
-// ===== Skill 同步方式管理函数 =====
-
-/// 获取 Skill 同步方式配置
-pub fn get_skill_sync_method() -> SyncMethod {
-    settings_store()
-        .read()
-        .unwrap_or_else(|e| {
-            log::warn!("设置锁已毒化，使用恢复值: {e}");
-            e.into_inner()
-        })
-        .skill_sync_method
-}
-
 // ===== 备份策略管理函数 =====
 
 /// Get the effective auto-backup interval in hours (default 24)
@@ -777,25 +629,3 @@ pub fn get_preferred_terminal() -> Option<String> {
         .clone()
 }
 
-// ===== WebDAV 同步设置管理函数 =====
-
-/// 获取 WebDAV 同步设置
-pub fn get_webdav_sync_settings() -> Option<WebDavSyncSettings> {
-    settings_store().read().ok()?.webdav_sync.clone()
-}
-
-/// 保存 WebDAV 同步设置
-pub fn set_webdav_sync_settings(settings: Option<WebDavSyncSettings>) -> Result<(), AppError> {
-    mutate_settings(|current| {
-        current.webdav_sync = settings;
-    })
-}
-
-/// 仅更新 WebDAV 同步状态，避免覆写 credentials/root/profile 等字段
-pub fn update_webdav_sync_status(status: WebDavSyncStatus) -> Result<(), AppError> {
-    mutate_settings(|current| {
-        if let Some(sync) = current.webdav_sync.as_mut() {
-            sync.status = status;
-        }
-    })
-}

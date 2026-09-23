@@ -40,11 +40,7 @@ pub fn add_custom_endpoint(
 ) -> Result<(), AppError> {
     let normalized = url.trim().trim_end_matches('/').to_string();
     if normalized.is_empty() {
-        return Err(AppError::localized(
-            "provider.endpoint.url_required",
-            "URL 不能为空",
-            "URL cannot be empty",
-        ));
+        return Err(AppError::localized("provider.endpoint.url_required", "URL cannot be empty"));
     }
 
     state

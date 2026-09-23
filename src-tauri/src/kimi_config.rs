@@ -29,10 +29,6 @@ pub fn get_kimi_credentials_path() -> PathBuf {
     get_kimi_dir().join("credentials").join("kimi-code.json")
 }
 
-pub fn get_kimi_mcp_path() -> PathBuf {
-    get_kimi_dir().join("mcp.json")
-}
-
 /// Reads `config.toml`; an absent file is an empty config.
 pub fn read_kimi_config_text() -> Result<String, AppError> {
     let path = get_kimi_config_path();

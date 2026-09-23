@@ -105,16 +105,11 @@ impl Database {
     ) -> Result<(), AppError> {
         let trimmed = value.trim();
         if trimmed.is_empty() {
-            return Err(AppError::localized(
-                "error.multiplierEmpty",
-                "倍率不能为空",
-                "Multiplier cannot be empty",
-            ));
+            return Err(AppError::localized("error.multiplierEmpty", "Multiplier cannot be empty"));
         }
         trimmed.parse::<Decimal>().map_err(|e| {
             AppError::localized(
                 "error.invalidMultiplier",
-                format!("无效倍率: {value} - {e}"),
                 format!("Invalid multiplier: {value} - {e}"),
             )
         })?;
@@ -166,7 +161,6 @@ impl Database {
         if !matches!(trimmed, "response" | "request") {
             return Err(AppError::localized(
                 "error.invalidPricingMode",
-                format!("无效计费模式: {value}"),
                 format!("Invalid pricing mode: {value}"),
             ));
         }

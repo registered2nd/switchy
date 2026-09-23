@@ -15,7 +15,6 @@ use serde_json::Value;
 use crate::app_config::AppType;
 use crate::error::AppError;
 use crate::provider::{Provider, UsageResult};
-use crate::services::mcp::McpService;
 use crate::settings::CustomEndpoint;
 use crate::store::AppState;
 
@@ -37,9 +36,7 @@ pub(crate) use live::{
 };
 
 // Internal re-exports
-use live::{
-    remove_openclaw_provider_from_live, remove_opencode_provider_from_live, write_gemini_live,
-};
+use live::{remove_openclaw_provider_from_live, remove_opencode_provider_from_live};
 use usage::validate_usage_script;
 
 /// Provider business logic service
@@ -1235,8 +1232,6 @@ impl ProviderService {
                 }
             } else {
                 write_live_with_common_config(state.db.as_ref(), &app_type, &provider)?;
-                // Sync MCP
-                McpService::sync_all_enabled(state)?;
             }
         }
 
@@ -1616,9 +1611,6 @@ impl ProviderService {
                 }
             }
         }
-
-        // Sync MCP
-        McpService::sync_all_enabled(state)?;
 
         Ok(result)
     }
@@ -2108,9 +2100,6 @@ impl ProviderService {
         .await
     }
 
-    pub(crate) fn write_gemini_live(provider: &Provider) -> Result<(), AppError> {
-        write_gemini_live(provider)
-    }
 
     fn validate_provider_settings(app_type: &AppType, provider: &Provider) -> Result<(), AppError> {
         match app_type {
@@ -2118,7 +2107,6 @@ impl ProviderService {
                 if !provider.settings_config.is_object() {
                     return Err(AppError::localized(
                         "provider.claude.settings.not_object",
-                        "Claude 配置必须是 JSON 对象",
                         "Claude configuration must be a JSON object",
                     ));
                 }
@@ -2127,7 +2115,6 @@ impl ProviderService {
                 let settings = provider.settings_config.as_object().ok_or_else(|| {
                     AppError::localized(
                         "provider.kimi.settings.not_object",
-                        "Kimi 配置必须是 JSON 对象",
                         "Kimi configuration must be a JSON object",
                     )
                 })?;
@@ -2138,7 +2125,6 @@ impl ProviderService {
                         .ok_or_else(|| {
                             AppError::localized(
                                 "provider.kimi.config.missing",
-                                format!("供应商 {} 缺少 config 配置", provider.id),
                                 format!("Provider {} is missing the config field", provider.id),
                             )
                         })?;
@@ -2148,7 +2134,6 @@ impl ProviderService {
                 let settings = provider.settings_config.as_object().ok_or_else(|| {
                     AppError::localized(
                         "provider.codex.settings.not_object",
-                        "Codex 配置必须是 JSON 对象",
                         "Codex configuration must be a JSON object",
                     )
                 })?;
@@ -2156,14 +2141,12 @@ impl ProviderService {
                 let auth = settings.get("auth").ok_or_else(|| {
                     AppError::localized(
                         "provider.codex.auth.missing",
-                        format!("供应商 {} 缺少 auth 配置", provider.id),
                         format!("Provider {} is missing auth configuration", provider.id),
                     )
                 })?;
                 if !auth.is_object() {
                     return Err(AppError::localized(
                         "provider.codex.auth.not_object",
-                        format!("供应商 {} 的 auth 配置必须是 JSON 对象", provider.id),
                         format!(
                             "Provider {} auth configuration must be a JSON object",
                             provider.id
@@ -2175,7 +2158,6 @@ impl ProviderService {
                     if !(config_value.is_string() || config_value.is_null()) {
                         return Err(AppError::localized(
                             "provider.codex.config.invalid_type",
-                            "Codex config 字段必须是字符串",
                             "Codex config field must be a string",
                         ));
                     }
@@ -2194,7 +2176,6 @@ impl ProviderService {
                 if !provider.settings_config.is_object() {
                     return Err(AppError::localized(
                         "provider.opencode.settings.not_object",
-                        "OpenCode 配置必须是 JSON 对象",
                         "OpenCode configuration must be a JSON object",
                     ));
                 }
@@ -2205,7 +2186,6 @@ impl ProviderService {
                 if !provider.settings_config.is_object() {
                     return Err(AppError::localized(
                         "provider.openclaw.settings.not_object",
-                        "OpenClaw 配置必须是 JSON 对象",
                         "OpenClaw configuration must be a JSON object",
                     ));
                 }
@@ -2236,7 +2216,6 @@ impl ProviderService {
                     .ok_or_else(|| {
                         AppError::localized(
                             "provider.claude.env.missing",
-                            "配置格式错误: 缺少 env",
                             "Invalid configuration: missing env section",
                         )
                     })?;
@@ -2246,11 +2225,7 @@ impl ProviderService {
                     .or_else(|| env.get("ANTHROPIC_API_KEY"))
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| {
-                        AppError::localized(
-                            "provider.claude.api_key.missing",
-                            "缺少 API Key",
-                            "API key is missing",
-                        )
+                        AppError::localized("provider.claude.api_key.missing", "API key is missing")
                     })?
                     .to_string();
 
@@ -2260,7 +2235,6 @@ impl ProviderService {
                     .ok_or_else(|| {
                         AppError::localized(
                             "provider.claude.base_url.missing",
-                            "缺少 ANTHROPIC_BASE_URL 配置",
                             "Missing ANTHROPIC_BASE_URL configuration",
                         )
                     })?
@@ -2286,7 +2260,6 @@ impl ProviderService {
                     .ok_or_else(|| {
                         AppError::localized(
                             "provider.kimi.provider.missing",
-                            "配置格式错误: 缺少 [providers.*]",
                             "Invalid configuration: no [providers.*] table",
                         )
                     })?;
@@ -2297,7 +2270,6 @@ impl ProviderService {
                     .ok_or_else(|| {
                         AppError::localized(
                             "provider.kimi.provider.missing",
-                            format!("配置格式错误: 缺少 [providers.{provider_id}]"),
                             format!("Invalid configuration: missing [providers.{provider_id}]"),
                         )
                     })?;
@@ -2306,11 +2278,7 @@ impl ProviderService {
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
                     .ok_or_else(|| {
-                        AppError::localized(
-                            "provider.kimi.api_key.missing",
-                            "缺少 API Key",
-                            "API key is missing",
-                        )
+                        AppError::localized("provider.kimi.api_key.missing", "API key is missing")
                     })?
                     .to_string();
                 let base_url = table
@@ -2328,7 +2296,6 @@ impl ProviderService {
                     .ok_or_else(|| {
                         AppError::localized(
                             "provider.codex.auth.missing",
-                            "配置格式错误: 缺少 auth",
                             "Invalid configuration: missing auth section",
                         )
                     })?;
@@ -2337,11 +2304,7 @@ impl ProviderService {
                     .get("OPENAI_API_KEY")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| {
-                        AppError::localized(
-                            "provider.codex.api_key.missing",
-                            "缺少 API Key",
-                            "API key is missing",
-                        )
+                        AppError::localized("provider.codex.api_key.missing", "API key is missing")
                     })?
                     .to_string();
 
@@ -2355,7 +2318,6 @@ impl ProviderService {
                     let re = Regex::new(r#"base_url\s*=\s*["']([^"']+)["']"#).map_err(|e| {
                         AppError::localized(
                             "provider.regex_init_failed",
-                            format!("正则初始化失败: {e}"),
                             format!("Failed to initialize regex: {e}"),
                         )
                     })?;
@@ -2365,14 +2327,12 @@ impl ProviderService {
                         .ok_or_else(|| {
                             AppError::localized(
                                 "provider.codex.base_url.invalid",
-                                "config.toml 中 base_url 格式错误",
                                 "base_url in config.toml has invalid format",
                             )
                         })?
                 } else {
                     return Err(AppError::localized(
                         "provider.codex.base_url.missing",
-                        "config.toml 中缺少 base_url 配置",
                         "base_url is missing from config.toml",
                     ));
                 };
@@ -2385,11 +2345,7 @@ impl ProviderService {
                 let env_map = json_to_env(&provider.settings_config)?;
 
                 let api_key = env_map.get("GEMINI_API_KEY").cloned().ok_or_else(|| {
-                    AppError::localized(
-                        "gemini.missing_api_key",
-                        "缺少 GEMINI_API_KEY",
-                        "Missing GEMINI_API_KEY",
-                    )
+                    AppError::localized("gemini.missing_api_key", "Missing GEMINI_API_KEY")
                 })?;
 
                 let base_url = env_map
@@ -2408,7 +2364,6 @@ impl ProviderService {
                     .ok_or_else(|| {
                         AppError::localized(
                             "provider.opencode.options.missing",
-                            "配置格式错误: 缺少 options",
                             "Invalid configuration: missing options section",
                         )
                     })?;
@@ -2419,7 +2374,6 @@ impl ProviderService {
                     .ok_or_else(|| {
                         AppError::localized(
                             "provider.opencode.api_key.missing",
-                            "缺少 API Key",
                             "API key is missing",
                         )
                     })?
@@ -2442,7 +2396,6 @@ impl ProviderService {
                     .ok_or_else(|| {
                         AppError::localized(
                             "provider.openclaw.api_key.missing",
-                            "缺少 API Key",
                             "API key is missing",
                         )
                     })?

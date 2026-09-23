@@ -17,18 +17,12 @@ use crate::error::AppError;
 /// ## 测试隔离
 ///
 /// 为了让 Windows CI/本地测试能稳定隔离真实用户数据，可通过 `SWITCHY_TEST_HOME`
-/// 显式覆盖 home dir（仅用于测试/调试场景）。兼容性：同时识别旧环境变量
-/// `CC_SWITCH_TEST_HOME`（将在后续版本移除）。
+/// 显式覆盖 home dir（仅用于测试/调试场景）。
 pub fn get_home_dir() -> PathBuf {
-    for name in [
-        crate::paths::ENV_TEST_HOME,
-        crate::paths::LEGACY_ENV_TEST_HOME,
-    ] {
-        if let Ok(home) = std::env::var(name) {
-            let trimmed = home.trim();
-            if !trimmed.is_empty() {
-                return PathBuf::from(trimmed);
-            }
+    if let Ok(home) = std::env::var(crate::paths::ENV_TEST_HOME) {
+        let trimmed = home.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
         }
     }
 
@@ -110,34 +104,7 @@ pub fn get_app_config_dir() -> PathBuf {
         return custom;
     }
 
-    let default_dir = get_home_dir().join(crate::paths::APP_DIR);
-
-    // 兼容旧版（pre-switchy rename）：当 Windows 环境中 `HOME` 与真实用户目录不同，
-    // 旧版本可能在 `HOME/<paths::LEGACY_APP_DIR>/` 下创建/使用了数据库。
-    // migrate_paths 已在启动时将旧目录重命名到新目录，但此处仍检测真实 HOME
-    // 位置下的旧目录，以防 HOME 与 home_dir() 不一致导致迁移未命中。
-    #[cfg(windows)]
-    {
-        let default_db = default_dir.join(crate::paths::DB_FILE);
-        if !default_db.exists() {
-            if let Ok(home_env) = std::env::var("HOME") {
-                let trimmed = home_env.trim();
-                if !trimmed.is_empty() {
-                    let legacy_dir = PathBuf::from(trimmed).join(crate::paths::LEGACY_APP_DIR);
-                    if legacy_dir.join(crate::paths::LEGACY_DB_FILE).exists() {
-                        log::info!(
-                            "Detected legacy database at {}, using it instead of {}",
-                            legacy_dir.display(),
-                            default_dir.display()
-                        );
-                        return legacy_dir;
-                    }
-                }
-            }
-        }
-    }
-
-    default_dir
+    get_home_dir().join(crate::paths::APP_DIR)
 }
 
 /// 获取应用配置文件路径
@@ -289,15 +256,6 @@ mod tests {
         let override_dir = PathBuf::from("/");
         assert!(claude_config_json_for_dir(&override_dir).is_none());
     }
-}
-
-/// 复制文件
-pub fn copy_file(from: &Path, to: &Path) -> Result<(), AppError> {
-    fs::copy(from, to).map_err(|e| AppError::IoContext {
-        context: format!("复制文件失败 ({} -> {})", from.display(), to.display()),
-        source: e,
-    })?;
-    Ok(())
 }
 
 /// 删除文件

@@ -258,7 +258,6 @@ impl StreamCheckService {
             AppType::Kimi => {
                 return Err(AppError::localized(
                     "kimi_no_stream_check",
-                    "Kimi 暂不支持健康检查",
                     "Stream check is not supported for Kimi yet",
                 ));
             }
@@ -266,7 +265,6 @@ impl StreamCheckService {
                 // OpenCode doesn't support stream check yet
                 return Err(AppError::localized(
                     "opencode_no_stream_check",
-                    "OpenCode 暂不支持健康检查",
                     "OpenCode does not support health check yet",
                 ));
             }
@@ -274,7 +272,6 @@ impl StreamCheckService {
                 // OpenClaw doesn't support stream check yet
                 return Err(AppError::localized(
                     "openclaw_no_stream_check",
-                    "OpenClaw 暂不支持健康检查",
                     "OpenClaw does not support health check yet",
                 ));
             }

@@ -15,24 +15,6 @@ use tempfile::NamedTempFile;
 
 const SWITCHY_SQL_EXPORT_HEADER: &str = "-- Switchy SQLite 导出";
 
-/// Tables whose data rows are skipped when exporting for WebDAV sync.
-const SYNC_SKIP_TABLES: &[&str] = &[
-    "proxy_request_logs",
-    "stream_check_logs",
-    "provider_health",
-    "proxy_live_backup",
-    "usage_daily_rollups",
-];
-
-/// Tables whose local data is preserved (restored from local snapshot) during WebDAV import.
-/// Excludes ephemeral tables like provider_health that can safely rebuild at runtime.
-const SYNC_PRESERVE_TABLES: &[&str] = &[
-    "proxy_request_logs",
-    "stream_check_logs",
-    "proxy_live_backup",
-    "usage_daily_rollups",
-];
-
 /// A database backup entry for the UI
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,12 +29,6 @@ impl Database {
     pub fn export_sql_string(&self) -> Result<String, AppError> {
         let snapshot = self.snapshot_to_memory()?;
         Self::dump_sql(&snapshot, &[])
-    }
-
-    /// Export SQL for sync (WebDAV), skipping local-only tables' data
-    pub fn export_sql_string_for_sync(&self) -> Result<String, AppError> {
-        let snapshot = self.snapshot_to_memory()?;
-        Self::dump_sql(&snapshot, SYNC_SKIP_TABLES)
     }
 
     /// 导出为 SQLite 兼容的 SQL 文本
@@ -83,12 +59,6 @@ impl Database {
     /// 从 SQL 字符串导入，返回生成的备份 ID（若无备份则为空字符串）
     pub fn import_sql_string(&self, sql_raw: &str) -> Result<String, AppError> {
         self.import_sql_string_inner(sql_raw, &[])
-    }
-
-    /// Import SQL generated for sync, then restore local-only tables from the
-    /// current device snapshot before replacing the main database.
-    pub(crate) fn import_sql_string_for_sync(&self, sql_raw: &str) -> Result<String, AppError> {
-        self.import_sql_string_inner(sql_raw, SYNC_PRESERVE_TABLES)
     }
 
     fn import_sql_string_inner(
@@ -171,7 +141,6 @@ impl Database {
 
         Err(AppError::localized(
             "backup.sql.invalid_format",
-            "仅支持导入由 Switchy 导出的 SQL 备份文件。",
             "Only SQL backups exported by Switchy are supported.",
         ))
     }
@@ -693,93 +662,6 @@ mod tests {
     use crate::error::AppError;
     use crate::settings::{update_settings, AppSettings};
     use serial_test::serial;
-
-    #[test]
-    fn sync_import_preserves_local_only_tables() -> Result<(), AppError> {
-        let remote_db = Database::memory()?;
-        {
-            let conn = crate::database::lock_conn!(remote_db.conn);
-            conn.execute(
-                "INSERT INTO providers (id, app_type, name, settings_config, meta)
-                 VALUES ('remote-provider', 'claude', 'Remote Provider', '{}', '{}')",
-                [],
-            )?;
-        }
-        let remote_sql = remote_db.export_sql_string_for_sync()?;
-
-        let local_db = Database::memory()?;
-        {
-            let conn = crate::database::lock_conn!(local_db.conn);
-            conn.execute(
-                "INSERT INTO providers (id, app_type, name, settings_config, meta)
-                 VALUES ('local-provider', 'claude', 'Local Provider', '{}', '{}')",
-                [],
-            )?;
-            conn.execute(
-                "INSERT INTO proxy_request_logs (
-                    request_id, provider_id, app_type, model,
-                    input_tokens, output_tokens, total_cost_usd,
-                    latency_ms, status_code, created_at
-                ) VALUES ('req-1', 'local-provider', 'claude', 'claude-3', 100, 50, '0.01', 120, 200, 1000)",
-                [],
-            )?;
-            conn.execute(
-                "INSERT INTO usage_daily_rollups (
-                    date, app_type, provider_id, model, request_count, success_count,
-                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-                    total_cost_usd, avg_latency_ms
-                ) VALUES ('2026-03-01', 'claude', 'local-provider', 'claude-3', 7, 7, 700, 350, 0, 0, '0.07', 120)",
-                [],
-            )?;
-            conn.execute(
-                "INSERT INTO stream_check_logs (
-                    provider_id, provider_name, app_type, status, success, message,
-                    response_time_ms, http_status, model_used, retry_count, tested_at
-                ) VALUES ('local-provider', 'Local Provider', 'claude', 'operational', 1, 'ok', 42, 200, 'claude-3', 0, 1000)",
-                [],
-            )?;
-        }
-
-        local_db.import_sql_string_for_sync(&remote_sql)?;
-
-        let remote_provider_exists: i64 = {
-            let conn = crate::database::lock_conn!(local_db.conn);
-            conn.query_row(
-                "SELECT COUNT(*) FROM providers WHERE id = 'remote-provider' AND app_type = 'claude'",
-                [],
-                |row| row.get(0),
-            )?
-        };
-        assert_eq!(
-            remote_provider_exists, 1,
-            "remote config should be imported"
-        );
-
-        let (request_logs, rollups, stream_logs): (i64, i64, i64) = {
-            let conn = crate::database::lock_conn!(local_db.conn);
-            let request_logs =
-                conn.query_row("SELECT COUNT(*) FROM proxy_request_logs", [], |row| {
-                    row.get(0)
-                })?;
-            let rollups =
-                conn.query_row("SELECT COUNT(*) FROM usage_daily_rollups", [], |row| {
-                    row.get(0)
-                })?;
-            let stream_logs =
-                conn.query_row("SELECT COUNT(*) FROM stream_check_logs", [], |row| {
-                    row.get(0)
-                })?;
-            (request_logs, rollups, stream_logs)
-        };
-        assert_eq!(request_logs, 1, "local request logs should be preserved");
-        assert_eq!(rollups, 1, "local rollups should be preserved");
-        assert_eq!(
-            stream_logs, 1,
-            "local stream check logs should be preserved"
-        );
-
-        Ok(())
-    }
 
     #[test]
     #[serial]
