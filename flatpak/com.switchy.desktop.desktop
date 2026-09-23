@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Switchy
-Comment=All-in-One Assistant for Claude Code, Codex & Gemini CLI
-Exec=switchy
-Icon=com.switchy.desktop
-Terminal=false
-Categories=Utility;Development;
-StartupNotify=true

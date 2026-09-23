@@ -13,23 +13,14 @@ GEMINI.md
 /.claude
 /.codex
 /.gemini
-/.cc-switch
 /.idea
 /.vscode
 vitest-report.json
 nul
 
-# Flatpak build artifacts
-flatpak/cc-switch.deb
-flatpak-build/
-flatpak-repo/
 .worktrees/
 .spec-workflow/
-copilot-api
-.history
-CODEBUDDY.md
-.github
-cc-switch-setup-backup/
+.playwright-mcp/
 
 # Distribution installers live in installers/. Ignore everything there,
 # then re-include only the current versioned installers so they're tracked.
