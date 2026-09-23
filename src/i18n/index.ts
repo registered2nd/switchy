@@ -56,14 +56,14 @@ const resources = {
 
 i18n.use(initReactI18next).init({
   resources,
-  lng: getInitialLanguage(), // 根据本地存储或系统语言选择默认语言
-  fallbackLng: "en", // 如果缺少中文翻译则退回英文
+  lng: getInitialLanguage(), // Pick the default language from local storage or the system language
+  fallbackLng: "en", // Fall back to English for missing translations
 
   interpolation: {
-    escapeValue: false, // React 已经默认转义
+    escapeValue: false, // React already escapes
   },
 
-  // 开发模式下显示调试信息
+  // Debug output in development
   debug: false,
 });
 

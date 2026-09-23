@@ -36,8 +36,11 @@ export const usageKeys = {
   all: ["usage"] as const,
   summary: (days: number) => [...usageKeys.all, "summary", days] as const,
   trends: (days: number) => [...usageKeys.all, "trends", days] as const,
-  providerStats: () => [...usageKeys.all, "provider-stats"] as const,
-  modelStats: () => [...usageKeys.all, "model-stats"] as const,
+  providerStats: (days: number) =>
+    [...usageKeys.all, "provider-stats", days] as const,
+  modelStats: (days: number) =>
+    [...usageKeys.all, "model-stats", days] as const,
+  switches: (days: number) => [...usageKeys.all, "switches", days] as const,
   logs: (key: RequestLogsKey, page: number, pageSize: number) =>
     [
       ...usageKeys.all,
@@ -74,8 +77,8 @@ export function useUsageSummary(days: number, options?: UsageQueryOptions) {
       const { startDate, endDate } = getWindow(days);
       return usageApi.getUsageSummary(startDate, endDate);
     },
-    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // 每30秒自动刷新
-    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false, // 后台不刷新
+    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // Auto-refresh every 30 seconds
+    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false, // No refresh in the background
   });
 }
 
@@ -86,25 +89,43 @@ export function useUsageTrends(days: number, options?: UsageQueryOptions) {
       const { startDate, endDate } = getWindow(days);
       return usageApi.getUsageTrends(startDate, endDate);
     },
-    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // 每30秒自动刷新
+    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // Auto-refresh every 30 seconds
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
   });
 }
 
-export function useProviderStats(options?: UsageQueryOptions) {
+export function useProviderStats(days: number, options?: UsageQueryOptions) {
   return useQuery({
-    queryKey: usageKeys.providerStats(),
-    queryFn: usageApi.getProviderStats,
-    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // 每30秒自动刷新
+    queryKey: usageKeys.providerStats(days),
+    queryFn: () => {
+      const { startDate, endDate } = getWindow(days);
+      return usageApi.getProviderStats(startDate, endDate);
+    },
+    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // Auto-refresh every 30 seconds
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
   });
 }
 
-export function useModelStats(options?: UsageQueryOptions) {
+export function useModelStats(days: number, options?: UsageQueryOptions) {
   return useQuery({
-    queryKey: usageKeys.modelStats(),
-    queryFn: usageApi.getModelStats,
-    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // 每30秒自动刷新
+    queryKey: usageKeys.modelStats(days),
+    queryFn: () => {
+      const { startDate, endDate } = getWindow(days);
+      return usageApi.getModelStats(startDate, endDate);
+    },
+    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // Auto-refresh every 30 seconds
+    refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
+  });
+}
+
+export function useAccountSwitches(days: number, options?: UsageQueryOptions) {
+  return useQuery({
+    queryKey: usageKeys.switches(days),
+    queryFn: () => {
+      const { startDate } = getWindow(days);
+      return usageApi.getAccountSwitches(undefined, startDate, 200);
+    },
+    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
   });
 }
@@ -144,7 +165,7 @@ export function useRequestLogs({
           : filters;
       return usageApi.getRequestLogs(effectiveFilters, page, pageSize);
     },
-    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // 每30秒自动刷新
+    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS, // Auto-refresh every 30 seconds
     refetchIntervalInBackground: options?.refetchIntervalInBackground ?? false,
   });
 }

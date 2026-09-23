@@ -1,8 +1,8 @@
 /**
- * 统一供应商（Universal Provider）预设配置
+ * Universal provider presets
  *
- * 统一供应商是跨应用共享的配置，修改后会自动同步到 Claude、Codex、Gemini 三个应用。
- * 适用于 NewAPI 等支持多种协议的 API 网关。
+ * A universal provider is one config shared across apps; changes sync to Claude, Codex and Gemini.
+ * Meant for multi-protocol API gateways such as NewAPI.
  */
 
 import type {
@@ -12,31 +12,31 @@ import type {
 } from "@/types";
 
 /**
- * 统一供应商预设接口
+ * Universal provider preset
  */
 export interface UniversalProviderPreset {
-  /** 预设名称 */
+  /** Preset name */
   name: string;
-  /** 供应商类型标识 */
+  /** Provider type */
   providerType: string;
-  /** 默认启用的应用 */
+  /** Apps enabled by default */
   defaultApps: UniversalProviderApps;
-  /** 默认模型配置 */
+  /** Default models */
   defaultModels: UniversalProviderModels;
-  /** 网站链接 */
+  /** Website URL */
   websiteUrl?: string;
-  /** 图标名称 */
+  /** Icon name */
   icon?: string;
-  /** 图标颜色 */
+  /** Icon color */
   iconColor?: string;
-  /** 描述 */
+  /** Description */
   description?: string;
-  /** 是否为自定义模板（允许用户完全自定义） */
+  /** Custom template (fully user-defined) */
   isCustomTemplate?: boolean;
 }
 
 /**
- * NewAPI 默认模型配置
+ * NewAPI default models
  */
 const NEWAPI_DEFAULT_MODELS: UniversalProviderModels = {
   claude: {
@@ -55,7 +55,7 @@ const NEWAPI_DEFAULT_MODELS: UniversalProviderModels = {
 };
 
 /**
- * 统一供应商预设列表
+ * Universal provider presets
  */
 export const universalProviderPresets: UniversalProviderPreset[] = [
   {
@@ -71,10 +71,10 @@ export const universalProviderPresets: UniversalProviderPreset[] = [
     icon: "newapi",
     iconColor: "#00A67E",
     description:
-      "NewAPI 是一个可自部署的 API 网关，支持 Anthropic、OpenAI、Gemini 等多种协议",
+      "Self-hosted API gateway for Anthropic, OpenAI, Gemini and other protocols",
   },
   {
-    name: "自定义网关",
+    name: "Custom Gateway",
     providerType: "custom_gateway",
     defaultApps: {
       claude: true,
@@ -84,13 +84,13 @@ export const universalProviderPresets: UniversalProviderPreset[] = [
     defaultModels: NEWAPI_DEFAULT_MODELS,
     icon: "openai",
     iconColor: "#6366F1",
-    description: "自定义配置的 API 网关",
+    description: "An API gateway you configure yourself",
     isCustomTemplate: true,
   },
 ];
 
 /**
- * 根据预设创建统一供应商
+ * Create a universal provider from a preset
  */
 export function createUniversalProviderFromPreset(
   preset: UniversalProviderPreset,
@@ -115,14 +115,14 @@ export function createUniversalProviderFromPreset(
 }
 
 /**
- * 获取预设的显示名称（用于 UI）
+ * Display name of a preset (for the UI)
  */
 export function getPresetDisplayName(preset: UniversalProviderPreset): string {
   return preset.name;
 }
 
 /**
- * 根据类型查找预设
+ * Find a preset by type
  */
 export function findPresetByType(
   providerType: string,

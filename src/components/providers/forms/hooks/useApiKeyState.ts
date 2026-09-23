@@ -16,8 +16,8 @@ interface UseApiKeyStateProps {
 }
 
 /**
- * 管理 API Key 输入状态
- * 自动同步 API Key 和 JSON 配置
+ * Manages API key input state
+ * Keeps the API key and the JSON config in sync
  */
 export function useApiKeyState({
   initialConfig,
@@ -34,8 +34,8 @@ export function useApiKeyState({
     return "";
   });
 
-  // 当外部通过 form.reset / 读取 live 等方式更新配置时，同步回 API Key 状态
-  // - 仅在 JSON 可解析时同步，避免用户编辑 JSON 过程中因临时无效导致输入框闪烁
+  // When the config changes from outside (form.reset, reading the live config, etc.), sync it back into the API key state
+  // - Only sync when the JSON parses, so the input does not flicker while the user is mid-edit
   useEffect(() => {
     if (!initialConfig) return;
 
@@ -45,7 +45,7 @@ export function useApiKeyState({
       return;
     }
 
-    // 从配置中提取 API Key（如果不存在则返回空字符串）
+    // Extract the API key from the config (empty string if missing)
     const extracted = getApiKeyFromConfig(initialConfig, appType);
     if (extracted !== apiKey) {
       setApiKey(extracted);
@@ -60,11 +60,11 @@ export function useApiKeyState({
         initialConfig || "{}",
         key.trim(),
         {
-          // 最佳实践：仅在"新增模式"且"非官方类别"时补齐缺失字段
-          // - 新增模式：selectedPresetId !== null
-          // - 非官方类别：category !== undefined && category !== "official"
-          // - 官方类别：不创建字段（UI 也会禁用输入框）
-          // - 未传入 category：不创建字段（避免意外行为）
+          // Only add missing fields in "create mode" for a "non-official category"
+          // - Create mode: selectedPresetId !== null
+          // - Non-official category: category !== undefined && category !== "official"
+          // - Official category: do not create the field (the UI disables the input too)
+          // - No category passed: do not create the field (avoids surprises)
           createIfMissing:
             selectedPresetId !== null &&
             category !== undefined &&

@@ -60,7 +60,7 @@ export function AddProviderDialog({
         await universalProvidersApi.upsert(provider);
         toast.success(
           t("universalProvider.addSuccess", {
-            defaultValue: "统一供应商添加成功",
+            defaultValue: "Universal provider added successfully",
           }),
         );
         setUniversalFormOpen(false);
@@ -73,7 +73,7 @@ export function AddProviderDialog({
         );
         toast.error(
           t("universalProvider.addFailed", {
-            defaultValue: "统一供应商添加失败",
+            defaultValue: "Failed to add universal provider",
           }),
         );
       }
@@ -93,7 +93,7 @@ export function AddProviderDialog({
         unknown
       >;
 
-      // 构造基础提交数据
+      // Build the base submission data
       const providerData: Omit<Provider, "id"> & {
         providerKey?: string;
         suggestedDefaults?: OpenClawSuggestedDefaults;

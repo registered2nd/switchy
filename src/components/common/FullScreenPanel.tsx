@@ -38,7 +38,7 @@ export const FullScreenPanel: React.FC<FullScreenPanelProps> = ({
     };
   }, [isOpen]);
 
-  // ESC 键关闭面板
+  // ESC closes the panel
   const onCloseRef = React.useRef(onClose);
 
   React.useEffect(() => {
@@ -50,21 +50,21 @@ export const FullScreenPanel: React.FC<FullScreenPanelProps> = ({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        // 子组件（例如 Radix 的 Select/Dialog/Dropdown）如果已经消费了 ESC，就不要再关闭整个面板
+        // If a child (e.g. a Radix Select/Dialog/Dropdown) already handled ESC, keep the panel open
         if (event.defaultPrevented) {
           return;
         }
 
         if (isTextEditableTarget(event.target)) {
-          return; // 让输入框自己处理 ESC（比如清空、失焦等）
+          return; // Let inputs handle ESC themselves (clear, blur, etc.)
         }
 
-        event.stopPropagation(); // 阻止事件继续冒泡到 window，避免触发 App.tsx 的全局监听
+        event.stopPropagation(); // Stop the event reaching window so App.tsx's global listener does not fire
         onCloseRef.current();
       }
     };
 
-    // 使用冒泡阶段监听，让子组件（如 Radix UI）优先处理 ESC
+    // Listen in the bubble phase so children (e.g. Radix UI) handle ESC first
     window.addEventListener("keydown", handleKeyDown, false);
     return () => {
       window.removeEventListener("keydown", handleKeyDown, false);

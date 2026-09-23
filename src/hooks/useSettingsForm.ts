@@ -32,12 +32,12 @@ export interface UseSettingsFormResult {
 }
 
 /**
- * useSettingsForm - 表单状态管理
- * 负责：
- * - 表单数据状态
- * - 表单字段更新
- * - 语言同步
- * - 表单重置
+ * useSettingsForm - form state management
+ * Handles:
+ * - form data state
+ * - form field updates
+ * - language sync
+ * - form reset
  */
 export function useSettingsForm(): UseSettingsFormResult {
   const { i18n } = useTranslation();
@@ -69,7 +69,7 @@ export function useSettingsForm(): UseSettingsFormResult {
     [i18n],
   );
 
-  // 初始化设置数据
+  // Initialize settings data
   useEffect(() => {
     if (!data) return;
 

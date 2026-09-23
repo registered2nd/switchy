@@ -4,6 +4,7 @@ import type {
   DailyStats,
   ProviderStats,
   ModelStats,
+  AccountSwitch,
   RequestLog,
   LogFilters,
   ModelPricing,
@@ -59,12 +60,26 @@ export const usageApi = {
     return invoke("get_usage_trends", { startDate, endDate });
   },
 
-  getProviderStats: async (): Promise<ProviderStats[]> => {
-    return invoke("get_provider_stats");
+  getProviderStats: async (
+    startDate?: number,
+    endDate?: number,
+  ): Promise<ProviderStats[]> => {
+    return invoke("get_provider_stats", { startDate, endDate });
   },
 
-  getModelStats: async (): Promise<ModelStats[]> => {
-    return invoke("get_model_stats");
+  getModelStats: async (
+    startDate?: number,
+    endDate?: number,
+  ): Promise<ModelStats[]> => {
+    return invoke("get_model_stats", { startDate, endDate });
+  },
+
+  getAccountSwitches: async (
+    appType?: string,
+    startDate?: number,
+    limit?: number,
+  ): Promise<AccountSwitch[]> => {
+    return invoke("get_account_switches", { appType, startDate, limit });
   },
 
   getRequestLogs: async (

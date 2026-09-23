@@ -30,7 +30,7 @@ interface KimiConfigEditorProps {
 
   credentialsError: string;
 
-  configError: string; // config.toml 错误提示
+  configError: string; // config.toml error message
 
   onExtract?: () => void;
 
@@ -63,7 +63,7 @@ const KimiConfigEditor: React.FC<KimiConfigEditorProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Config TOML Section（供应商、模型、default_model 都在这里） */}
+      {/* Config TOML section (providers, models and default_model all live here) */}
       <KimiConfigSection
         value={configValue}
         onChange={onConfigChange}

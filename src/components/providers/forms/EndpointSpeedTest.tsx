@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { FullScreenPanel } from "@/components/common/FullScreenPanel";
 import type { CustomEndpoint, EndpointCandidate } from "@/types";
 
-// 端点测速超时配置（秒）
+// Endpoint speed-test timeouts (seconds)
 const ENDPOINT_TIMEOUT_SECS: Record<AppId, number> = {
   codex: 12,
   claude: 8,
@@ -35,8 +35,8 @@ interface EndpointSpeedTestProps {
   onClose: () => void;
   autoSelect: boolean;
   onAutoSelectChange: (checked: boolean) => void;
-  // 新建模式：当自定义端点列表变化时回传（仅包含 isCustom 的条目）
-  // 编辑模式：不使用此回调，端点直接保存到后端
+  // Create mode: report changes to the custom endpoint list (isCustom entries only)
+  // Edit mode: this callback is unused; endpoints save straight to the backend
   onCustomEndpointsChange?: (urls: string[]) => void;
 }
 
@@ -104,7 +104,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
   const [lastError, setLastError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // 记录初始的自定义端点，用于对比变化
+  // Initial custom endpoints, for diffing
   const [initialCustomUrls, setInitialCustomUrls] = useState<Set<string>>(
     new Set(),
   );
@@ -112,15 +112,15 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
   const normalizedSelected = normalizeEndpointUrl(value);
 
   const hasEndpoints = entries.length > 0;
-  const isEditMode = Boolean(providerId); // 编辑模式有 providerId
+  const isEditMode = Boolean(providerId); // edit mode has a providerId
 
-  // 编辑模式：加载已保存的自定义端点
+  // Edit mode: load saved custom endpoints
   useEffect(() => {
     let cancelled = false;
 
     const loadCustomEndpoints = async () => {
       try {
-        if (!providerId) return; // 新建模式不加载
+        if (!providerId) return; // create mode does not load
 
         const customEndpoints = await vscodeApi.getCustomEndpoints(
           appId,
@@ -136,34 +136,34 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
           }),
         );
 
-        // 记录初始的自定义端点
+        // Record the initial custom endpoints
         const customUrls = new Set(
           customEndpoints.map((ep) => normalizeEndpointUrl(ep.url)),
         );
         setInitialCustomUrls(customUrls);
 
-        // 合并自定义端点与初始端点
+        // Merge custom endpoints with the initial ones
         setEntries((prev) => {
           const map = new Map<string, EndpointEntry>();
 
-          // 先添加现有端点（来自预设，isCustom 可能为 false）
+          // Existing endpoints first (from the preset; isCustom may be false)
           prev.forEach((entry) => {
             map.set(entry.url, entry);
           });
 
-          // 合并从后端加载的自定义端点
-          // 关键：如果 URL 已存在（与预设重合），需要将 isCustom 更新为 true
-          // 因为它存在于数据库中，需要在 handleSave 时被正确识别
+          // Merge in the custom endpoints loaded from the backend
+          // If the URL already exists (overlaps the preset), set isCustom to true
+          // because it is in the database and handleSave must recognize it
           candidates.forEach((candidate) => {
             const sanitized = normalizeEndpointUrl(candidate.url);
             if (!sanitized) return;
 
             const existing = map.get(sanitized);
             if (existing) {
-              // URL 已存在，更新 isCustom 为 true（因为它在数据库中）
+              // URL exists: set isCustom to true (it is in the database)
               existing.isCustom = true;
             } else {
-              // URL 不存在，添加新条目
+              // URL is new: add an entry
               map.set(sanitized, {
                 id: randomId(),
                 url: sanitized,
@@ -184,7 +184,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
       }
     };
 
-    // 只在编辑模式下加载
+    // Load only in edit mode
     if (providerId) {
       loadCustomEndpoints();
     }
@@ -194,10 +194,10 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
     };
   }, [appId, providerId, t, initialEndpoints]);
 
-  // 新建模式：将自定义端点变化透传给父组件（仅限 isCustom）
-  // 编辑模式：不使用此回调，端点已通过 API 直接保存
+  // Create mode: pass custom endpoint changes up to the parent (isCustom only)
+  // Edit mode: this callback is unused; endpoints are saved through the API directly
   useEffect(() => {
-    if (!onCustomEndpointsChange || isEditMode) return; // 编辑模式不使用回调
+    if (!onCustomEndpointsChange || isEditMode) return; // edit mode does not use the callback
     try {
       const customUrls = Array.from(
         new Set(
@@ -241,7 +241,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
       }
     }
 
-    // 明确只允许 http: 和 https:
+    // Allow only http: and https:
     const allowedProtocols = ["http:", "https:"];
     if (!errorMsg && parsed && !allowedProtocols.includes(parsed.protocol)) {
       errorMsg = t("endpointTest.onlyHttps");
@@ -250,7 +250,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
     let sanitized = "";
     if (!errorMsg && parsed) {
       sanitized = normalizeEndpointUrl(parsed.toString());
-      // 使用当前 entries 做去重校验
+      // Deduplicate against the current entries
       const isDuplicate = entries.some((entry) => entry.url === sanitized);
       if (isDuplicate) {
         errorMsg = t("endpointTest.urlExists");
@@ -265,7 +265,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
     setAddError(null);
     setLastError(null);
 
-    // 更新本地状态（延迟保存，点击保存按钮时统一处理）
+    // Update local state (saved together when Save is clicked)
     setEntries((prev) => {
       if (prev.some((e) => e.url === sanitized)) return prev;
       return [
@@ -290,10 +290,10 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
 
   const handleRemoveEndpoint = useCallback(
     (entry: EndpointEntry) => {
-      // 清空之前的错误提示
+      // Clear the previous error
       setLastError(null);
 
-      // 更新本地状态（延迟保存，点击保存按钮时统一处理）
+      // Update local state (saved together when Save is clicked)
       setEntries((prev) => {
         const next = prev.filter((item) => item.id !== entry.id);
         if (entry.url === normalizedSelected) {
@@ -316,7 +316,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
     setIsTesting(true);
     setLastError(null);
 
-    // 清空所有延迟数据，显示 loading 状态
+    // Clear all latency data and show the loading state
     setEntries((prev) =>
       prev.map((entry) => ({
         ...entry,
@@ -388,42 +388,42 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
     [normalizedSelected, onChange],
   );
 
-  // 保存端点变更
+  // Save endpoint changes
   const handleSave = useCallback(async () => {
-    // 编辑模式：对比初始端点和当前端点，批量保存变更
+    // Edit mode: diff initial and current endpoints and save the changes in bulk
     if (isEditMode && providerId) {
       setIsSaving(true);
       setLastError(null);
 
       try {
-        // 获取当前的自定义端点
+        // Current custom endpoints
         const currentCustomUrls = new Set(
           entries
             .filter((e) => e.isCustom)
             .map((e) => normalizeEndpointUrl(e.url)),
         );
 
-        // 找出新增的端点
+        // Added endpoints
         const toAdd = Array.from(currentCustomUrls).filter(
           (url) => !initialCustomUrls.has(url),
         );
 
-        // 找出删除的端点
+        // Removed endpoints
         const toRemove = Array.from(initialCustomUrls).filter(
           (url) => !currentCustomUrls.has(url),
         );
 
-        // 批量添加
+        // Add in bulk
         for (const url of toAdd) {
           await vscodeApi.addCustomEndpoint(appId, providerId, url);
         }
 
-        // 批量删除
+        // Delete in bulk
         for (const url of toRemove) {
           await vscodeApi.removeCustomEndpoint(appId, providerId, url);
         }
 
-        // 更新初始端点列表
+        // Update the initial endpoint list
         setInitialCustomUrls(currentCustomUrls);
       } catch (error) {
         const message =
@@ -436,7 +436,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
       }
     }
 
-    // 关闭弹窗
+    // Close the dialog
     onClose();
   }, [isEditMode, providerId, entries, initialCustomUrls, appId, onClose, t]);
 
@@ -484,7 +484,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
       footer={footer}
     >
       <div className="glass rounded-xl p-6 border border-white/10 flex flex-col gap-6">
-        {/* 测速控制栏 */}
+        {/* Speed-test controls */}
         <div className="flex items-center justify-between">
           <div className="text-sm text-muted-foreground">
             {entries.length} {t("endpointTest.endpoints")}
@@ -523,7 +523,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
           </div>
         </div>
 
-        {/* 添加输入 */}
+        {/* Add input */}
         <div className="space-y-1.5">
           <div className="flex gap-2">
             <Input
@@ -556,7 +556,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
           )}
         </div>
 
-        {/* 端点列表 */}
+        {/* Endpoint list */}
         {hasEndpoints ? (
           <div className="space-y-2">
             {sortedEntries.map((entry) => {
@@ -574,7 +574,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
                   }`}
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-3">
-                    {/* 选择指示器 */}
+                    {/* Selection indicator */}
                     <div
                       className={`h-1.5 w-1.5 flex-shrink-0 rounded-full transition ${
                         isSelected
@@ -583,7 +583,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
                       }`}
                     />
 
-                    {/* 内容 */}
+                    {/* Content */}
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm text-foreground">
                         {entry.url}
@@ -591,7 +591,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
                     </div>
                   </div>
 
-                  {/* 右侧信息 */}
+                  {/* Right-side info */}
                   <div className="flex items-center gap-2">
                     {latency !== null ? (
                       <div className="text-right">
@@ -640,7 +640,7 @@ const EndpointSpeedTest: React.FC<EndpointSpeedTestProps> = ({
           </div>
         )}
 
-        {/* 错误提示 */}
+        {/* Error message */}
         {lastError && (
           <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
             <AlertCircle className="h-3 w-3" />

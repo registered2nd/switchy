@@ -169,7 +169,7 @@ describe("useSettings hook", () => {
         ...serverSettings,
         claudeConfigDir: "  /custom/claude  ",
         codexConfigDir: "   ",
-        language: "en", // 状态从 false 变为 true
+        language: "en", // state changes from false to true
       },
       initialLanguage: "en",
     });
@@ -196,12 +196,12 @@ describe("useSettings hook", () => {
     expect(metadataMock.setRequiresRestart).toHaveBeenCalledWith(true);
     expect(window.localStorage.getItem("language")).toBe("en");
     expect(toastErrorMock).not.toHaveBeenCalled();
-    // 目录有变化，应触发一次同步当前供应商到 live
+    // Directory changed: should sync the current provider to live once
     expect(syncCurrentProvidersLiveMock).toHaveBeenCalledTimes(1);
   });
 
   it("saves settings without restart when directory unchanged", async () => {
-    // 确保服务器和本地状态一致，不触发 API 调用
+    // Keep server and local state identical so no API call fires
     serverSettings = {
       ...serverSettings,
       launchOnStartup: false,
@@ -213,8 +213,8 @@ describe("useSettings hook", () => {
 
     settingsFormMock = createSettingsFormMock({
       settings: {
-        ...serverSettings, // 状态未变
-        launchOnStartup: false, // 状态未变
+        ...serverSettings, // unchanged
+        launchOnStartup: false, // unchanged
         language: "zh",
       },
       initialLanguage: "zh",
@@ -234,9 +234,9 @@ describe("useSettings hook", () => {
 
     expect(saveResult).toEqual({ requiresRestart: false });
     expect(setAppConfigDirOverrideMock).toHaveBeenCalledWith(null);
-    // 状态未改变，不应调用 API
+    // State unchanged: the API should not be called
     expect(metadataMock.setRequiresRestart).toHaveBeenCalledWith(false);
-    // 目录未变化，不应触发同步
+    // Directory unchanged: no sync should fire
     expect(syncCurrentProvidersLiveMock).not.toHaveBeenCalled();
   });
 

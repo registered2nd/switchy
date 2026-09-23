@@ -7,8 +7,8 @@ interface UseGeminiConfigStateProps {
 }
 
 /**
- * 管理 Gemini 配置状态
- * Gemini 配置包含两部分：env (环境变量) 和 config (扩展配置 JSON)
+ * Manages Gemini config state
+ * Gemini config has two parts: env (environment variables) and config (extension settings JSON)
  */
 export function useGeminiConfigState({
   initialData,
@@ -21,8 +21,8 @@ export function useGeminiConfigState({
   const [envError, setEnvError] = useState("");
   const [configError, setConfigError] = useState("");
 
-  // 将 JSON env 对象转换为 .env 格式字符串
-  // 保留所有环境变量，已知 key 优先显示
+  // Convert a JSON env object to a .env string
+  // Keep every variable; known keys come first
   const envObjToString = useCallback(
     (envObj: Record<string, unknown>): string => {
       const priorityKeys = [
@@ -33,7 +33,7 @@ export function useGeminiConfigState({
       const lines: string[] = [];
       const addedKeys = new Set<string>();
 
-      // 先添加已知 key（按顺序）
+      // Known keys first, in order
       for (const key of priorityKeys) {
         if (typeof envObj[key] === "string" && envObj[key]) {
           lines.push(`${key}=${envObj[key]}`);
@@ -41,7 +41,7 @@ export function useGeminiConfigState({
         }
       }
 
-      // 再添加其他自定义 key（保留用户添加的环境变量）
+      // Then any other keys (keeps variables the user added)
       for (const [key, value] of Object.entries(envObj)) {
         if (!addedKeys.has(key) && typeof value === "string") {
           lines.push(`${key}=${value}`);
@@ -53,7 +53,7 @@ export function useGeminiConfigState({
     [],
   );
 
-  // 将 .env 格式字符串转换为 JSON env 对象
+  // Convert a .env string to a JSON env object
   const envStringToObj = useCallback(
     (envString: string): Record<string, string> => {
       const env: Record<string, string> = {};
@@ -73,21 +73,21 @@ export function useGeminiConfigState({
     [],
   );
 
-  // 初始化 Gemini 配置（编辑模式）
+  // Initialize Gemini config (edit mode)
   useEffect(() => {
     if (!initialData) return;
 
     const config = initialData.settingsConfig;
     if (typeof config === "object" && config !== null) {
-      // 设置 env
+      // Set env
       const env = (config as any).env || {};
       setGeminiEnvState(envObjToString(env));
 
-      // 设置 config
+      // Set config
       const configObj = (config as any).config || {};
       setGeminiConfigState(JSON.stringify(configObj, null, 2));
 
-      // 提取 API Key、Base URL 和 Model
+      // Extract the API key, Base URL and model
       if (typeof env.GEMINI_API_KEY === "string") {
         setGeminiApiKey(env.GEMINI_API_KEY);
       }
@@ -100,7 +100,7 @@ export function useGeminiConfigState({
     }
   }, [initialData, envObjToString]);
 
-  // 从 geminiEnv 中提取并同步 API Key、Base URL 和 Model
+  // Extract the API key, Base URL and model from geminiEnv and sync them
   useEffect(() => {
     const envObj = envStringToObj(geminiEnv);
     const extractedKey = envObj.GEMINI_API_KEY || "";
@@ -118,9 +118,9 @@ export function useGeminiConfigState({
     }
   }, [geminiEnv, envStringToObj, geminiApiKey, geminiBaseUrl, geminiModel]);
 
-  // 验证 Gemini Config JSON
+  // Validate Gemini config JSON
   const validateGeminiConfig = useCallback((value: string): string => {
-    if (!value.trim()) return ""; // 空值允许
+    if (!value.trim()) return ""; // empty is allowed
     try {
       const parsed = JSON.parse(value);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -132,14 +132,14 @@ export function useGeminiConfigState({
     }
   }, []);
 
-  // 设置 env
+  // Set env
   const setGeminiEnv = useCallback((value: string) => {
     setGeminiEnvState(value);
-    // .env 格式较宽松，不做严格校验
+    // .env is loose; no strict validation
     setEnvError("");
   }, []);
 
-  // 设置 config (支持函数更新)
+  // Set config (accepts an updater function)
   const setGeminiConfig = useCallback(
     (value: string | ((prev: string) => string)) => {
       const newValue =
@@ -150,7 +150,7 @@ export function useGeminiConfigState({
     [geminiConfig, validateGeminiConfig],
   );
 
-  // 处理 Gemini API Key 输入并写回 env
+  // Handle Gemini API key input and write it back to env
   const handleGeminiApiKeyChange = useCallback(
     (key: string) => {
       const trimmed = key.trim();
@@ -164,7 +164,7 @@ export function useGeminiConfigState({
     [geminiEnv, envStringToObj, envObjToString, setGeminiEnv],
   );
 
-  // 处理 Gemini Base URL 变化
+  // Handle Gemini Base URL changes
   const handleGeminiBaseUrlChange = useCallback(
     (url: string) => {
       const sanitized = url.trim().replace(/\/+$/, "");
@@ -178,7 +178,7 @@ export function useGeminiConfigState({
     [geminiEnv, envStringToObj, envObjToString, setGeminiEnv],
   );
 
-  // 处理 Gemini Model 变化
+  // Handle Gemini model changes
   const handleGeminiModelChange = useCallback(
     (model: string) => {
       const trimmed = model.trim();
@@ -192,7 +192,7 @@ export function useGeminiConfigState({
     [geminiEnv, envStringToObj, envObjToString, setGeminiEnv],
   );
 
-  // 处理 env 变化
+  // Handle env changes
   const handleGeminiEnvChange = useCallback(
     (value: string) => {
       setGeminiEnv(value);
@@ -200,7 +200,7 @@ export function useGeminiConfigState({
     [setGeminiEnv],
   );
 
-  // 处理 config 变化
+  // Handle config changes
   const handleGeminiConfigChange = useCallback(
     (value: string) => {
       setGeminiConfig(value);
@@ -208,7 +208,7 @@ export function useGeminiConfigState({
     [setGeminiConfig],
   );
 
-  // 重置配置（用于预设切换）
+  // Reset config (on preset switch)
   const resetGeminiConfig = useCallback(
     (env: Record<string, unknown>, config: Record<string, unknown>) => {
       const envString = envObjToString(env);
@@ -217,7 +217,7 @@ export function useGeminiConfigState({
       setGeminiEnv(envString);
       setGeminiConfig(configString);
 
-      // 提取 API Key、Base URL 和 Model
+      // Extract the API key, Base URL and model
       if (typeof env.GEMINI_API_KEY === "string") {
         setGeminiApiKey(env.GEMINI_API_KEY);
       } else {

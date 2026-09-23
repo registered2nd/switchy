@@ -41,7 +41,7 @@ interface ProviderAdvancedConfigProps {
   onPricingConfigChange: (config: ProviderPricingConfig) => void;
 }
 
-/** 从 ProviderProxyConfig 构建完整 URL */
+/** Build the full URL from ProviderProxyConfig */
 function buildProxyUrl(config: ProviderProxyConfig): string {
   if (!config.proxyHost) return "";
 
@@ -52,7 +52,7 @@ function buildProxyUrl(config: ProviderProxyConfig): string {
   return `${protocol}://${host}:${port}`;
 }
 
-/** 从完整 URL 解析为 ProviderProxyConfig */
+/** Parse a full URL into ProviderProxyConfig */
 function parseProxyUrl(url: string): Partial<ProviderProxyConfig> {
   if (!url.trim()) {
     return { proxyHost: undefined, proxyPort: undefined, proxyType: undefined };
@@ -73,7 +73,7 @@ function parseProxyUrl(url: string): Partial<ProviderProxyConfig> {
       proxyPort: port,
     };
   } catch {
-    // 尝试简单解析（不是标准 URL 格式）
+    // Try a simple parse (not a standard URL)
     const match = url.match(/^(?:(\w+):\/\/)?([^:]+)(?::(\d+))?$/);
     if (match) {
       return {
@@ -104,27 +104,27 @@ export function ProviderAdvancedConfig({
   );
   const [showPassword, setShowPassword] = useState(false);
 
-  // 代理 URL 输入状态（仅在初始化时从 proxyConfig 构建）
+  // Proxy URL input state (built from proxyConfig only on init)
   const [proxyUrl, setProxyUrl] = useState(() => buildProxyUrl(proxyConfig));
 
-  // 标记是否为用户主动输入（用于区分外部更新和用户输入）
+  // Whether the user is typing (to tell external updates from user input)
   const [isUserTyping, setIsUserTyping] = useState(false);
 
   useEffect(() => {
     setIsTestConfigOpen(testConfig.enabled);
   }, [testConfig.enabled]);
 
-  // 同步外部 proxyConfig.enabled 变化到展开状态
+  // Sync external proxyConfig.enabled changes into the expanded state
   useEffect(() => {
     setIsProxyConfigOpen(proxyConfig.enabled);
   }, [proxyConfig.enabled]);
 
-  // 同步外部 pricingConfig.enabled 变化到展开状态
+  // Sync external pricingConfig.enabled changes into the expanded state
   useEffect(() => {
     setIsPricingConfigOpen(pricingConfig.enabled);
   }, [pricingConfig.enabled]);
 
-  // 仅在外部 proxyConfig 变化且非用户输入时同步（如：重置表单、加载数据）
+  // Sync only when proxyConfig changes externally, not from typing (e.g. form reset, data load)
   useEffect(() => {
     if (!isUserTyping) {
       const newUrl = buildProxyUrl(proxyConfig);
@@ -135,7 +135,7 @@ export function ProviderAdvancedConfig({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proxyConfig.proxyType, proxyConfig.proxyHost, proxyConfig.proxyPort]);
 
-  // 处理代理 URL 变化（用户输入时不触发 URL 重建）
+  // Handle proxy URL changes (typing does not rebuild the URL)
   const handleProxyUrlChange = (value: string) => {
     setIsUserTyping(true);
     setProxyUrl(value);
@@ -146,12 +146,12 @@ export function ProviderAdvancedConfig({
     });
   };
 
-  // 输入框失焦时结束用户输入状态
+  // End the typing state on blur
   const handleProxyUrlBlur = () => {
     setIsUserTyping(false);
   };
 
-  // 清除代理配置
+  // Clear the proxy config
   const handleClearProxy = () => {
     setProxyUrl("");
     onProxyConfigChange({
@@ -176,7 +176,7 @@ export function ProviderAdvancedConfig({
             <FlaskConical className="h-4 w-4 text-muted-foreground" />
             <span className="font-medium">
               {t("providerAdvanced.testConfig", {
-                defaultValue: "模型测试配置",
+                defaultValue: "Model Test Config",
               })}
             </span>
           </div>
@@ -190,7 +190,7 @@ export function ProviderAdvancedConfig({
                 className="text-sm text-muted-foreground"
               >
                 {t("providerAdvanced.useCustomConfig", {
-                  defaultValue: "使用单独配置",
+                  defaultValue: "Use separate config",
                 })}
               </Label>
               <Switch
@@ -221,14 +221,14 @@ export function ProviderAdvancedConfig({
             <p className="text-sm text-muted-foreground">
               {t("providerAdvanced.testConfigDesc", {
                 defaultValue:
-                  "为此供应商配置单独的模型测试参数，不启用时使用全局配置。",
+                  "Configure separate model testing parameters for this provider. Uses global settings when disabled.",
               })}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="test-model">
                   {t("providerAdvanced.testModel", {
-                    defaultValue: "测试模型",
+                    defaultValue: "Test Model",
                   })}
                 </Label>
                 <Input
@@ -241,7 +241,7 @@ export function ProviderAdvancedConfig({
                     })
                   }
                   placeholder={t("providerAdvanced.testModelPlaceholder", {
-                    defaultValue: "留空使用全局配置",
+                    defaultValue: "Leave empty to use global config",
                   })}
                   disabled={!testConfig.enabled}
                 />
@@ -249,7 +249,7 @@ export function ProviderAdvancedConfig({
               <div className="space-y-2">
                 <Label htmlFor="test-timeout">
                   {t("providerAdvanced.timeoutSecs", {
-                    defaultValue: "超时时间（秒）",
+                    defaultValue: "Timeout (seconds)",
                   })}
                 </Label>
                 <Input
@@ -273,7 +273,7 @@ export function ProviderAdvancedConfig({
               <div className="space-y-2">
                 <Label htmlFor="test-prompt">
                   {t("providerAdvanced.testPrompt", {
-                    defaultValue: "测试提示词",
+                    defaultValue: "Test Prompt",
                   })}
                 </Label>
                 <Input
@@ -292,7 +292,7 @@ export function ProviderAdvancedConfig({
               <div className="space-y-2">
                 <Label htmlFor="degraded-threshold">
                   {t("providerAdvanced.degradedThreshold", {
-                    defaultValue: "降级阈值（毫秒）",
+                    defaultValue: "Degraded Threshold (ms)",
                   })}
                 </Label>
                 <Input
@@ -316,7 +316,7 @@ export function ProviderAdvancedConfig({
               <div className="space-y-2">
                 <Label htmlFor="max-retries">
                   {t("providerAdvanced.maxRetries", {
-                    defaultValue: "最大重试次数",
+                    defaultValue: "Max Retries",
                   })}
                 </Label>
                 <Input
@@ -342,7 +342,7 @@ export function ProviderAdvancedConfig({
         </div>
       </div>
 
-      {/* 代理配置 */}
+      {/* Proxy config */}
       <div className="rounded-lg border border-border/50 bg-muted/20">
         <button
           type="button"
@@ -353,7 +353,7 @@ export function ProviderAdvancedConfig({
             <Globe className="h-4 w-4 text-muted-foreground" />
             <span className="font-medium">
               {t("providerAdvanced.proxyConfig", {
-                defaultValue: "代理配置",
+                defaultValue: "Proxy Config",
               })}
             </span>
           </div>
@@ -367,7 +367,7 @@ export function ProviderAdvancedConfig({
                 className="text-sm text-muted-foreground"
               >
                 {t("providerAdvanced.useCustomProxy", {
-                  defaultValue: "使用单独代理",
+                  defaultValue: "Use separate proxy",
                 })}
               </Label>
               <Switch
@@ -398,11 +398,11 @@ export function ProviderAdvancedConfig({
             <p className="text-sm text-muted-foreground">
               {t("providerAdvanced.proxyConfigDesc", {
                 defaultValue:
-                  "为此供应商配置单独的网络代理，不启用时使用系统代理或全局设置。",
+                  "Configure separate network proxy for this provider. Uses system proxy or global settings when disabled.",
               })}
             </p>
 
-            {/* 代理地址输入框（仿照全局代理样式） */}
+            {/* Proxy address input (styled like the global proxy) */}
             <div className="flex gap-2">
               <Input
                 placeholder="http://127.0.0.1:7890 / socks5://127.0.0.1:1080"
@@ -418,17 +418,17 @@ export function ProviderAdvancedConfig({
                 size="icon"
                 disabled={!proxyConfig.enabled || !proxyUrl}
                 onClick={handleClearProxy}
-                title={t("common.clear", { defaultValue: "清除" })}
+                title={t("common.clear", { defaultValue: "Clear" })}
               >
                 <X className="h-4 w-4" />
               </Button>
             </div>
 
-            {/* 认证信息：用户名 + 密码（可选） */}
+            {/* Credentials: username + password (optional) */}
             <div className="flex gap-2">
               <Input
                 placeholder={t("providerAdvanced.proxyUsername", {
-                  defaultValue: "用户名（可选）",
+                  defaultValue: "Username (optional)",
                 })}
                 value={proxyConfig.proxyUsername || ""}
                 onChange={(e) =>
@@ -444,7 +444,7 @@ export function ProviderAdvancedConfig({
                 <Input
                   type={showPassword ? "text" : "password"}
                   placeholder={t("providerAdvanced.proxyPassword", {
-                    defaultValue: "密码（可选）",
+                    defaultValue: "Password (optional)",
                   })}
                   value={proxyConfig.proxyPassword || ""}
                   onChange={(e) =>
@@ -477,7 +477,7 @@ export function ProviderAdvancedConfig({
         </div>
       </div>
 
-      {/* 计费配置 */}
+      {/* Pricing config */}
       <div className="rounded-lg border border-border/50 bg-muted/20">
         <button
           type="button"
@@ -488,7 +488,7 @@ export function ProviderAdvancedConfig({
             <Coins className="h-4 w-4 text-muted-foreground" />
             <span className="font-medium">
               {t("providerAdvanced.pricingConfig", {
-                defaultValue: "计费配置",
+                defaultValue: "Pricing Config",
               })}
             </span>
           </div>
@@ -502,7 +502,7 @@ export function ProviderAdvancedConfig({
                 className="text-sm text-muted-foreground"
               >
                 {t("providerAdvanced.useCustomPricing", {
-                  defaultValue: "使用单独配置",
+                  defaultValue: "Use separate config",
                 })}
               </Label>
               <Switch
@@ -533,14 +533,14 @@ export function ProviderAdvancedConfig({
             <p className="text-sm text-muted-foreground">
               {t("providerAdvanced.pricingConfigDesc", {
                 defaultValue:
-                  "为此供应商配置单独的计费参数，不启用时使用全局默认配置。",
+                  "Configure separate pricing parameters for this provider. Uses global defaults when disabled.",
               })}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="cost-multiplier">
                   {t("providerAdvanced.costMultiplier", {
-                    defaultValue: "成本倍率",
+                    defaultValue: "Cost Multiplier",
                   })}
                 </Label>
                 <Input
@@ -556,20 +556,21 @@ export function ProviderAdvancedConfig({
                     })
                   }
                   placeholder={t("providerAdvanced.costMultiplierPlaceholder", {
-                    defaultValue: "留空使用全局默认（1）",
+                    defaultValue: "Leave empty to use global default (1)",
                   })}
                   disabled={!pricingConfig.enabled}
                 />
                 <p className="text-xs text-muted-foreground">
                   {t("providerAdvanced.costMultiplierHint", {
-                    defaultValue: "实际成本 = 基础成本 × 倍率，支持小数如 1.5",
+                    defaultValue:
+                      "Actual cost = Base cost × Multiplier, supports decimals like 1.5",
                   })}
                 </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="pricing-model-source">
                   {t("providerAdvanced.pricingModelSourceLabel", {
-                    defaultValue: "计费模式",
+                    defaultValue: "Pricing Mode",
                   })}
                 </Label>
                 <Select
@@ -588,24 +589,25 @@ export function ProviderAdvancedConfig({
                   <SelectContent>
                     <SelectItem value="inherit">
                       {t("providerAdvanced.pricingModelSourceInherit", {
-                        defaultValue: "继承全局默认",
+                        defaultValue: "Inherit global default",
                       })}
                     </SelectItem>
                     <SelectItem value="request">
                       {t("providerAdvanced.pricingModelSourceRequest", {
-                        defaultValue: "请求模型",
+                        defaultValue: "Request model",
                       })}
                     </SelectItem>
                     <SelectItem value="response">
                       {t("providerAdvanced.pricingModelSourceResponse", {
-                        defaultValue: "返回模型",
+                        defaultValue: "Response model",
                       })}
                     </SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   {t("providerAdvanced.pricingModelSourceHint", {
-                    defaultValue: "选择按请求模型还是返回模型进行定价匹配",
+                    defaultValue:
+                      "Choose whether to match pricing by request model or response model",
                   })}
                 </p>
               </div>

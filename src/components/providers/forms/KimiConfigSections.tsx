@@ -80,7 +80,7 @@ export const KimiCredentialsSection: React.FC<KimiCredentialsSectionProps> = ({
         <p className="text-xs text-muted-foreground">
           {t("kimiConfig.credentialsJsonHint", {
             defaultValue:
-              "托管登录（kimi login）写入的 OAuth 凭据；留 null 表示尚未登录或走 API Key",
+              "OAuth login written by `kimi login`; null means not logged in or API-key mode",
           })}
         </p>
       )}
@@ -149,7 +149,7 @@ export const KimiConfigSection: React.FC<KimiConfigSectionProps> = ({
             className="w-4 h-4 text-blue-500 bg-white dark:bg-gray-800 border-border-default  rounded focus:ring-blue-500 dark:focus:ring-blue-400 focus:ring-2"
           />
           {t("kimiConfig.writeCommonConfig", {
-            defaultValue: "写入通用配置",
+            defaultValue: "Write Common Config",
           })}
         </label>
       </div>
@@ -161,7 +161,7 @@ export const KimiConfigSection: React.FC<KimiConfigSectionProps> = ({
           className="text-xs text-blue-500 dark:text-blue-400 hover:underline"
         >
           {t("kimiConfig.editCommonConfig", {
-            defaultValue: "编辑通用配置",
+            defaultValue: "Edit Common Config",
           })}
         </button>
       </div>
@@ -189,7 +189,8 @@ export const KimiConfigSection: React.FC<KimiConfigSectionProps> = ({
       {!configError && (
         <p className="text-xs text-muted-foreground">
           {t("kimiConfig.configTomlHint", {
-            defaultValue: "Kimi config.toml 配置内容",
+            defaultValue:
+              "Kimi Code config.toml content: default_model, [providers.*], [models.*]",
           })}
         </p>
       )}

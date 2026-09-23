@@ -16,9 +16,9 @@ interface UseKimiConfigStateProps {
 }
 
 /**
- * 管理 Kimi 配置状态
- * Kimi 配置包含两部分：credentials/kimi-code.json (JSON) 和 config.toml (TOML 字符串)。
- * API Key / 请求地址 / 模型名都存放在 config.toml 里，与 Codex 把 key 放在 auth.json 不同。
+ * Manages Kimi config state
+ * Kimi config has two parts: credentials/kimi-code.json (JSON) and config.toml (TOML string).
+ * API key, request URL and model name all live in config.toml, unlike Codex, which keeps the key in auth.json.
  */
 export function useKimiConfigState({ initialData }: UseKimiConfigStateProps) {
   const [kimiCredentials, setKimiCredentialsState] = useState("");
@@ -38,7 +38,7 @@ export function useKimiConfigState({ initialData }: UseKimiConfigStateProps) {
     setKimiApiKey(extractKimiApiKey(configStr) ?? "");
   }, []);
 
-  // 初始化 Kimi 配置（编辑模式）
+  // Initialize Kimi config (edit mode)
   useEffect(() => {
     if (!initialData) return;
 
@@ -60,28 +60,28 @@ export function useKimiConfigState({ initialData }: UseKimiConfigStateProps) {
     }
   }, [initialData, syncFieldsFromConfig]);
 
-  // 与 TOML 配置保持基础 URL 同步
+  // Keep the base URL in sync with the TOML config
   useEffect(() => {
     if (isUpdatingKimiBaseUrlRef.current) return;
     const extracted = extractKimiBaseUrl(kimiConfig) || "";
     setKimiBaseUrl((prev) => (prev === extracted ? prev : extracted));
   }, [kimiConfig]);
 
-  // 与 TOML 配置保持模型名称同步
+  // Keep the model name in sync with the TOML config
   useEffect(() => {
     if (isUpdatingKimiModelNameRef.current) return;
     const extracted = extractKimiModelName(kimiConfig) || "";
     setKimiModelName((prev) => (prev === extracted ? prev : extracted));
   }, [kimiConfig]);
 
-  // 与 TOML 配置保持 API Key 同步
+  // Keep the API key in sync with the TOML config
   useEffect(() => {
     if (isUpdatingKimiApiKeyRef.current) return;
     const extracted = extractKimiApiKey(kimiConfig) || "";
     setKimiApiKey((prev) => (prev === extracted ? prev : extracted));
   }, [kimiConfig]);
 
-  // 验证 credentials JSON（允许 null / 空）
+  // Validate credentials JSON (null or empty allowed)
   const validateKimiCredentials = useCallback((value: string): string => {
     const trimmed = value.trim();
     if (!trimmed || trimmed === "null") return "";
@@ -104,7 +104,7 @@ export function useKimiConfigState({ initialData }: UseKimiConfigStateProps) {
     [validateKimiCredentials],
   );
 
-  /** credentials 文本 → 对象（空 / "null" / 非法 JSON 都视为 null） */
+  /** credentials text → object (empty, "null" or invalid JSON all become null) */
   const parseKimiCredentials = useCallback(
     (value: string): Record<string, unknown> | null => {
       const trimmed = value.trim();
@@ -174,7 +174,7 @@ export function useKimiConfigState({ initialData }: UseKimiConfigStateProps) {
     [setKimiConfig],
   );
 
-  // 处理 config 变化（同步 Base URL / Model Name / API Key）
+  // Handle config changes (sync Base URL, model name and API key)
   const handleKimiConfigChange = useCallback(
     (value: string) => {
       const normalized = normalizeTomlText(value);
@@ -196,7 +196,7 @@ export function useKimiConfigState({ initialData }: UseKimiConfigStateProps) {
     [setKimiConfig, kimiBaseUrl, kimiModelName, kimiApiKey],
   );
 
-  // 重置配置（用于预设切换）
+  // Reset config (on preset switch)
   const resetKimiConfig = useCallback(
     (credentials: Record<string, unknown> | null, config: string) => {
       setKimiCredentials(

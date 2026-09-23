@@ -5,22 +5,22 @@ import {
 } from "@/types/omo";
 
 describe("parseOmoOtherFieldsObject", () => {
-  it("解析对象 JSON", () => {
+  it("parses object JSON", () => {
     expect(parseOmoOtherFieldsObject('{ "foo": 1 }')).toEqual({ foo: 1 });
   });
 
-  it("数组/字符串返回 undefined", () => {
+  it("returns undefined for arrays and strings", () => {
     expect(parseOmoOtherFieldsObject('["a"]')).toBeUndefined();
     expect(parseOmoOtherFieldsObject('"hello"')).toBeUndefined();
   });
 
-  it("非法 JSON 抛出异常", () => {
+  it("throws on invalid JSON", () => {
     expect(() => parseOmoOtherFieldsObject("{")).toThrow();
   });
 });
 
 describe("buildOmoProfilePreview", () => {
-  it("只合并 otherFields 的对象值，忽略数组", () => {
+  it("merges only object values from otherFields and ignores arrays", () => {
     const fromArray = buildOmoProfilePreview({}, {}, '["a", "b"]');
     expect(fromArray).toEqual({});
 

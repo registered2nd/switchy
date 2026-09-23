@@ -11,7 +11,7 @@ import type { UniversalProvider, UniversalProvidersMap } from "@/types";
 export function UniversalProviderPanel() {
   const { t } = useTranslation();
 
-  // 状态
+  // State
   const [providers, setProviders] = useState<UniversalProvidersMap>({});
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -28,7 +28,7 @@ export function UniversalProviderPanel() {
     name: string;
   }>({ open: false, id: "", name: "" });
 
-  // 加载数据
+  // Load data
   const loadProviders = useCallback(async () => {
     try {
       setLoading(true);
@@ -38,7 +38,7 @@ export function UniversalProviderPanel() {
       console.error("Failed to load universal providers:", error);
       toast.error(
         t("universalProvider.loadError", {
-          defaultValue: "加载统一供应商失败",
+          defaultValue: "Failed to load universal providers",
         }),
       );
     } finally {
@@ -50,13 +50,13 @@ export function UniversalProviderPanel() {
     loadProviders();
   }, [loadProviders]);
 
-  // 添加/编辑供应商
+  // Add/edit a provider
   const handleSave = useCallback(
     async (provider: UniversalProvider) => {
       try {
         await universalProvidersApi.upsert(provider);
 
-        // 新建模式下自动同步到各应用
+        // In create mode, sync to each app automatically
         if (!editingProvider) {
           await universalProvidersApi.sync(provider.id);
         }
@@ -64,10 +64,10 @@ export function UniversalProviderPanel() {
         toast.success(
           editingProvider
             ? t("universalProvider.updated", {
-                defaultValue: "统一供应商已更新",
+                defaultValue: "Universal provider updated",
               })
             : t("universalProvider.addedAndSynced", {
-                defaultValue: "统一供应商已添加并同步",
+                defaultValue: "Universal provider added and synced",
               }),
         );
         loadProviders();
@@ -76,7 +76,7 @@ export function UniversalProviderPanel() {
         console.error("Failed to save universal provider:", error);
         toast.error(
           t("universalProvider.saveError", {
-            defaultValue: "保存统一供应商失败",
+            defaultValue: "Failed to save universal provider",
           }),
         );
       }
@@ -84,7 +84,7 @@ export function UniversalProviderPanel() {
     [editingProvider, loadProviders, t],
   );
 
-  // 保存并同步供应商
+  // Save and sync a provider
   const handleSaveAndSync = useCallback(
     async (provider: UniversalProvider) => {
       try {
@@ -92,7 +92,7 @@ export function UniversalProviderPanel() {
         await universalProvidersApi.sync(provider.id);
         toast.success(
           t("universalProvider.savedAndSynced", {
-            defaultValue: "已保存并同步到所有应用",
+            defaultValue: "Saved and synced to all apps",
           }),
         );
         loadProviders();
@@ -101,7 +101,7 @@ export function UniversalProviderPanel() {
         console.error("Failed to save and sync universal provider:", error);
         toast.error(
           t("universalProvider.saveAndSyncError", {
-            defaultValue: "保存并同步失败",
+            defaultValue: "Failed to save and sync",
           }),
         );
       }
@@ -109,21 +109,23 @@ export function UniversalProviderPanel() {
     [loadProviders, t],
   );
 
-  // 删除供应商
+  // Delete a provider
   const handleDelete = useCallback(async () => {
     if (!deleteConfirm.id) return;
 
     try {
       await universalProvidersApi.delete(deleteConfirm.id);
       toast.success(
-        t("universalProvider.deleted", { defaultValue: "统一供应商已删除" }),
+        t("universalProvider.deleted", {
+          defaultValue: "Universal provider deleted",
+        }),
       );
       loadProviders();
     } catch (error) {
       console.error("Failed to delete universal provider:", error);
       toast.error(
         t("universalProvider.deleteError", {
-          defaultValue: "删除统一供应商失败",
+          defaultValue: "Failed to delete universal provider",
         }),
       );
     } finally {
@@ -131,20 +133,20 @@ export function UniversalProviderPanel() {
     }
   }, [deleteConfirm.id, loadProviders, t]);
 
-  // 同步供应商
+  // Sync a provider
   const handleSync = useCallback(async () => {
     if (!syncConfirm.id) return;
 
     try {
       await universalProvidersApi.sync(syncConfirm.id);
       toast.success(
-        t("universalProvider.synced", { defaultValue: "已同步到所有应用" }),
+        t("universalProvider.synced", { defaultValue: "Synced to all apps" }),
       );
     } catch (error) {
       console.error("Failed to sync universal provider:", error);
       toast.error(
         t("universalProvider.syncError", {
-          defaultValue: "同步统一供应商失败",
+          defaultValue: "Sync failed",
         }),
       );
     } finally {
@@ -152,7 +154,7 @@ export function UniversalProviderPanel() {
     }
   }, [syncConfirm.id, t]);
 
-  // 打开同步确认
+  // Open the sync confirmation
   const handleSyncClick = useCallback(
     (id: string) => {
       const provider = providers[id];
@@ -165,13 +167,13 @@ export function UniversalProviderPanel() {
     [providers],
   );
 
-  // 打开编辑
+  // Open the editor
   const handleEdit = useCallback((provider: UniversalProvider) => {
     setEditingProvider(provider);
     setIsFormOpen(true);
   }, []);
 
-  // 打开删除确认
+  // Open the delete confirmation
   const handleDeleteClick = useCallback(
     (id: string) => {
       const provider = providers[id];
@@ -188,26 +190,26 @@ export function UniversalProviderPanel() {
 
   return (
     <div className="space-y-4">
-      {/* 头部 */}
+      {/* Header */}
       <div className="flex items-center gap-2">
         <Layers className="h-5 w-5 text-primary" />
         <h2 className="text-lg font-semibold">
-          {t("universalProvider.title", { defaultValue: "统一供应商" })}
+          {t("universalProvider.title", { defaultValue: "Universal Provider" })}
         </h2>
         <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
           {providerList.length}
         </span>
       </div>
 
-      {/* 描述 */}
+      {/* Description */}
       <p className="text-sm text-muted-foreground">
         {t("universalProvider.description", {
           defaultValue:
-            "统一供应商可以同时管理 Claude、Codex 和 Gemini 的配置。修改后会自动同步到所有启用的应用。",
+            "Universal providers manage Claude, Codex, and Gemini configurations simultaneously. Changes are automatically synced to all enabled apps.",
         })}
       </p>
 
-      {/* 供应商列表 */}
+      {/* Provider list */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -217,12 +219,13 @@ export function UniversalProviderPanel() {
           <Layers className="mb-3 h-10 w-10 text-muted-foreground/50" />
           <p className="text-sm text-muted-foreground">
             {t("universalProvider.empty", {
-              defaultValue: "还没有统一供应商",
+              defaultValue: "No universal providers yet",
             })}
           </p>
           <p className="mt-1 text-xs text-muted-foreground/70">
             {t("universalProvider.emptyHint", {
-              defaultValue: "点击下方「添加统一供应商」按钮创建一个",
+              defaultValue:
+                'Click the "Add Universal Provider" button below to create one',
             })}
           </p>
         </div>
@@ -240,7 +243,7 @@ export function UniversalProviderPanel() {
         </div>
       )}
 
-      {/* 表单模态框 */}
+      {/* Form modal */}
       <UniversalProviderFormModal
         isOpen={isFormOpen}
         onClose={() => {
@@ -252,33 +255,33 @@ export function UniversalProviderPanel() {
         editingProvider={editingProvider}
       />
 
-      {/* 删除确认对话框 */}
+      {/* Delete confirmation */}
       <ConfirmDialog
         isOpen={deleteConfirm.open}
         title={t("universalProvider.deleteConfirmTitle", {
-          defaultValue: "删除统一供应商",
+          defaultValue: "Delete Universal Provider",
         })}
         message={t("universalProvider.deleteConfirmDescription", {
-          defaultValue: `确定要删除 "${deleteConfirm.name}" 吗？这将同时删除它在各应用中生成的供应商配置。`,
+          defaultValue: `Are you sure you want to delete "${deleteConfirm.name}"? This will also delete its generated provider configurations in each app.`,
           name: deleteConfirm.name,
         })}
-        confirmText={t("common.delete", { defaultValue: "删除" })}
+        confirmText={t("common.delete", { defaultValue: "Delete" })}
         onConfirm={handleDelete}
         onCancel={() => setDeleteConfirm({ open: false, id: "", name: "" })}
       />
 
-      {/* 同步确认对话框 */}
+      {/* Sync confirmation */}
       <ConfirmDialog
         isOpen={syncConfirm.open}
         title={t("universalProvider.syncConfirmTitle", {
-          defaultValue: "同步统一供应商",
+          defaultValue: "Sync Universal Provider",
         })}
         message={t("universalProvider.syncConfirmDescription", {
-          defaultValue: `同步 "${syncConfirm.name}" 将会覆盖 Claude、Codex 和 Gemini 中关联的供应商配置。确定要继续吗？`,
+          defaultValue: `Syncing "${syncConfirm.name}" will overwrite the associated provider configurations in Claude, Codex, and Gemini. Do you want to continue?`,
           name: syncConfirm.name,
         })}
         confirmText={t("universalProvider.syncConfirm", {
-          defaultValue: "同步",
+          defaultValue: "Sync",
         })}
         onConfirm={handleSync}
         onCancel={() => setSyncConfirm({ open: false, id: "", name: "" })}

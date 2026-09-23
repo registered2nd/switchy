@@ -9,34 +9,34 @@ import type {
 } from "@/types/proxy";
 
 export const proxyApi = {
-  // ========== 代理服务器控制 API ==========
+  // ========== Proxy server control API ==========
 
-  // 启动代理服务器
+  // Start the proxy server
   async startProxyServer(): Promise<ProxyServerInfo> {
     return invoke("start_proxy_server");
   },
 
-  // 停止代理服务器并恢复配置
+  // Stop the proxy server and restore configs
   async stopProxyWithRestore(): Promise<void> {
     return invoke("stop_proxy_with_restore");
   },
 
-  // 获取代理服务器状态
+  // Get the proxy server status
   async getProxyStatus(): Promise<ProxyStatus> {
     return invoke("get_proxy_status");
   },
 
-  // 检查代理服务器是否正在运行
+  // Whether the proxy server is running
   async isProxyRunning(): Promise<boolean> {
     return invoke("is_proxy_running");
   },
 
-  // 检查是否处于接管模式
+  // Whether takeover mode is on
   async isLiveTakeoverActive(): Promise<boolean> {
     return invoke("is_live_takeover_active");
   },
 
-  // 代理模式下切换供应商
+  // Switch provider in proxy mode
   async switchProxyProvider(
     appType: string,
     providerId: string,
@@ -44,14 +44,14 @@ export const proxyApi = {
     return invoke("switch_proxy_provider", { appType, providerId });
   },
 
-  // ========== 接管状态 API ==========
+  // ========== Takeover status API ==========
 
-  // 获取各应用接管状态
+  // Get each app's takeover status
   async getProxyTakeoverStatus(): Promise<ProxyTakeoverStatus> {
     return invoke("get_proxy_takeover_status");
   },
 
-  // 为指定应用开启/关闭接管
+  // Turn takeover on/off for an app
   async setProxyTakeoverForApp(
     appType: string,
     enabled: boolean,
@@ -59,48 +59,48 @@ export const proxyApi = {
     return invoke("set_proxy_takeover_for_app", { appType, enabled });
   },
 
-  // ========== Legacy 代理配置 API (兼容) ==========
+  // ========== Legacy proxy config API (compatibility) ==========
 
-  // 获取代理配置（旧版 v2 兼容接口）
+  // Get the proxy config (legacy v2 interface)
   async getProxyConfig(): Promise<ProxyConfig> {
     return invoke("get_proxy_config");
   },
 
-  // 更新代理配置（旧版 v2 兼容接口）
+  // Update the proxy config (legacy v2 interface)
   async updateProxyConfig(config: ProxyConfig): Promise<void> {
     return invoke("update_proxy_config", { config });
   },
 
-  // ========== v3+ 全局/应用级配置 API ==========
+  // ========== v3+ global/per-app config API ==========
 
-  // 获取全局代理配置
+  // Get the global proxy config
   async getGlobalProxyConfig(): Promise<GlobalProxyConfig> {
     return invoke("get_global_proxy_config");
   },
 
-  // 更新全局代理配置
+  // Update the global proxy config
   async updateGlobalProxyConfig(config: GlobalProxyConfig): Promise<void> {
     return invoke("update_global_proxy_config", { config });
   },
 
-  // 获取指定应用的代理配置
+  // Get an app's proxy config
   async getProxyConfigForApp(appType: string): Promise<AppProxyConfig> {
     return invoke("get_proxy_config_for_app", { appType });
   },
 
-  // 更新指定应用的代理配置
+  // Update an app's proxy config
   async updateProxyConfigForApp(config: AppProxyConfig): Promise<void> {
     return invoke("update_proxy_config_for_app", { config });
   },
 
-  // ========== 计费默认配置 API ==========
+  // ========== Billing defaults API ==========
 
-  // 获取默认成本倍率
+  // Get the default cost multiplier
   async getDefaultCostMultiplier(appType: string): Promise<string> {
     return invoke("get_default_cost_multiplier", { appType });
   },
 
-  // 设置默认成本倍率
+  // Set the default cost multiplier
   async setDefaultCostMultiplier(
     appType: string,
     value: string,
@@ -108,12 +108,12 @@ export const proxyApi = {
     return invoke("set_default_cost_multiplier", { appType, value });
   },
 
-  // 获取计费模式来源
+  // Get the billing mode source
   async getPricingModelSource(appType: string): Promise<string> {
     return invoke("get_pricing_model_source", { appType });
   },
 
-  // 设置计费模式来源
+  // Set the billing mode source
   async setPricingModelSource(appType: string, value: string): Promise<void> {
     return invoke("set_pricing_model_source", { appType, value });
   },

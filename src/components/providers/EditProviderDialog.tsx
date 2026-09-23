@@ -19,7 +19,7 @@ interface EditProviderDialogProps {
     originalId?: string;
   }) => Promise<void> | void;
   appId: AppId;
-  isProxyTakeover?: boolean; // 代理接管模式下不读取 live（避免显示被接管后的代理配置）
+  isProxyTakeover?: boolean; // in proxy takeover mode, skip reading the live config (it would show the proxy's rewritten config)
 }
 
 export function EditProviderDialog({
@@ -33,13 +33,13 @@ export function EditProviderDialog({
   const { t } = useTranslation();
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
 
-  // 默认使用传入的 provider.settingsConfig，若当前编辑对象是"当前生效供应商"，则尝试读取实时配置替换初始值
+  // Default to the passed provider.settingsConfig; if this is the active provider, try replacing it with the live config
   const [liveSettings, setLiveSettings] = useState<Record<
     string,
     unknown
   > | null>(null);
 
-  // 使用 ref 标记是否已经加载过，防止重复读取覆盖用户编辑
+  // Ref flag for whether the live config was loaded, so a repeat read does not overwrite the user's edits
   const [hasLoadedLive, setHasLoadedLive] = useState(false);
 
   useEffect(() => {
@@ -51,13 +51,13 @@ export function EditProviderDialog({
         return;
       }
 
-      // 关键修复：只在首次打开时加载一次
+      // Load only once, on first open
       if (hasLoadedLive) {
         return;
       }
 
-      // 代理接管模式：Live 配置已被代理改写，读取 live 会导致编辑界面展示代理地址/占位符等内容
-      // 因此直接回退到 SSOT（数据库）配置，避免用户困惑与误保存
+      // Proxy takeover: the proxy has rewritten the live config, so reading it would show the proxy address, placeholders and so on
+      // so fall back to the SSOT (database) config to avoid confusion and accidental saves
       if (isProxyTakeover) {
         if (!cancelled) {
           setLiveSettings(null);
@@ -109,7 +109,7 @@ export function EditProviderDialog({
               setHasLoadedLive(true);
             }
           } catch {
-            // 读取实时配置失败则回退到 SSOT（不打断编辑流程）
+            // If reading the live config fails, fall back to SSOT (without interrupting editing)
             if (!cancelled) {
               setLiveSettings(null);
               setHasLoadedLive(true);
@@ -129,16 +129,16 @@ export function EditProviderDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, provider?.id, appId, hasLoadedLive, isProxyTakeover]); // 只依赖 provider.id，不依赖整个 provider 对象
+  }, [open, provider?.id, appId, hasLoadedLive, isProxyTakeover]); // depend on provider.id only, not the whole provider object
 
   const initialSettingsConfig = useMemo(() => {
     return (liveSettings ?? provider?.settingsConfig ?? {}) as Record<
       string,
       unknown
     >;
-  }, [liveSettings, provider?.settingsConfig]); // 只依赖 settingsConfig，不依赖整个 provider
+  }, [liveSettings, provider?.settingsConfig]); // depend on settingsConfig only, not the whole provider
 
-  // 固定 initialData，防止 provider 对象更新时重置表单
+  // Pin initialData so a provider object update does not reset the form
   const initialData = useMemo(() => {
     if (!provider) return null;
     return {
@@ -152,9 +152,9 @@ export function EditProviderDialog({
       iconColor: provider.iconColor,
     };
   }, [
-    open, // 修复：编辑保存后再次打开显示旧数据，依赖 open 确保每次打开时重新读取最新 provider 数据
-    provider?.id, // 只依赖 ID，provider 对象更新不会触发重新计算
-    provider?.meta, // 需要依赖 meta 以便正确初始化 testConfig 和 proxyConfig
+    open, // depend on open so every open reads the latest provider data (otherwise reopening after a save shows stale data)
+    provider?.id, // depend on the ID only; provider object updates do not recompute
+    provider?.meta, // needs meta to initialize testConfig and proxyConfig correctly
     initialSettingsConfig,
   ]);
 
@@ -162,8 +162,8 @@ export function EditProviderDialog({
     async (values: ProviderFormValues) => {
       if (!provider) return;
 
-      // 注意：values.settingsConfig 已经是最终的配置字符串
-      // ProviderForm 已经为不同的 app 类型（Claude/Codex/Gemini）正确组装了配置
+      // Note: values.settingsConfig is already the final config string
+      // ProviderForm has already assembled the config for each app type (Claude/Codex/Gemini)
       const parsedConfig = JSON.parse(values.settingsConfig) as Record<
         string,
         unknown
@@ -184,7 +184,7 @@ export function EditProviderDialog({
         icon: values.icon?.trim() || undefined,
         iconColor: values.iconColor?.trim() || undefined,
         ...(values.presetCategory ? { category: values.presetCategory } : {}),
-        // 保留或更新 meta 字段
+        // Keep or update the meta field
         ...(values.meta ? { meta: values.meta } : {}),
       };
 

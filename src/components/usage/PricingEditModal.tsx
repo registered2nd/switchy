@@ -37,13 +37,13 @@ export function PricingEditModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 验证模型 ID
+    // Validate the model ID
     if (isNew && !formData.modelId.trim()) {
-      toast.error(t("usage.modelIdRequired", "模型 ID 不能为空"));
+      toast.error(t("usage.modelIdRequired", "Model ID is required"));
       return;
     }
 
-    // 验证非负数
+    // Must be non-negative
     const values = [
       formData.inputCost,
       formData.outputCost,
@@ -54,7 +54,7 @@ export function PricingEditModal({
     for (const value of values) {
       const num = parseFloat(value);
       if (isNaN(num) || num < 0) {
-        toast.error(t("usage.invalidPrice", "价格必须为非负数"));
+        toast.error(t("usage.invalidPrice", "Price must be non-negative"));
         return;
       }
     }
@@ -71,8 +71,8 @@ export function PricingEditModal({
 
       toast.success(
         isNew
-          ? t("usage.pricingAdded", "定价已添加")
-          : t("usage.pricingUpdated", "定价已更新"),
+          ? t("usage.pricingAdded", "Pricing added")
+          : t("usage.pricingUpdated", "Pricing updated"),
         { closeButton: true },
       );
 
@@ -87,8 +87,8 @@ export function PricingEditModal({
       isOpen={open}
       title={
         isNew
-          ? t("usage.addPricing", "新增定价")
-          : `${t("usage.editPricing", "编辑定价")} - ${model.modelId}`
+          ? t("usage.addPricing", "Add Pricing")
+          : `${t("usage.editPricing", "Edit Pricing")} - ${model.modelId}`
       }
       onClose={onClose}
       footer={
@@ -103,17 +103,17 @@ export function PricingEditModal({
             <Save className="h-4 w-4 mr-2" />
           )}
           {updatePricing.isPending
-            ? t("common.saving", "保存中...")
+            ? t("common.saving", "Saving...")
             : isNew
-              ? t("common.add", "新增")
-              : t("common.save", "保存")}
+              ? t("common.add", "Add")
+              : t("common.save", "Save")}
         </Button>
       }
     >
       <form id="pricing-form" onSubmit={handleSubmit} className="space-y-6">
         {isNew && (
           <div className="space-y-2">
-            <Label htmlFor="modelId">{t("usage.modelId", "模型 ID")}</Label>
+            <Label htmlFor="modelId">{t("usage.modelId", "Model ID")}</Label>
             <Input
               id="modelId"
               value={formData.modelId}
@@ -121,7 +121,7 @@ export function PricingEditModal({
                 setFormData({ ...formData, modelId: e.target.value })
               }
               placeholder={t("usage.modelIdPlaceholder", {
-                defaultValue: "例如: claude-3-5-sonnet-20241022",
+                defaultValue: "e.g., claude-3-5-sonnet-20241022",
               })}
               required
             />
@@ -130,7 +130,7 @@ export function PricingEditModal({
 
         <div className="space-y-2">
           <Label htmlFor="displayName">
-            {t("usage.displayName", "显示名称")}
+            {t("usage.displayName", "Display Name")}
           </Label>
           <Input
             id="displayName"
@@ -139,7 +139,7 @@ export function PricingEditModal({
               setFormData({ ...formData, displayName: e.target.value })
             }
             placeholder={t("usage.displayNamePlaceholder", {
-              defaultValue: "例如: Claude 3.5 Sonnet",
+              defaultValue: "e.g., Claude 3.5 Sonnet",
             })}
             required
           />
@@ -147,7 +147,10 @@ export function PricingEditModal({
 
         <div className="space-y-2">
           <Label htmlFor="inputCost">
-            {t("usage.inputCostPerMillion", "输入成本 (每百万 tokens, USD)")}
+            {t(
+              "usage.inputCostPerMillion",
+              "Input Cost (per million tokens, USD)",
+            )}
           </Label>
           <Input
             id="inputCost"
@@ -164,7 +167,10 @@ export function PricingEditModal({
 
         <div className="space-y-2">
           <Label htmlFor="outputCost">
-            {t("usage.outputCostPerMillion", "输出成本 (每百万 tokens, USD)")}
+            {t(
+              "usage.outputCostPerMillion",
+              "Output Cost (per million tokens, USD)",
+            )}
           </Label>
           <Input
             id="outputCost"
@@ -183,7 +189,7 @@ export function PricingEditModal({
           <Label htmlFor="cacheReadCost">
             {t(
               "usage.cacheReadCostPerMillion",
-              "缓存读取成本 (每百万 tokens, USD)",
+              "Cache Read Cost (per million tokens, USD)",
             )}
           </Label>
           <Input
@@ -203,7 +209,7 @@ export function PricingEditModal({
           <Label htmlFor="cacheCreationCost">
             {t(
               "usage.cacheCreationCostPerMillion",
-              "缓存写入成本 (每百万 tokens, USD)",
+              "Cache Write Cost (per million tokens, USD)",
             )}
           </Label>
           <Input

@@ -57,7 +57,7 @@ export function DirectorySettings({
 
   return (
     <div className="space-y-6">
-      {/* Switchy 配置目录 - 独立区块 */}
+      {/* Switchy config directory (own section) */}
       <section className="space-y-4">
         <header className="space-y-1">
           <h3 className="text-sm font-medium">{t("settings.appConfigDir")}</h3>
@@ -94,7 +94,7 @@ export function DirectorySettings({
         </div>
       </section>
 
-      {/* Claude/Codex 配置目录 - 独立区块 */}
+      {/* Claude/Codex config directories (own section) */}
       <section className="space-y-4">
         <header className="space-y-1">
           <h3 className="text-sm font-medium">

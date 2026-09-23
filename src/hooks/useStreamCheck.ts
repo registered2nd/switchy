@@ -28,30 +28,30 @@ export function useStreamCheck(appId: AppId) {
             t("streamCheck.operational", {
               providerName: providerName,
               responseTimeMs: result.responseTimeMs,
-              defaultValue: `${providerName} 运行正常 (${result.responseTimeMs}ms)`,
+              defaultValue: "{{providerName}} is operational ({{responseTimeMs}}ms)",
             }),
             { closeButton: true },
           );
 
-          // 测试通过后重置熔断器状态
+          // Reset the circuit breaker once the test passes
           resetCircuitBreaker.mutate({ providerId, appType: appId });
         } else if (result.status === "degraded") {
           toast.warning(
             t("streamCheck.degraded", {
               providerName: providerName,
               responseTimeMs: result.responseTimeMs,
-              defaultValue: `${providerName} 响应较慢 (${result.responseTimeMs}ms)`,
+              defaultValue: "{{providerName}} is slow ({{responseTimeMs}}ms)",
             }),
           );
 
-          // 降级状态也重置熔断器，因为至少能通信
+          // Also reset the circuit breaker when degraded, since it can at least communicate
           resetCircuitBreaker.mutate({ providerId, appType: appId });
         } else {
           toast.error(
             t("streamCheck.failed", {
               providerName: providerName,
               message: result.message,
-              defaultValue: `${providerName} 检查失败: ${result.message}`,
+              defaultValue: "{{providerName}} check failed: {{message}}",
             }),
           );
         }
@@ -62,7 +62,7 @@ export function useStreamCheck(appId: AppId) {
           t("streamCheck.error", {
             providerName: providerName,
             error: String(e),
-            defaultValue: `${providerName} 检查出错: ${String(e)}`,
+            defaultValue: "{{providerName}} check error: {{error}}",
           }),
         );
         return null;

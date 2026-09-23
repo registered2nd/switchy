@@ -1,4 +1,4 @@
-// 前端统一使用 AppId 作为应用标识（与后端命令参数 `app` 一致）
+// The frontend uses AppId as the app identifier everywhere (matches the backend command parameter `app`)
 export type AppId =
   | "claude"
   | "codex"

@@ -376,10 +376,10 @@ export function ProviderForm({
     [localApiKeyField, form, handleSettingsConfigChange],
   );
 
-  // Copilot OAuth 认证状态（仅 Claude 应用需要）
+  // Copilot OAuth state (Claude app only)
   const { isAuthenticated: isCopilotAuthenticated } = useCopilotAuth();
 
-  // 选中的 GitHub 账号 ID（多账号支持）
+  // Selected GitHub account ID (multi-account support)
   const [selectedGitHubAccountId, setSelectedGitHubAccountId] = useState<
     string | null
   >(() => resolveManagedAccountId(initialData?.meta, "github_copilot"));
@@ -463,16 +463,16 @@ export function ProviderForm({
   const presetCategoryLabels: Record<string, string> = useMemo(
     () => ({
       official: t("providerForm.categoryOfficial", {
-        defaultValue: "官方",
+        defaultValue: "Official",
       }),
       cn_official: t("providerForm.categoryCnOfficial", {
-        defaultValue: "国内官方",
+        defaultValue: "Opensource Official",
       }),
       aggregator: t("providerForm.categoryAggregation", {
-        defaultValue: "聚合服务",
+        defaultValue: "Aggregation",
       }),
       third_party: t("providerForm.categoryThirdParty", {
-        defaultValue: "第三方",
+        defaultValue: "Third Party",
       }),
       omo: "OMO",
     }),
@@ -796,7 +796,7 @@ export function ProviderForm({
         toast.error(
           t("providerForm.fillParameter", {
             label: validation.missingField.label,
-            defaultValue: `请填写 ${validation.missingField.label}`,
+            defaultValue: "Please fill in {{label}}",
           }),
         );
         return;
@@ -806,7 +806,7 @@ export function ProviderForm({
     if (!values.name.trim()) {
       toast.error(
         t("providerForm.fillSupplierName", {
-          defaultValue: "请填写供应商名称",
+          defaultValue: "Please fill in provider name",
         }),
       );
       return;
@@ -825,7 +825,7 @@ export function ProviderForm({
       if (isProviderKeyLockStateLoading) {
         toast.error(
           t("providerForm.providerKeyStatusLoading", {
-            defaultValue: "正在加载供应商标识状态，请稍后再试",
+            defaultValue: "Loading provider identity status, please wait.",
           }),
         );
         return;
@@ -857,7 +857,7 @@ export function ProviderForm({
       if (isProviderKeyLockStateLoading) {
         toast.error(
           t("providerForm.providerKeyStatusLoading", {
-            defaultValue: "正在加载供应商标识状态，请稍后再试",
+            defaultValue: "Loading provider identity status, please wait.",
           }),
         );
         return;
@@ -871,18 +871,18 @@ export function ProviderForm({
       }
     }
 
-    // 非官方供应商必填校验：端点和 API Key
-    // cloud_provider（如 Bedrock）通过模板变量处理认证，跳过通用校验
-    // GitHub Copilot 使用 OAuth 认证，不需要 API Key
+    // Required for non-official providers: endpoint and API key
+    // cloud_provider (e.g. Bedrock) handles auth through template variables, so skip the generic check
+    // GitHub Copilot uses OAuth and needs no API key
     const isCopilotProvider =
       templatePreset?.providerType === "github_copilot" ||
       initialData?.meta?.providerType === "github_copilot" ||
       baseUrl.includes("githubcopilot.com");
-    // GitHub Copilot 必须先登录才能添加
+    // GitHub Copilot must be signed in before it can be added
     if (isCopilotProvider && !isCopilotAuthenticated) {
       toast.error(
         t("copilot.loginRequired", {
-          defaultValue: "请先登录 GitHub Copilot",
+          defaultValue: "Please login to GitHub Copilot first",
         }),
       );
       return;
@@ -893,7 +893,8 @@ export function ProviderForm({
         if (!baseUrl.trim()) {
           toast.error(
             t("providerForm.endpointRequired", {
-              defaultValue: "非官方供应商请填写 API 端点",
+              defaultValue:
+                "API endpoint is required for non-official providers",
             }),
           );
           return;
@@ -901,7 +902,7 @@ export function ProviderForm({
         if (!isCopilotProvider && !apiKey.trim()) {
           toast.error(
             t("providerForm.apiKeyRequired", {
-              defaultValue: "非官方供应商请填写 API Key",
+              defaultValue: "API Key is required for non-official providers",
             }),
           );
           return;
@@ -910,7 +911,8 @@ export function ProviderForm({
         if (!codexBaseUrl.trim()) {
           toast.error(
             t("providerForm.endpointRequired", {
-              defaultValue: "非官方供应商请填写 API 端点",
+              defaultValue:
+                "API endpoint is required for non-official providers",
             }),
           );
           return;
@@ -918,7 +920,7 @@ export function ProviderForm({
         if (!codexApiKey.trim()) {
           toast.error(
             t("providerForm.apiKeyRequired", {
-              defaultValue: "非官方供应商请填写 API Key",
+              defaultValue: "API Key is required for non-official providers",
             }),
           );
           return;
@@ -927,7 +929,8 @@ export function ProviderForm({
         if (!geminiBaseUrl.trim()) {
           toast.error(
             t("providerForm.endpointRequired", {
-              defaultValue: "非官方供应商请填写 API 端点",
+              defaultValue:
+                "API endpoint is required for non-official providers",
             }),
           );
           return;
@@ -935,7 +938,7 @@ export function ProviderForm({
         if (!geminiApiKey.trim()) {
           toast.error(
             t("providerForm.apiKeyRequired", {
-              defaultValue: "非官方供应商请填写 API Key",
+              defaultValue: "API Key is required for non-official providers",
             }),
           );
           return;
@@ -944,7 +947,7 @@ export function ProviderForm({
         if (!kimiApiKey.trim()) {
           toast.error(
             t("providerForm.apiKeyRequired", {
-              defaultValue: "非官方供应商请填写 API Key",
+              defaultValue: "API Key is required for non-official providers",
             }),
           );
           return;
@@ -1060,7 +1063,7 @@ export function ProviderForm({
       if (activePreset.category) {
         payload.presetCategory = activePreset.category;
       }
-      // OpenClaw: 传递预设的 suggestedDefaults 到提交数据
+      // OpenClaw: pass the preset's suggestedDefaults into the submission
       if (activePreset.suggestedDefaults) {
         payload.suggestedDefaults = activePreset.suggestedDefaults;
       }
@@ -1104,7 +1107,7 @@ export function ProviderForm({
     const baseMeta: ProviderMeta | undefined =
       payload.meta ?? (initialData?.meta ? { ...initialData.meta } : undefined);
 
-    // 确定 providerType（新建时从预设获取，编辑时从现有数据获取）
+    // Resolve providerType (from the preset when creating, from existing data when editing)
     const providerType =
       templatePreset?.providerType || initialData?.meta?.providerType;
 
@@ -1121,7 +1124,7 @@ export function ProviderForm({
                 ? useGeminiCommonConfigFlag
                 : undefined,
       endpointAutoSelect,
-      // 保存 providerType（用于识别 Copilot 等特殊供应商）
+      // Save providerType (identifies special providers such as Copilot)
       providerType,
       authBinding: isCopilotProvider
         ? {
@@ -1130,7 +1133,7 @@ export function ProviderForm({
             accountId: selectedGitHubAccountId ?? undefined,
           }
         : undefined,
-      // GitHub Copilot 多账号：保存关联的账号 ID
+      // GitHub Copilot multi-account: save the linked account ID
       githubAccountId:
         isCopilotProvider && selectedGitHubAccountId
           ? selectedGitHubAccountId
@@ -1240,7 +1243,7 @@ export function ProviderForm({
     formWebsiteUrl: form.watch("websiteUrl") || "",
   });
 
-  // 使用 API Key 链接 hook (OpenClaw)
+  // API key link hook (OpenClaw)
   const {
     shouldShowApiKeyLink: shouldShowOpenclawApiKeyLink,
     websiteUrl: openclawWebsiteUrl,
@@ -1252,7 +1255,7 @@ export function ProviderForm({
     formWebsiteUrl: form.watch("websiteUrl") || "",
   });
 
-  // 使用端点测速候选 hook
+  // Endpoint speed-test candidates hook
   const speedTestEndpoints = useSpeedTestEndpoints({
     appId,
     selectedPresetId,
@@ -1284,7 +1287,7 @@ export function ProviderForm({
         opencodeForm.resetOpencodeState();
         omoDraft.resetOmoDraftState();
       }
-      // OpenClaw 自定义模式：重置为空配置
+      // OpenClaw custom mode: reset to an empty config
       if (appId === "openclaw") {
         openclawForm.resetOpenclawState();
       }
@@ -1528,7 +1531,7 @@ export function ProviderForm({
                       {isProviderKeyLocked
                         ? t("opencode.providerKeyLockedHint", {
                             defaultValue:
-                              "该供应商已添加到应用配置中，供应商标识不可修改",
+                              "This provider has already been added to the app config, so its key can no longer be changed.",
                           })
                         : t("opencode.providerKeyHint")}
                     </p>
@@ -1594,7 +1597,7 @@ export function ProviderForm({
                       {isProviderKeyLocked
                         ? t("openclaw.providerKeyLockedHint", {
                             defaultValue:
-                              "该供应商已添加到应用配置中，供应商标识不可修改",
+                              "This provider has already been added to the app config, so its key can no longer be changed.",
                           })
                         : t("openclaw.providerKeyHint")}
                     </p>
@@ -1780,7 +1783,7 @@ export function ProviderForm({
             />
           )}
 
-        {/* OpenClaw 专属字段 */}
+        {/* OpenClaw-only fields */}
         {appId === "openclaw" && (
           <OpenClawFormFields
             baseUrl={openclawForm.openclawBaseUrl}
@@ -1799,7 +1802,7 @@ export function ProviderForm({
           />
         )}
 
-        {/* 配置编辑器：Codex、Claude、Gemini 分别使用不同的编辑器 */}
+        {/* Config editor: Codex, Claude and Gemini each use their own editor */}
         {appId === "codex" ? (
           <>
             <CodexConfigEditor

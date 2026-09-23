@@ -8,10 +8,10 @@ export interface FetchedModel {
 }
 
 /**
- * 从供应商获取可用模型列表
+ * Fetch the available models from a provider
  *
- * 使用 OpenAI 兼容的 GET /v1/models 端点。
- * 主要面向第三方聚合站（硅基流动、OpenRouter 等）。
+ * Uses the OpenAI-compatible GET /v1/models endpoint.
+ * Aimed mainly at third-party aggregators (SiliconFlow, OpenRouter etc.).
  */
 export async function fetchModelsForConfig(
   baseUrl: string,
@@ -22,14 +22,14 @@ export async function fetchModelsForConfig(
 }
 
 /**
- * 根据错误类型显示对应的 toast 提示
+ * Show the toast that matches the error type
  */
 export function showFetchModelsError(
   err: unknown,
   t: TFunction,
   opts?: { hasApiKey: boolean; hasBaseUrl: boolean },
 ): void {
-  // 前端预检：缺少必填字段
+  // Frontend pre-check: required fields missing
   if (opts && !opts.hasBaseUrl && !opts.hasApiKey) {
     toast.error(t("providerForm.fetchModelsNeedConfig"));
     return;
@@ -43,7 +43,7 @@ export function showFetchModelsError(
     return;
   }
 
-  // 解析后端错误字符串
+  // Parse the backend error string
   const msg = String(err);
 
   if (msg.includes("HTTP 401") || msg.includes("HTTP 403")) {
@@ -63,6 +63,6 @@ export function showFetchModelsError(
     return;
   }
 
-  // 通用兜底
+  // Generic fallback
   toast.error(t("providerForm.fetchModelsFailed"));
 }

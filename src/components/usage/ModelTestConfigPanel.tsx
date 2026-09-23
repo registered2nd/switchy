@@ -18,7 +18,7 @@ export function ModelTestConfigPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 使用字符串状态以支持完全清空数字输入框
+  // String state so number inputs can be cleared completely
   const [config, setConfig] = useState({
     timeoutSecs: "45",
     maxRetries: "2",
@@ -55,7 +55,7 @@ export function ModelTestConfigPanel() {
   }
 
   async function handleSave() {
-    // 解析数字，空值使用默认值，0 是有效值
+    // Parse a number; empty uses the default, 0 is valid
     const parseNum = (val: string, defaultVal: number) => {
       const n = parseInt(val);
       return isNaN(n) ? defaultVal : n;
@@ -98,7 +98,7 @@ export function ModelTestConfigPanel() {
         </Alert>
       )}
 
-      {/* 测试模型配置 */}
+      {/* Test models */}
       <div className="space-y-4">
         <h4 className="text-sm font-medium text-muted-foreground">
           {t("streamCheck.testModels")}
@@ -142,7 +142,7 @@ export function ModelTestConfigPanel() {
         </div>
       </div>
 
-      {/* 检查参数配置 */}
+      {/* Check parameters */}
       <div className="space-y-4">
         <h4 className="text-sm font-medium text-muted-foreground">
           {t("streamCheck.checkParams")}
@@ -194,7 +194,7 @@ export function ModelTestConfigPanel() {
           </div>
         </div>
 
-        {/* 检查提示词配置 */}
+        {/* Check prompt */}
         <div className="space-y-2">
           <Label htmlFor="testPrompt">{t("streamCheck.testPrompt")}</Label>
           <Textarea

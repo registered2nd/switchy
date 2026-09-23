@@ -119,7 +119,7 @@ export function SettingsPage({
   }, [requiresRestart]);
 
   const closeAfterSave = useCallback(() => {
-    // 保存成功后关闭：不再重置语言，避免需要“保存两次”才生效
+    // Close after a successful save without resetting the language, so one save is enough
     acknowledgeRestart();
     clearSelection();
     resetStatus();
@@ -163,8 +163,8 @@ export function SettingsPage({
     }
   }, [closeAfterSave, t]);
 
-  // 通用设置即时保存（无需手动点击）
-  // 使用 autoSaveSettings 避免误触发系统 API（开机自启、Claude 插件等）
+  // General settings save immediately (no save button)
+  // autoSaveSettings avoids triggering system APIs by mistake (launch at startup, Claude plugin, etc.)
   const handleAutoSave = useCallback(
     async (updates: Partial<SettingsFormState>) => {
       if (!settings) return;
@@ -175,7 +175,7 @@ export function SettingsPage({
         console.error("[SettingsPage] Failed to autosave settings", error);
         toast.error(
           t("settings.saveFailedGeneric", {
-            defaultValue: "保存失败，请重试",
+            defaultValue: "Save failed, please try again",
           }),
         );
       }
@@ -203,7 +203,7 @@ export function SettingsPage({
             </TabsTrigger>
             <TabsTrigger value="pool">{t("settings.tabPool")}</TabsTrigger>
             <TabsTrigger value="auth">
-              {t("settings.tabAuth", { defaultValue: "认证" })}
+              {t("settings.tabAuth", { defaultValue: "Auth" })}
             </TabsTrigger>
             <TabsTrigger value="advanced">
               {t("settings.tabAdvanced")}
@@ -266,13 +266,13 @@ export function SettingsPage({
                     <div>
                       <h2 className="text-base font-semibold">
                         {t("settings.authCenter.heading", {
-                          defaultValue: "认证中心",
+                          defaultValue: "Auth Center",
                         })}
                       </h2>
                       <p className="text-sm text-muted-foreground">
                         {t("settings.authCenter.headingDescription", {
                           defaultValue:
-                            "统一管理可跨应用复用的 OAuth 账号和默认认证来源。",
+                            "Unified management of OAuth accounts and default auth sources that can be reused across apps.",
                         })}
                       </p>
                     </div>

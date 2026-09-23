@@ -59,7 +59,7 @@ describe("AddProviderDialog", () => {
     };
   });
 
-  it("使用 ProviderForm 返回的自定义端点", async () => {
+  it("uses the custom endpoints returned by ProviderForm", async () => {
     const handleSubmit = vi.fn().mockResolvedValue(undefined);
     const handleOpenChange = vi.fn();
 
@@ -87,7 +87,7 @@ describe("AddProviderDialog", () => {
     expect(handleOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("在缺少自定义端点时回退到配置中的 baseUrl", async () => {
+  it("falls back to the baseUrl in the config when there are no custom endpoints", async () => {
     const handleSubmit = vi.fn().mockResolvedValue(undefined);
 
     mockFormValues = {

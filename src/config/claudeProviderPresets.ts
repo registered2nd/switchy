@@ -1,5 +1,5 @@
 /**
- * 预设供应商配置模板
+ * Provider preset templates
  */
 import { ProviderCategory } from "../types";
 
@@ -11,14 +11,14 @@ export interface TemplateValueConfig {
 }
 
 /**
- * 预设供应商的视觉主题配置
+ * Visual theme for a provider preset
  */
 export interface PresetTheme {
-  /** 图标类型：'claude' | 'codex' | 'gemini' | 'generic' */
+  /** Icon type: 'claude' | 'codex' | 'gemini' | 'generic' */
   icon?: "claude" | "codex" | "gemini" | "kimi" | "generic";
-  /** 背景色（选中状态），支持 Tailwind 类名或 hex 颜色 */
+  /** Background color when selected: a Tailwind class or hex color */
   backgroundColor?: string;
-  /** 文字色（选中状态），支持 Tailwind 类名或 hex 颜色 */
+  /** Text color when selected: a Tailwind class or hex color */
   textColor?: string;
 }
 
@@ -26,37 +26,37 @@ export interface ProviderPreset {
   name: string;
   nameKey?: string; // i18n key for localized display name
   websiteUrl: string;
-  // 新增：第三方/聚合等可单独配置获取 API Key 的链接
+  // Separate "get an API key" link, for third-party and aggregator providers
   apiKeyUrl?: string;
   settingsConfig: object;
-  isOfficial?: boolean; // 标识是否为官方预设
-  category?: ProviderCategory; // 新增：分类
-  // 新增：指定该预设所使用的 API Key 字段名（默认 ANTHROPIC_AUTH_TOKEN）
+  isOfficial?: boolean; // Official preset
+  category?: ProviderCategory; // Category
+  // API key field this preset uses (default ANTHROPIC_AUTH_TOKEN)
   apiKeyField?: "ANTHROPIC_AUTH_TOKEN" | "ANTHROPIC_API_KEY";
-  // 新增：模板变量定义，用于动态替换配置中的值
-  templateValues?: Record<string, TemplateValueConfig>; // editorValue 存储编辑器中的实时输入值
-  // 新增：请求地址候选列表（用于地址管理/测速）
+  // Template variables substituted into the config
+  templateValues?: Record<string, TemplateValueConfig>; // editorValue holds the live editor input
+  // Candidate endpoints (for endpoint management and speed tests)
   endpointCandidates?: string[];
-  // 新增：视觉主题配置
+  // Visual theme
   theme?: PresetTheme;
-  // 图标配置
-  icon?: string; // 图标名称
-  iconColor?: string; // 图标颜色
+  // Icon
+  icon?: string; // Icon name
+  iconColor?: string; // Icon color
 
-  // Claude API 格式（仅 Claude 供应商使用）
-  // - "anthropic" (默认): Anthropic Messages API 格式，直接透传
-  // - "openai_chat": OpenAI Chat Completions 格式，需要格式转换
-  // - "openai_responses": OpenAI Responses API 格式，需要格式转换
+  // Claude API format (Claude providers only)
+  // - "anthropic" (default): Anthropic Messages API, passed through as-is
+  // - "openai_chat": OpenAI Chat Completions, needs format conversion
+  // - "openai_responses": OpenAI Responses API, needs format conversion
   apiFormat?: "anthropic" | "openai_chat" | "openai_responses";
 
-  // 供应商类型标识（用于特殊供应商检测）
-  // - "github_copilot": GitHub Copilot 供应商（需要 OAuth 认证）
+  // Provider type (for detecting special providers)
+  // - "github_copilot": GitHub Copilot (requires OAuth)
   providerType?: "github_copilot";
 
-  // 是否需要 OAuth 认证（而非 API Key）
+  // Requires OAuth instead of an API key
   requiresOAuth?: boolean;
 
-  // 是否在 UI 中隐藏该预设（预设仍存在，仅不在列表中显示）
+  // Hide this preset from the list (it still exists)
   hidden?: boolean;
 }
 
@@ -67,7 +67,7 @@ export const providerPresets: ProviderPreset[] = [
     settingsConfig: {
       env: {},
     },
-    isOfficial: true, // 明确标识为官方预设
+    isOfficial: true, // Official preset
     category: "official",
     theme: {
       icon: "claude",
@@ -356,7 +356,7 @@ export const providerPresets: ProviderPreset[] = [
     name: "AiHubMix",
     websiteUrl: "https://aihubmix.com",
     apiKeyUrl: "https://aihubmix.com",
-    // 说明：该供应商使用 ANTHROPIC_API_KEY（而非 ANTHROPIC_AUTH_TOKEN）
+    // This provider uses ANTHROPIC_API_KEY, not ANTHROPIC_AUTH_TOKEN
     apiKeyField: "ANTHROPIC_API_KEY",
     settingsConfig: {
       env: {
@@ -364,7 +364,7 @@ export const providerPresets: ProviderPreset[] = [
         ANTHROPIC_API_KEY: "",
       },
     },
-    // 请求地址候选（用于地址管理/测速），用户可自行选择/覆盖
+    // Candidate endpoints (for endpoint management and speed tests); the user can pick or override
     endpointCandidates: ["https://aihubmix.com", "https://api.aihubmix.com"],
     category: "aggregator",
     icon: "aihubmix",
@@ -416,7 +416,7 @@ export const providerPresets: ProviderPreset[] = [
         ANTHROPIC_AUTH_TOKEN: "",
       },
     },
-    // 请求地址候选（用于地址管理/测速），用户可自行选择/覆盖
+    // Candidate endpoints (for endpoint management and speed tests); the user can pick or override
     endpointCandidates: ["https://www.dmxapi.cn", "https://api.dmxapi.cn"],
     category: "aggregator",
   },
@@ -430,7 +430,7 @@ export const providerPresets: ProviderPreset[] = [
         ANTHROPIC_AUTH_TOKEN: "",
       },
     },
-    // 请求地址候选（用于地址管理/测速）
+    // Candidate endpoints (for endpoint management and speed tests)
     endpointCandidates: [
       "https://www.packyapi.com",
       "https://api-slb.packyapi.com",
@@ -468,7 +468,7 @@ export const providerPresets: ProviderPreset[] = [
         ANTHROPIC_AUTH_TOKEN: "",
       },
     },
-    // 请求地址候选（用于地址管理/测速）
+    // Candidate endpoints (for endpoint management and speed tests)
     endpointCandidates: ["https://api.aigocode.com"],
     category: "third_party",
     icon: "aigocode",

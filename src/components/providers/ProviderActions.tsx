@@ -69,11 +69,11 @@ export function ProviderActions({
   const { t } = useTranslation();
   const iconButtonClass = "h-8 w-8 p-1";
 
-  // 累加模式应用（OpenCode 非 OMO 和 OpenClaw）
+  // Additive-mode apps (OpenCode without OMO, and OpenClaw)
   const isAdditiveMode =
     (appId === "opencode" && !isOmo) || appId === "openclaw";
 
-  // 故障转移模式下的按钮逻辑（累加模式和 OMO 应用不支持故障转移）
+  // Button logic in failover mode (additive-mode and OMO apps do not support failover)
   const isFailoverMode =
     !isAdditiveMode && !isOmo && isAutoFailoverEnabled && onToggleFailover;
 
@@ -85,7 +85,7 @@ export function ProviderActions({
         onSwitch();
       }
     } else if (isAdditiveMode) {
-      // 累加模式：切换配置状态（添加/移除）
+      // Additive mode: toggle config membership (add/remove)
       if (isInConfig) {
         if (onRemoveFromConfig) {
           onRemoveFromConfig();
@@ -93,7 +93,7 @@ export function ProviderActions({
           onDelete();
         }
       } else {
-        onSwitch(); // 添加到配置
+        onSwitch(); // add to config
       }
     } else {
       onSwitch();
@@ -121,7 +121,7 @@ export function ProviderActions({
       };
     }
 
-    // 累加模式（OpenCode 非 OMO / OpenClaw）
+    // Additive mode (OpenCode without OMO / OpenClaw)
     if (isAdditiveMode) {
       if (isInConfig) {
         return {
@@ -132,7 +132,7 @@ export function ProviderActions({
             isDefaultModel && "opacity-40 cursor-not-allowed",
           ),
           icon: <Minus className="h-4 w-4" />,
-          text: t("provider.removeFromConfig", { defaultValue: "移除" }),
+          text: t("provider.removeFromConfig", { defaultValue: "Remove" }),
         };
       }
       return {
@@ -141,7 +141,7 @@ export function ProviderActions({
         className:
           "bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-700",
         icon: <Plus className="h-4 w-4" />,
-        text: t("provider.addToConfig", { defaultValue: "添加" }),
+        text: t("provider.addToConfig", { defaultValue: "Add" }),
       };
     }
 
@@ -188,8 +188,8 @@ export function ProviderActions({
         >
           <Zap className="h-4 w-4" />
           {isDefaultModel
-            ? t("provider.isDefault", { defaultValue: "当前默认" })
-            : t("provider.setAsDefault", { defaultValue: "设为默认" })}
+            ? t("provider.isDefault", { defaultValue: "Current Default" })
+            : t("provider.setAsDefault", { defaultValue: "Set Default" })}
         </Button>
       )}
 
@@ -260,7 +260,7 @@ export function ProviderActions({
             variant="ghost"
             onClick={onTest}
             disabled={isTesting}
-            title={t("modelTest.testProvider", "测试模型")}
+            title={t("modelTest.testProvider", "Test model")}
             className={iconButtonClass}
           >
             {isTesting ? (
@@ -288,7 +288,7 @@ export function ProviderActions({
             size="icon"
             variant="ghost"
             onClick={onOpenTerminal}
-            title={t("provider.openTerminal", "打开终端")}
+            title={t("provider.openTerminal", "Open Terminal")}
             className={cn(
               iconButtonClass,
               "hover:text-emerald-600 dark:hover:text-emerald-400",

@@ -33,8 +33,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 管理 Gemini 通用配置片段 (JSON 格式)
- * 写入 Gemini 的 .env，但会排除以下敏感字段：
+ * Manages the Gemini common config snippet (JSON)
+ * Written to Gemini's .env, excluding these sensitive fields:
  * - GOOGLE_GEMINI_BASE_URL
  * - GEMINI_API_KEY
  */
@@ -56,14 +56,14 @@ export function useGeminiCommonConfig({
   const [isLoading, setIsLoading] = useState(true);
   const [isExtracting, setIsExtracting] = useState(false);
 
-  // 用于跟踪是否正在通过通用配置更新
+  // Tracks whether an update is coming from the common config
   const isUpdatingFromCommonConfig = useRef(false);
-  // 用于跟踪新建模式是否已初始化默认勾选
+  // Tracks whether create mode has set the default checkbox state
   const hasInitializedNewMode = useRef(false);
-  // 用于跟踪编辑模式是否已初始化显式开关/预览
+  // Tracks whether edit mode has initialized the explicit toggle/preview
   const hasInitializedEditMode = useRef(false);
 
-  // 当预设变化时，重置初始化标记，使新预设能够重新触发初始化逻辑
+  // Reset the init flags when the preset changes so the new preset runs initialization again
   useEffect(() => {
     hasInitializedNewMode.current = false;
     hasInitializedEditMode.current = false;
@@ -155,13 +155,13 @@ export function useGeminiCommonConfig({
     [],
   );
 
-  // 初始化：从 config.json 加载，支持从 localStorage 迁移
+  // Init: load from config.json, migrating from localStorage if needed
   useEffect(() => {
     let mounted = true;
 
     const loadSnippet = async () => {
       try {
-        // 使用统一 API 加载
+        // Load through the shared API
         const snippet = await configApi.getCommonConfigSnippet("gemini");
 
         if (snippet && snippet.trim()) {
@@ -169,7 +169,7 @@ export function useGeminiCommonConfig({
             setCommonConfigSnippetState(snippet);
           }
         } else {
-          // 如果 config.json 中没有，尝试从 localStorage 迁移
+          // If config.json has none, try migrating from localStorage
           if (typeof window !== "undefined") {
             try {
               const legacySnippet =
@@ -178,28 +178,31 @@ export function useGeminiCommonConfig({
                 const parsed = parseSnippetEnv(legacySnippet);
                 if (parsed.error) {
                   console.warn(
-                    "[迁移] legacy Gemini 通用配置片段格式不符合当前规则，跳过迁移",
+                    "[migration] Legacy Gemini common config snippet does not match the current rules; skipping migration",
                   );
                   return;
                 }
-                // 迁移到 config.json
+                // Migrate to config.json
                 await configApi.setCommonConfigSnippet("gemini", legacySnippet);
                 if (mounted) {
                   setCommonConfigSnippetState(legacySnippet);
                 }
-                // 清理 localStorage
+                // Clear localStorage
                 window.localStorage.removeItem(LEGACY_STORAGE_KEY);
                 console.log(
-                  "[迁移] Gemini 通用配置已从 localStorage 迁移到 config.json",
+                  "[migration] Gemini common config moved from localStorage to config.json",
                 );
               }
             } catch (e) {
-              console.warn("[迁移] 从 localStorage 迁移失败:", e);
+              console.warn(
+                "[migration] Migration from localStorage failed:",
+                e,
+              );
             }
           }
         }
       } catch (error) {
-        console.error("加载 Gemini 通用配置失败:", error);
+        console.error("Failed to load Gemini common config:", error);
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -214,7 +217,7 @@ export function useGeminiCommonConfig({
     };
   }, [parseSnippetEnv]);
 
-  // 初始化时检查通用配置片段（编辑模式）
+  // On init, check for the common config snippet (edit mode)
   useEffect(() => {
     if (
       !initialData?.settingsConfig ||
@@ -280,7 +283,7 @@ export function useGeminiCommonConfig({
     parseSnippetEnv,
   ]);
 
-  // 新建模式：如果通用配置片段存在且有效，默认启用
+  // Create mode: enable by default if the common config snippet exists and is valid
   useEffect(() => {
     if (initialData || isLoading || hasInitializedNewMode.current) {
       return;
@@ -322,7 +325,7 @@ export function useGeminiCommonConfig({
     parseSnippetEnv,
   ]);
 
-  // 处理通用配置开关
+  // Handle the common config toggle
   const handleCommonConfigToggle = useCallback(
     (checked: boolean) => {
       const parsed = parseSnippetEnv(commonConfigSnippet);
@@ -364,7 +367,7 @@ export function useGeminiCommonConfig({
     ],
   );
 
-  // 处理通用配置片段变化
+  // Handle common config snippet changes
   const handleCommonConfigSnippetChange = useCallback(
     (value: string): boolean => {
       const previousSnippet = commonConfigSnippet;
@@ -392,7 +395,7 @@ export function useGeminiCommonConfig({
         configApi
           .setCommonConfigSnippet("gemini", "")
           .catch((error: unknown) => {
-            console.error("保存 Gemini 通用配置失败:", error);
+            console.error("Failed to save Gemini common config:", error);
             setCommonConfigError(
               t("geminiConfig.saveFailed", { error: String(error) }),
             );
@@ -400,14 +403,14 @@ export function useGeminiCommonConfig({
         return true;
       }
 
-      // 校验 JSON 格式
+      // Validate JSON
       const parsed = parseSnippetEnv(value);
       if (parsed.error) {
         setCommonConfigError(parsed.error);
         return false;
       }
 
-      // 若当前启用通用配置，需要替换为最新片段
+      // If the common config is enabled, swap in the latest snippet
       if (useCommonConfig) {
         const prevParsed = parseSnippetEnv(previousSnippet);
         const prevEnv = prevParsed.error ? {} : prevParsed.env;
@@ -435,7 +438,7 @@ export function useGeminiCommonConfig({
       configApi
         .setCommonConfigSnippet("gemini", value)
         .catch((error: unknown) => {
-          console.error("保存 Gemini 通用配置失败:", error);
+          console.error("Failed to save Gemini common config:", error);
           setCommonConfigError(
             t("geminiConfig.saveFailed", { error: String(error) }),
           );
@@ -457,7 +460,7 @@ export function useGeminiCommonConfig({
     ],
   );
 
-  // 当 env 变化时检查是否包含通用配置（但避免在通过通用配置更新时检查）
+  // When env changes, check whether it contains the common config (skipped while the common config itself is updating)
   useEffect(() => {
     if (isUpdatingFromCommonConfig.current || isLoading) {
       return;
@@ -477,7 +480,7 @@ export function useGeminiCommonConfig({
     parseSnippetEnv,
   ]);
 
-  // 从编辑器当前内容提取通用配置片段
+  // Extract the common config snippet from the editor's current content
   const handleExtract = useCallback(async () => {
     setIsExtracting(true);
     setCommonConfigError("");
@@ -494,20 +497,20 @@ export function useGeminiCommonConfig({
         return;
       }
 
-      // 验证 JSON 格式
+      // Validate JSON
       const parsed = parseSnippetEnv(extracted);
       if (parsed.error) {
         setCommonConfigError(t("geminiConfig.extractedConfigInvalid"));
         return;
       }
 
-      // 更新片段状态
+      // Update snippet state
       setCommonConfigSnippetState(extracted);
 
-      // 保存到后端
+      // Save to the backend
       await configApi.setCommonConfigSnippet("gemini", extracted);
     } catch (error) {
-      console.error("提取 Gemini 通用配置失败:", error);
+      console.error("Failed to extract Gemini common config:", error);
       setCommonConfigError(
         t("geminiConfig.extractFailed", { error: String(error) }),
       );

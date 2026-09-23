@@ -1,9 +1,9 @@
 /**
- * Kimi Code 预设供应商配置模板
+ * Kimi Code provider preset templates
  *
- * Kimi 的供应商记录形如 `{ config, credentials }`：
- * - `config` 是完整的 `~/.kimi-code/config.toml` 文本
- * - `credentials` 是 `~/.kimi-code/credentials/kimi-code.json`（托管登录）或 null
+ * A Kimi provider record is `{ config, credentials }`:
+ * - `config` is the full text of `~/.kimi-code/config.toml`
+ * - `credentials` is `~/.kimi-code/credentials/kimi-code.json` (managed login) or null
  */
 import { ProviderCategory } from "../types";
 import type { PresetTheme } from "./claudeProviderPresets";
@@ -14,33 +14,33 @@ export interface KimiProviderPreset {
   name: string;
   nameKey?: string; // i18n key for localized display name
   websiteUrl: string;
-  // 第三方供应商可提供单独的获取 API Key 链接
+  // Separate "get an API key" link for third-party providers
   apiKeyUrl?: string;
-  config: string; // 将写入 ~/.kimi-code/config.toml（TOML 字符串）
-  credentials: Record<string, any> | null; // 将写入 credentials/kimi-code.json
-  isOfficial?: boolean; // 标识是否为官方预设
-  category?: ProviderCategory; // 分类
-  isCustomTemplate?: boolean; // 标识是否为自定义模板
-  // 请求地址候选列表（用于地址管理/测速）
+  config: string; // Written to ~/.kimi-code/config.toml (TOML string)
+  credentials: Record<string, any> | null; // Written to credentials/kimi-code.json
+  isOfficial?: boolean; // Official preset
+  category?: ProviderCategory; // Category
+  isCustomTemplate?: boolean; // Custom template
+  // Candidate endpoints (for endpoint management and speed tests)
   endpointCandidates?: string[];
-  // 视觉主题配置
+  // Visual theme
   theme?: PresetTheme;
-  // 图标配置
+  // Icon
   icon?: string;
   iconColor?: string;
 }
 
 const TOML_BARE_KEY = /^[A-Za-z0-9_-]+$/;
 
-/** TOML 表头里的 key：裸键直接用，否则加双引号 */
+/** Key for a TOML table header: bare keys as-is, anything else double-quoted */
 export function quoteKimiTomlKey(key: string): string {
   return TOML_BARE_KEY.test(key) ? key : `"${key}"`;
 }
 
 /**
- * 生成第三方供应商的 config.toml
+ * Build config.toml for a third-party provider
  *
- * `default_model` 使用 `<providerId>/<model>` 别名，别名表指回供应商。
+ * `default_model` uses the `<providerId>/<model>` alias; the alias table points back to the provider.
  */
 export function generateThirdPartyConfig(
   providerId: string,
@@ -73,7 +73,7 @@ provider = "${cleanProviderId}"
 model = "${model}"`;
 }
 
-/** 官方（托管登录）config.toml：kimi-code 0.26 写出的供应商与模型表 */
+/** Official (managed login) config.toml: the provider and model tables kimi-code 0.26 writes */
 export const KIMI_OFFICIAL_CONFIG = `default_model = "kimi-code/kimi-for-coding"
 
 [providers."managed:kimi-code"]

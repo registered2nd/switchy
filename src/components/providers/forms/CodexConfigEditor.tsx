@@ -27,7 +27,7 @@ interface CodexConfigEditorProps {
 
   authError: string;
 
-  configError: string; // config.toml 错误提示
+  configError: string; // config.toml error message
 
   onExtract?: () => void;
 

@@ -20,28 +20,28 @@ interface SubscriptionQuotaFooterProps {
   inline?: boolean;
 }
 
-/** 已知 tier 名称的显示映射（官方订阅 + Token Plan 共用） */
+/** Display names for known tiers (shared by official subscriptions and Token Plan) */
 export const TIER_I18N_KEYS: Record<string, string> = {
   five_hour: "subscription.fiveHour",
   seven_day: "subscription.sevenDay",
   seven_day_opus: "subscription.sevenDayOpus",
   seven_day_sonnet: "subscription.sevenDaySonnet",
-  // Gemini 模型分类
+  // Gemini model classes
   gemini_pro: "subscription.geminiPro",
   gemini_flash: "subscription.geminiFlash",
   gemini_flash_lite: "subscription.geminiFlashLite",
-  // Token Plan（five_hour 已在上方官方映射中）
+  // Token Plan (five_hour is already in the official map above)
   weekly_limit: "subscription.weeklyLimit",
 };
 
-/** 根据使用百分比返回颜色 class */
+/** Color class for a usage percentage */
 export function utilizationColor(utilization: number): string {
   if (utilization >= 90) return "text-red-500 dark:text-red-400";
   if (utilization >= 70) return "text-orange-500 dark:text-orange-400";
   return "text-green-600 dark:text-green-400";
 }
 
-/** 计算倒计时的纯时间字符串，如 "2h30m"、"3d12h" */
+/** Plain countdown string, e.g. "2h30m" or "3d12h" */
 export function countdownStr(resetsAt: string | null): string | null {
   if (!resetsAt) return null;
   const diffMs = new Date(resetsAt).getTime() - Date.now();
@@ -58,7 +58,7 @@ export function countdownStr(resetsAt: string | null): string | null {
   return `${minutes}m`;
 }
 
-/** 格式化重置时间为倒计时文本（带 i18n 模板） */
+/** Reset time as countdown text (i18n template) */
 function formatResetTime(
   resetsAt: string | null,
   t: (key: string, options?: Record<string, string>) => string,
@@ -68,10 +68,10 @@ function formatResetTime(
   return t("subscription.resetsIn", { time });
 }
 
-/** 不需要在 inline 模式显示的 tier */
+/** Tiers hidden in inline mode */
 const HIDDEN_INLINE_TIERS = new Set(["seven_day_sonnet"]);
 
-/** 格式化相对时间（与 UsageFooter 一致） */
+/** Relative time (same as UsageFooter) */
 function formatRelativeTime(
   timestamp: number,
   now: number,
@@ -104,7 +104,7 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
     refetch,
   } = providerId ? providerQuery : liveQuery;
 
-  // 定期更新相对时间显示
+  // Refresh the relative time periodically
   const [now, setNow] = React.useState(Date.now());
   React.useEffect(() => {
     if (!quota?.queriedAt) return;
@@ -112,13 +112,34 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
     return () => clearInterval(interval);
   }, [quota?.queriedAt]);
 
-  // 无凭据 → 不显示
+  // No credentials: render nothing
   if (!quota || quota.credentialStatus === "not_found") return null;
 
-  // 凭据解析错误 → 不显示（静默）
+  // Credential parse error: render nothing (silent)
   if (quota.credentialStatus === "parse_error") return null;
 
-  // 凭据过期
+  // The provider refused the login for good: it needs signing in again
+  if (quota.credentialStatus === "signed_out") {
+    const hint = t(`subscription.signedOutHint.${appId}`, {
+      defaultValue: t("subscription.signedOutHint.claude"),
+    });
+    return (
+      <div
+        className={
+          inline
+            ? "inline-flex items-center gap-1.5 text-xs rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 px-3 py-2 shadow-sm text-red-600 dark:text-red-400"
+            : "mt-3 flex items-center gap-2 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-xs shadow-sm text-red-600 dark:text-red-400"
+        }
+        title={hint}
+      >
+        <AlertCircle size={inline ? 12 : 14} />
+        <span className="font-medium">{t("subscription.signedOut")}</span>
+        <span className="opacity-80">· {hint}</span>
+      </div>
+    );
+  }
+
+  // Credentials expired
   if (quota.credentialStatus === "expired" && !quota.success) {
     if (inline) {
       return (
@@ -163,7 +184,7 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
     );
   }
 
-  // API 调用失败
+  // API call failed
   if (!quota.success) {
     if (inline) {
       return (
@@ -203,21 +224,21 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
     );
   }
 
-  // 成功获取数据
+  // Data fetched
   const tiers = quota.tiers || [];
   if (tiers.length === 0) return null;
 
-  // ── inline 模式：紧凑两行显示 ──
+  // ── Inline mode: compact two lines ──
   if (inline) {
     return (
       <div className="flex flex-col items-end gap-1 text-xs whitespace-nowrap flex-shrink-0">
-        {/* 第一行：查询时间 + 刷新 */}
+        {/* Line 1: query time + refresh */}
         <div className="flex items-center gap-2 justify-end">
           <span className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
             <Clock size={10} />
             {quota.queriedAt
               ? formatRelativeTime(quota.queriedAt, now, t)
-              : t("usage.never", { defaultValue: "从未更新" })}
+              : t("usage.never", { defaultValue: "Never" })}
           </span>
           <button
             onClick={(e) => {
@@ -232,7 +253,7 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
           </button>
         </div>
 
-        {/* 第二行：各 tier 使用百分比 */}
+        {/* Line 2: usage percentage per tier */}
         <div className="flex items-center gap-2">
           {tiers
             .filter((tier) => !HIDDEN_INLINE_TIERS.has(tier.name))
@@ -244,7 +265,7 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
     );
   }
 
-  // ── 展开模式：详细信息 ──
+  // ── Expanded mode: details ──
   return (
     <div className="mt-3 rounded-xl border border-border-default bg-card px-4 py-3 shadow-sm">
       <div className="flex items-center justify-between mb-2">
@@ -275,7 +296,7 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
         ))}
       </div>
 
-      {/* 超额使用 */}
+      {/* Extra usage */}
       {quota.extraUsage?.isEnabled && (
         <div className="mt-2 pt-2 border-t border-border-default text-xs text-gray-500 dark:text-gray-400">
           <span className="font-medium">{t("subscription.extraUsage")}: </span>
@@ -296,7 +317,7 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
   );
 };
 
-/** inline 模式下的单个 tier 显示 */
+/** One tier in inline mode */
 export const TierBadge: React.FC<{
   tier: QuotaTier;
   t: (key: string, options?: Record<string, unknown>) => string;
@@ -324,7 +345,7 @@ export const TierBadge: React.FC<{
   );
 };
 
-/** 展开模式下的单个 tier 进度条 */
+/** One tier's progress bar in expanded mode */
 const TierBar: React.FC<{
   tier: QuotaTier;
   t: (key: string, options?: Record<string, unknown>) => string;
@@ -343,7 +364,7 @@ const TierBar: React.FC<{
         {label}
       </span>
 
-      {/* 进度条 */}
+      {/* Progress bar */}
       <div className="flex-1 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full transition-all ${

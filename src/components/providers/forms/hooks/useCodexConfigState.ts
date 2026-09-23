@@ -14,8 +14,8 @@ interface UseCodexConfigStateProps {
 }
 
 /**
- * 管理 Codex 配置状态
- * Codex 配置包含两部分：auth.json (JSON) 和 config.toml (TOML 字符串)
+ * Manages Codex config state
+ * Codex config has two parts: auth.json (JSON) and config.toml (TOML string)
  */
 export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
   const [codexAuth, setCodexAuthState] = useState("");
@@ -28,36 +28,36 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
   const isUpdatingCodexBaseUrlRef = useRef(false);
   const isUpdatingCodexModelNameRef = useRef(false);
 
-  // 初始化 Codex 配置（编辑模式）
+  // Initialize Codex config (edit mode)
   useEffect(() => {
     if (!initialData) return;
 
     const config = initialData.settingsConfig;
     if (typeof config === "object" && config !== null) {
-      // 设置 auth.json
+      // Set auth.json
       const auth = (config as any).auth || {};
       setCodexAuthState(JSON.stringify(auth, null, 2));
 
-      // 设置 config.toml
+      // Set config.toml
       const configStr =
         typeof (config as any).config === "string"
           ? (config as any).config
           : "";
       setCodexConfigState(configStr);
 
-      // 提取 Base URL
+      // Extract Base URL
       const initialBaseUrl = extractCodexBaseUrl(configStr);
       if (initialBaseUrl) {
         setCodexBaseUrl(initialBaseUrl);
       }
 
-      // 提取 Model Name
+      // Extract model name
       const initialModelName = extractCodexModelName(configStr);
       if (initialModelName) {
         setCodexModelName(initialModelName);
       }
 
-      // 提取 API Key
+      // Extract API key
       try {
         if (auth && typeof auth.OPENAI_API_KEY === "string") {
           setCodexApiKey(auth.OPENAI_API_KEY);
@@ -68,7 +68,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     }
   }, [initialData]);
 
-  // 与 TOML 配置保持基础 URL 同步
+  // Keep the base URL in sync with the TOML config
   useEffect(() => {
     if (isUpdatingCodexBaseUrlRef.current) {
       return;
@@ -77,7 +77,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     setCodexBaseUrl((prev) => (prev === extracted ? prev : extracted));
   }, [codexConfig]);
 
-  // 与 TOML 配置保持模型名称同步
+  // Keep the model name in sync with the TOML config
   useEffect(() => {
     if (isUpdatingCodexModelNameRef.current) {
       return;
@@ -86,7 +86,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     setCodexModelName((prev) => (prev === extracted ? prev : extracted));
   }, [codexConfig]);
 
-  // 获取 API Key（从 auth JSON）
+  // Get the API key (from auth JSON)
   const getCodexAuthApiKey = useCallback((authString: string): string => {
     try {
       const auth = JSON.parse(authString || "{}");
@@ -96,7 +96,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     }
   }, []);
 
-  // 从 codexAuth 中提取并同步 API Key
+  // Extract the API key from codexAuth and sync it
   useEffect(() => {
     const extractedKey = getCodexAuthApiKey(codexAuth);
     if (extractedKey !== codexApiKey) {
@@ -104,7 +104,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     }
   }, [codexAuth, codexApiKey]);
 
-  // 验证 Codex Auth JSON
+  // Validate Codex auth JSON
   const validateCodexAuth = useCallback((value: string): string => {
     if (!value.trim()) return "";
     try {
@@ -118,7 +118,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     }
   }, []);
 
-  // 设置 auth 并验证
+  // Set auth and validate
   const setCodexAuth = useCallback(
     (value: string) => {
       setCodexAuthState(value);
@@ -127,7 +127,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     [validateCodexAuth],
   );
 
-  // 设置 config (支持函数更新)
+  // Set config (accepts an updater function)
   const setCodexConfig = useCallback(
     (value: string | ((prev: string) => string)) => {
       setCodexConfigState((prev) =>
@@ -139,7 +139,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     [],
   );
 
-  // 处理 Codex API Key 输入并写回 auth.json
+  // Handle Codex API key input and write it back to auth.json
   const handleCodexApiKeyChange = useCallback(
     (key: string) => {
       const trimmed = key.trim();
@@ -155,7 +155,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     [codexAuth, setCodexAuth],
   );
 
-  // 处理 Codex Base URL 变化
+  // Handle Codex Base URL changes
   const handleCodexBaseUrlChange = useCallback(
     (url: string) => {
       const sanitized = url.trim();
@@ -170,7 +170,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     [setCodexConfig],
   );
 
-  // 处理 Codex Model Name 变化
+  // Handle Codex model name changes
   const handleCodexModelNameChange = useCallback(
     (modelName: string) => {
       const trimmed = modelName.trim();
@@ -185,10 +185,10 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     [setCodexConfig],
   );
 
-  // 处理 config 变化（同步 Base URL 和 Model Name）
+  // Handle config changes (sync Base URL and model name)
   const handleCodexConfigChange = useCallback(
     (value: string) => {
-      // 归一化中文/全角/弯引号，避免 TOML 解析报错
+      // Normalize Chinese, full-width and curly quotes so TOML parsing does not fail
       const normalized = normalizeTomlText(value);
       setCodexConfig(normalized);
 
@@ -209,7 +209,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
     [setCodexConfig, codexBaseUrl, codexModelName],
   );
 
-  // 重置配置（用于预设切换）
+  // Reset config (on preset switch)
   const resetCodexConfig = useCallback(
     (auth: Record<string, unknown>, config: string) => {
       const authString = JSON.stringify(auth, null, 2);
@@ -228,7 +228,7 @@ export function useCodexConfigState({ initialData }: UseCodexConfigStateProps) {
         setCodexModelName("");
       }
 
-      // 提取 API Key
+      // Extract API key
       try {
         if (auth && typeof auth.OPENAI_API_KEY === "string") {
           setCodexApiKey(auth.OPENAI_API_KEY);

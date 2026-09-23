@@ -44,7 +44,7 @@ export interface ProvidersQueryData {
 }
 
 export interface UseProvidersQueryOptions {
-  isProxyRunning?: boolean; // 代理服务是否运行中
+  isProxyRunning?: boolean; // Whether the proxy service is running
 }
 
 export const useProvidersQuery = (
@@ -56,8 +56,8 @@ export const useProvidersQuery = (
   return useQuery({
     queryKey: ["providers", appId],
     placeholderData: keepPreviousData,
-    // 当代理服务运行时，每 10 秒刷新一次供应商列表
-    // 这样可以自动反映后端熔断器自动禁用代理目标的变更
+    // While the proxy service runs, refresh the provider list every 10 seconds
+    // so it picks up proxy targets the backend circuit breaker disabled automatically
     refetchInterval: isProxyRunning ? 10000 : false,
     queryFn: async () => {
       let providers: Record<string, Provider> = {};
@@ -66,13 +66,13 @@ export const useProvidersQuery = (
       try {
         providers = await providersApi.getAll(appId);
       } catch (error) {
-        console.error("获取供应商列表失败:", error);
+        console.error("Failed to get the provider list:", error);
       }
 
       try {
         currentProviderId = await providersApi.getCurrent(appId);
       } catch (error) {
-        console.error("获取当前供应商失败:", error);
+        console.error("Failed to get the current provider:", error);
       }
 
       return {
@@ -92,7 +92,7 @@ export const useSettingsQuery = (): UseQueryResult<Settings> => {
 
 export interface UseUsageQueryOptions {
   enabled?: boolean;
-  autoQueryInterval?: number; // 自动查询间隔（分钟），0 表示禁用
+  autoQueryInterval?: number; // Auto-query interval in minutes, 0 disables
 }
 
 export const useUsageQuery = (
@@ -102,12 +102,12 @@ export const useUsageQuery = (
 ) => {
   const { enabled = true, autoQueryInterval = 0 } = options || {};
 
-  // 计算 staleTime：如果有自动刷新间隔，使用该间隔；否则默认 5 分钟
-  // 这样可以避免切换 app 页面时重复触发查询
+  // staleTime: the auto-refresh interval if there is one, otherwise 5 minutes
+  // so switching app pages does not trigger the query again
   const staleTime =
     autoQueryInterval > 0
-      ? autoQueryInterval * 60 * 1000 // 与刷新间隔保持一致
-      : 5 * 60 * 1000; // 默认 5 分钟
+      ? autoQueryInterval * 60 * 1000 // Same as the refresh interval
+      : 5 * 60 * 1000; // Default 5 minutes
 
   const query = useQuery<UsageResult>({
     queryKey: ["usage", providerId, appId],
@@ -115,13 +115,13 @@ export const useUsageQuery = (
     enabled: enabled && !!providerId,
     refetchInterval:
       autoQueryInterval > 0
-        ? Math.max(autoQueryInterval, 1) * 60 * 1000 // 最小1分钟
+        ? Math.max(autoQueryInterval, 1) * 60 * 1000 // At least 1 minute
         : false,
-    refetchIntervalInBackground: true, // 后台也继续定时查询
+    refetchIntervalInBackground: true, // Keep polling in the background
     refetchOnWindowFocus: false,
     retry: false,
-    staleTime, // 使用动态计算的缓存时间
-    gcTime: 10 * 60 * 1000, // 缓存保留 10 分钟（组件卸载后）
+    staleTime, // Computed cache time
+    gcTime: 10 * 60 * 1000, // Keep the cache 10 minutes (after unmount)
   });
 
   return {

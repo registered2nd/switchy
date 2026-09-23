@@ -68,7 +68,7 @@ describe("Common config modals", () => {
     expect(screen.queryByTestId("common-config-panel")).not.toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("button", { name: /codexConfig.editCommonConfig|编辑通用配置/ }),
+      screen.getByRole("button", { name: /codexConfig.editCommonConfig|Edit Common Config/i }),
     );
 
     expect(screen.getByTestId("common-config-panel")).toBeInTheDocument();
@@ -104,7 +104,7 @@ describe("Common config modals", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: /geminiConfig.editCommonConfig|编辑通用配置/,
+        name: /geminiConfig.editCommonConfig|Edit Common Config/i,
       }),
     );
 

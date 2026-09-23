@@ -21,7 +21,7 @@ interface JsonEditorProps {
   showValidation?: boolean;
   language?: "json" | "javascript";
   height?: string | number;
-  showMinimap?: boolean; // 添加此属性以防未来使用
+  showMinimap?: boolean; // Reserved for future use
 }
 
 const JsonEditor: React.FC<JsonEditorProps> = ({
@@ -38,7 +38,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
 
-  // JSON linter 函数
+  // JSON linter
   const jsonLinter = useMemo(
     () =>
       linter((view) => {
@@ -50,9 +50,9 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
 
         try {
           const parsed = JSON.parse(doc);
-          // 检查是否是JSON对象
+          // Must be a JSON object
           if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-            // 格式正确
+            // Valid
           } else {
             diagnostics.push({
               from: 0,
@@ -62,7 +62,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
             });
           }
         } catch (e) {
-          // 简单处理JSON解析错误
+          // Basic handling of JSON parse errors
           const message =
             e instanceof SyntaxError ? e.message : t("jsonEditor.invalidJson");
           diagnostics.push({
@@ -81,10 +81,10 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
   useEffect(() => {
     if (!editorRef.current) return;
 
-    // 创建编辑器扩展
+    // Editor extensions
     const minHeightPx = height ? undefined : Math.max(1, rows) * 18;
 
-    // 使用 baseTheme 定义基础样式，优先级低于 oneDark，但可以正确响应主题
+    // baseTheme sets base styles; lower priority than oneDark but follows the theme
     const baseTheme = EditorView.baseTheme({
       ".cm-editor": {
         border: "1px solid hsl(var(--border))",
@@ -117,7 +117,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
       },
     });
 
-    // 使用 theme 定义尺寸和字体样式
+    // theme sets size and font styles
     const heightValue = height
       ? typeof height === "number"
         ? `${height}px`
@@ -150,10 +150,10 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
       }),
     ];
 
-    // 如果启用深色模式，添加深色主题
+    // Add the dark theme in dark mode
     if (darkMode) {
       extensions.push(oneDark);
-      // 在 oneDark 之后强制覆盖边框样式
+      // Override border styles after oneDark
       extensions.push(
         EditorView.theme({
           ".cm-editor": {
@@ -189,13 +189,13 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
       );
     }
 
-    // 创建初始状态
+    // Initial state
     const state = EditorState.create({
       doc: value,
       extensions,
     });
 
-    // 创建编辑器视图
+    // Editor view
     const view = new EditorView({
       state,
       parent: editorRef.current,
@@ -203,14 +203,14 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
 
     viewRef.current = view;
 
-    // 清理函数
+    // Cleanup
     return () => {
       view.destroy();
       viewRef.current = null;
     };
-  }, [darkMode, rows, height, language, jsonLinter]); // 依赖项中不包含 onChange 和 placeholder，避免不必要的重建
+  }, [darkMode, rows, height, language, jsonLinter]); // onChange and placeholder are left out of the deps to avoid needless rebuilds
 
-  // 当 value 从外部改变时更新编辑器内容
+  // Update the editor when value changes from outside
   useEffect(() => {
     if (viewRef.current && viewRef.current.state.doc.toString() !== value) {
       const transaction = viewRef.current.state.update({
@@ -224,7 +224,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
     }
   }, [value]);
 
-  // 格式化处理函数
+  // Format handler
   const handleFormat = () => {
     if (!viewRef.current) return;
 
@@ -234,15 +234,18 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
     try {
       const formatted = formatJSON(currentValue);
       onChange(formatted);
-      toast.success(t("common.formatSuccess", { defaultValue: "格式化成功" }), {
-        closeButton: true,
-      });
+      toast.success(
+        t("common.formatSuccess", { defaultValue: "Formatted successfully" }),
+        {
+          closeButton: true,
+        },
+      );
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       toast.error(
         t("common.formatError", {
-          defaultValue: "格式化失败：{{error}}",
+          defaultValue: "Format failed: {{error}}",
           error: errorMessage,
         }),
       );
@@ -268,7 +271,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
           className={`${isFullHeight ? "mt-2 flex-shrink-0" : "mt-2"} inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors`}
         >
           <Wand2 className="w-3.5 h-3.5" />
-          {t("common.format", { defaultValue: "格式化" })}
+          {t("common.format", { defaultValue: "Format" })}
         </button>
       )}
     </div>

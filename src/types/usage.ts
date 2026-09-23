@@ -1,4 +1,4 @@
-// 使用统计相关类型定义
+// Usage statistics types
 
 export interface TokenUsage {
   inputTokens: number;
@@ -73,11 +73,42 @@ export interface DailyStats {
 export interface ProviderStats {
   providerId: string;
   providerName: string;
+  appType: string;
+  /** The signed-in account behind a pooled provider. */
+  accountEmail?: string | null;
   requestCount: number;
   totalTokens: number;
   totalCost: string;
   successRate: number;
+  /** Requests the account refused with 429. */
+  limitedCount: number;
   avgLatencyMs: number;
+  /** Unix seconds of the newest logged request. */
+  lastUsedAt?: number | null;
+}
+
+export type SwitchReason =
+  | "manual"
+  | "failover"
+  | "limit"
+  | "signed_out"
+  | "rotation"
+  | "recovered";
+
+/** A change of the account serving an app. */
+export interface AccountSwitch {
+  id: number;
+  appType: string;
+  fromProviderId?: string | null;
+  fromProviderName?: string | null;
+  fromAccount?: string | null;
+  toProviderId: string;
+  toProviderName?: string | null;
+  toAccount?: string | null;
+  reason: SwitchReason;
+  detail?: string | null;
+  /** Unix seconds. */
+  createdAt: number;
 }
 
 export interface ModelStats {

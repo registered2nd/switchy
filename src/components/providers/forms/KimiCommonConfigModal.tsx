@@ -68,7 +68,7 @@ export const KimiCommonConfigModal: React.FC<KimiCommonConfigModalProps> = ({
     <FullScreenPanel
       isOpen={isOpen}
       title={t("kimiConfig.editCommonConfigTitle", {
-        defaultValue: "编辑 Kimi 通用配置片段",
+        defaultValue: "Edit Kimi Common Config Snippet",
       })}
       onClose={handleClose}
       footer={
@@ -87,7 +87,7 @@ export const KimiCommonConfigModal: React.FC<KimiCommonConfigModalProps> = ({
                 <Download className="w-4 h-4" />
               )}
               {t("kimiConfig.extractFromCurrent", {
-                defaultValue: "从编辑内容提取",
+                defaultValue: "Extract from Editor",
               })}
             </Button>
           )}
@@ -105,7 +105,7 @@ export const KimiCommonConfigModal: React.FC<KimiCommonConfigModalProps> = ({
         <p className="text-sm text-muted-foreground">
           {t("kimiConfig.commonConfigHint", {
             defaultValue:
-              "勾选“写入通用配置”后，此片段会合并进 config.toml（例如 [thinking]、default_permission_mode）",
+              "This snippet is merged into config.toml when 'Write Common Config' is checked (e.g. [thinking], default_permission_mode)",
           })}
         </p>
 

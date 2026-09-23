@@ -30,7 +30,7 @@ interface UsageScriptModalProps {
   onSave: (script: UsageScript) => void;
 }
 
-// 生成预设模板的函数（支持国际化）
+// Builds the preset templates (localized)
 const generatePresetTemplates = (
   t: (key: string) => string,
 ): Record<string, string> => ({
@@ -93,14 +93,14 @@ const generatePresetTemplates = (
   },
 })`,
 
-  // GitHub Copilot 模板不需要脚本，使用专用 API
+  // GitHub Copilot needs no script; it uses a dedicated API
   [TEMPLATE_TYPES.GITHUB_COPILOT]: "",
 
-  // Coding Plan 模板不需要脚本，使用专用 Rust 查询
+  // Coding Plan needs no script; it uses a dedicated Rust query
   [TEMPLATE_TYPES.TOKEN_PLAN]: "",
 });
 
-// 模板名称国际化键映射
+// i18n keys for template names
 const TEMPLATE_NAME_KEYS: Record<string, string> = {
   [TEMPLATE_TYPES.CUSTOM]: "usageScript.templateCustom",
   [TEMPLATE_TYPES.GENERAL]: "usageScript.templateGeneral",
@@ -109,12 +109,12 @@ const TEMPLATE_NAME_KEYS: Record<string, string> = {
   [TEMPLATE_TYPES.TOKEN_PLAN]: "usageScript.templateTokenPlan",
 };
 
-/** Coding Plan 供应商选项 */
+/** Coding Plan provider options */
 const TOKEN_PLAN_PROVIDERS = [
   { id: "kimi", label: "Kimi For Coding", pattern: /api\.kimi\.com\/coding/i },
   {
     id: "zhipu",
-    label: "Zhipu GLM (智谱)",
+    label: "Zhipu GLM",
     pattern: /bigmodel\.cn|api\.z\.ai/i,
   },
   {
@@ -124,7 +124,7 @@ const TOKEN_PLAN_PROVIDERS = [
   },
 ] as const;
 
-/** 根据 Base URL 自动检测 Coding Plan 供应商 */
+/** Detect the Coding Plan provider from the base URL */
 function detectTokenPlanProvider(baseUrl: string | undefined): string | null {
   if (!baseUrl) return null;
   for (const cp of TOKEN_PLAN_PROVIDERS) {
@@ -145,10 +145,10 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
   const { data: settingsData } = useSettingsQuery();
   const [showUsageConfirm, setShowUsageConfirm] = useState(false);
 
-  // 生成带国际化的预设模板
+  // Localized preset templates
   const PRESET_TEMPLATES = generatePresetTemplates(t);
 
-  // 从 provider 的 settingsConfig 中提取 API Key 和 Base URL
+  // Pull the API key and base URL from the provider's settingsConfig
   const getProviderCredentials = (): {
     apiKey: string | undefined;
     baseUrl: string | undefined;
@@ -157,7 +157,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
       const config = provider.settingsConfig;
       if (!config) return { apiKey: undefined, baseUrl: undefined };
 
-      // 处理不同应用的配置格式
+      // Handle each app's config format
       if (appId === "claude") {
         // Claude: { env: { ANTHROPIC_AUTH_TOKEN | ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL } }
         const env = (config as any).env || {};
@@ -193,7 +193,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
   const [script, setScript] = useState<UsageScript>(() => {
     const savedScript = provider.meta?.usage_script;
     if (savedScript) {
-      // 已有配置：如果是 coding_plan 但没有 codingPlanProvider，自动检测填充
+      // Existing config: coding_plan without codingPlanProvider gets it detected
       if (
         savedScript.templateType === TEMPLATE_TYPES.TOKEN_PLAN &&
         !savedScript.codingPlanProvider
@@ -207,7 +207,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
       return savedScript;
     }
 
-    // 新配置：如果 URL 匹配 Coding Plan，自动初始化
+    // New config: initialize Coding Plan when the URL matches
     const autoDetected = detectTokenPlanProvider(providerCredentials.baseUrl);
     if (autoDetected) {
       return {
@@ -229,7 +229,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
 
   const [testing, setTesting] = useState(false);
 
-  // 🔧 失焦时的验证（严格）- 仅确保有效整数
+  // Strict validation on blur: valid integer only
   const validateTimeout = (value: string): number => {
     const num = Number(value);
     if (isNaN(num) || value.trim() === "") {
@@ -237,19 +237,21 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
     }
     if (!Number.isInteger(num)) {
       toast.warning(
-        t("usageScript.timeoutMustBeInteger") || "超时时间必须为整数",
+        t("usageScript.timeoutMustBeInteger") ||
+          "Timeout must be an integer, decimal part ignored",
       );
     }
     if (num < 0) {
       toast.error(
-        t("usageScript.timeoutCannotBeNegative") || "超时时间不能为负数",
+        t("usageScript.timeoutCannotBeNegative") ||
+          "Timeout cannot be negative",
       );
       return 10;
     }
     return Math.floor(num);
   };
 
-  // 🔧 失焦时的验证（严格）- 自动查询间隔
+  // Strict validation on blur: auto-query interval
   const validateAndClampInterval = (value: string): number => {
     const num = Number(value);
     if (isNaN(num) || value.trim() === "") {
@@ -257,12 +259,14 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
     }
     if (!Number.isInteger(num)) {
       toast.warning(
-        t("usageScript.intervalMustBeInteger") || "自动查询间隔必须为整数",
+        t("usageScript.intervalMustBeInteger") ||
+          "Interval must be an integer, decimal part ignored",
       );
     }
     if (num < 0) {
       toast.error(
-        t("usageScript.intervalCannotBeNegative") || "自动查询间隔不能为负数",
+        t("usageScript.intervalCannotBeNegative") ||
+          "Interval cannot be negative",
       );
       return 0;
     }
@@ -270,7 +274,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
     if (clamped !== num && num > 0) {
       toast.info(
         t("usageScript.intervalAdjusted", { value: clamped }) ||
-          `自动查询间隔已调整为 ${clamped} 分钟`,
+          `Interval adjusted to ${clamped} minutes`,
       );
     }
     return clamped;
@@ -279,28 +283,28 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(
     () => {
       const existingScript = provider.meta?.usage_script;
-      // Copilot 供应商默认使用 Copilot 模板
+      // Copilot providers default to the Copilot template
       if (provider.meta?.providerType === PROVIDER_TYPES.GITHUB_COPILOT) {
         return TEMPLATE_TYPES.GITHUB_COPILOT;
       }
-      // 优先使用保存的 templateType
+      // Prefer the saved templateType
       if (existingScript?.templateType) {
         return existingScript.templateType as string;
       }
-      // 向后兼容：根据字段推断模板类型
-      // 检测 NEW_API 模板（有 accessToken 或 userId）
+      // Backward compatibility: infer the template type from the fields
+      // NEW_API template (has accessToken or userId)
       if (existingScript?.accessToken || existingScript?.userId) {
         return TEMPLATE_TYPES.NEW_API;
       }
-      // 检测 GENERAL 模板（有 apiKey 或 baseUrl）
+      // GENERAL template (has apiKey or baseUrl)
       if (existingScript?.apiKey || existingScript?.baseUrl) {
         return TEMPLATE_TYPES.GENERAL;
       }
-      // 新配置：如果 URL 匹配 Coding Plan 供应商，自动选择 Coding Plan 模板
+      // New config: pick the Coding Plan template when the URL matches a Coding Plan provider
       if (detectTokenPlanProvider(providerCredentials.baseUrl)) {
         return TEMPLATE_TYPES.TOKEN_PLAN;
       }
-      // 默认使用 GENERAL（与默认代码模板一致）
+      // Default to GENERAL (matches the default code template)
       return TEMPLATE_TYPES.GENERAL;
     },
   );
@@ -331,7 +335,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
   };
 
   const handleSave = () => {
-    // Copilot 和 Coding Plan 模板不需要脚本验证
+    // Copilot and Coding Plan templates skip script validation
     if (
       selectedTemplate !== TEMPLATE_TYPES.GITHUB_COPILOT &&
       selectedTemplate !== TEMPLATE_TYPES.TOKEN_PLAN
@@ -345,7 +349,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
         return;
       }
     }
-    // 保存时记录当前选择的模板类型
+    // Save the selected template type
     const scriptWithTemplate = {
       ...script,
       templateType: selectedTemplate as
@@ -363,7 +367,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
   const handleTest = async () => {
     setTesting(true);
     try {
-      // Coding Plan 模板使用专用 API
+      // Coding Plan uses a dedicated API
       if (selectedTemplate === TEMPLATE_TYPES.TOKEN_PLAN) {
         const config = provider.settingsConfig as Record<string, any>;
         const baseUrl: string = config?.env?.ANTHROPIC_BASE_URL ?? "";
@@ -381,7 +385,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
             duration: 3000,
             closeButton: true,
           });
-          // 将结果转换为 UsageResult 格式更新缓存
+          // Convert the result to UsageResult and update the cache
           const usageData = quota.tiers.map((tier) => ({
             planName: tier.name,
             remaining: 100 - tier.utilization,
@@ -402,7 +406,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
         return;
       }
 
-      // Copilot 模板使用专用 API
+      // Copilot uses a dedicated API
       if (selectedTemplate === TEMPLATE_TYPES.GITHUB_COPILOT) {
         const accountId = resolveManagedAccountId(
           provider.meta,
@@ -418,7 +422,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
           duration: 3000,
           closeButton: true,
         });
-        // 更新缓存
+        // Update the cache
         queryClient.setQueryData(["usage", provider.id, appId], {
           success: true,
           data: [
@@ -457,7 +461,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
           closeButton: true,
         });
 
-        // 🔧 测试成功后，更新主界面列表的用量查询缓存
+        // After a successful test, update the main list's usage cache
         queryClient.setQueryData(["usage", provider.id, appId], result);
       } else {
         toast.error(
@@ -508,13 +512,13 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
     const preset = PRESET_TEMPLATES[presetName];
     if (preset !== undefined) {
       if (presetName === TEMPLATE_TYPES.CUSTOM) {
-        // 🔧 自定义模式：用户应该在脚本中直接写完整 URL 和凭证，而不是依赖变量替换
-        // 这样可以避免同源检查导致的问题
-        // 如果用户想使用变量，需要手动在配置中设置 baseUrl/apiKey
+        // Custom mode: the script holds the full URL and credentials instead of relying on variable substitution
+        // This avoids same-origin check problems
+        // To use variables, set baseUrl/apiKey in the config manually
         setScript({
           ...script,
           code: preset,
-          // 清除凭证，用户可选择手动输入或保持空
+          // Clear credentials; the user can enter them or leave them empty
           apiKey: undefined,
           baseUrl: undefined,
           accessToken: undefined,
@@ -534,7 +538,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
           apiKey: undefined,
         });
       } else if (presetName === TEMPLATE_TYPES.GITHUB_COPILOT) {
-        // Copilot 模板不需要脚本和凭证，使用专用 API
+        // Copilot needs no script or credentials; it uses a dedicated API
         setScript({
           ...script,
           code: "",
@@ -544,7 +548,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
           userId: undefined,
         });
       } else if (presetName === TEMPLATE_TYPES.TOKEN_PLAN) {
-        // Coding Plan 模板不需要脚本，使用 Rust 原生查询
+        // Coding Plan needs no script; it uses a native Rust query
         const autoDetected = detectTokenPlanProvider(
           providerCredentials.baseUrl,
         );
@@ -630,7 +634,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
 
       {script.enabled && (
         <div className="space-y-6">
-          {/* 预设模板选择 */}
+          {/* Preset template picker */}
           <div className="space-y-4 glass rounded-xl border border-white/10 p-6">
             <Label className="text-base font-medium">
               {t("usageScript.presetTemplate")}
@@ -640,11 +644,11 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                 .filter((name) => {
                   const isCopilotProvider =
                     provider.meta?.providerType === "github_copilot";
-                  // Copilot 供应商只显示 copilot 模板
+                  // Copilot providers show only the Copilot template
                   if (isCopilotProvider) {
                     return name === TEMPLATE_TYPES.GITHUB_COPILOT;
                   }
-                  // 非 Copilot 供应商不显示 copilot 模板
+                  // Other providers hide the Copilot template
                   return name !== TEMPLATE_TYPES.GITHUB_COPILOT;
                 })
                 .map((name) => {
@@ -669,7 +673,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                 })}
             </div>
 
-            {/* 自定义模式：变量提示和具体值 */}
+            {/* Custom mode: variables and their values */}
             {selectedTemplate === TEMPLATE_TYPES.CUSTOM && (
               <div className="space-y-2 border-t border-white/10 pt-3">
                 <h4 className="text-sm font-medium text-foreground">
@@ -688,7 +692,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                       </code>
                     ) : (
                       <span className="text-muted-foreground/50 italic">
-                        {t("common.notSet") || "未设置"}
+                        {t("common.notSet") || "Not Set"}
                       </span>
                     )}
                   </div>
@@ -729,7 +733,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                       </>
                     ) : (
                       <span className="text-muted-foreground/50 italic">
-                        {t("common.notSet") || "未设置"}
+                        {t("common.notSet") || "Not Set"}
                       </span>
                     )}
                   </div>
@@ -737,7 +741,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
               </div>
             )}
 
-            {/* Copilot 模式：自动认证提示 */}
+            {/* Copilot mode: automatic auth hint */}
             {selectedTemplate === TEMPLATE_TYPES.GITHUB_COPILOT && (
               <div className="space-y-2 border-t border-white/10 pt-3">
                 <p className="text-sm text-muted-foreground">
@@ -746,7 +750,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
               </div>
             )}
 
-            {/* Coding Plan 模式：供应商选择 */}
+            {/* Coding Plan mode: provider picker */}
             {selectedTemplate === TEMPLATE_TYPES.TOKEN_PLAN && (
               <div className="space-y-3 border-t border-white/10 pt-3">
                 <p className="text-sm text-muted-foreground">
@@ -783,7 +787,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
               </div>
             )}
 
-            {/* 凭证配置 */}
+            {/* Credentials */}
             {shouldShowCredentialsConfig && (
               <div className="space-y-4">
                 <div className="flex items-start justify-between">
@@ -945,9 +949,9 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
               </div>
             )}
 
-            {/* 通用配置（始终显示） */}
+            {/* General settings (always shown) */}
             <div className="grid gap-4 md:grid-cols-2 pt-4 border-t border-white/10">
-              {/* 超时时间 */}
+              {/* Timeout */}
               <div className="space-y-2">
                 <Label htmlFor="usage-timeout">
                   {t("usageScript.timeoutSeconds")}
@@ -973,7 +977,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                 />
               </div>
 
-              {/* 自动查询间隔 */}
+              {/* Auto-query interval */}
               <div className="space-y-2">
                 <Label htmlFor="usage-interval">
                   {t("usageScript.autoIntervalMinutes")}
@@ -1008,7 +1012,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
             </div>
           </div>
 
-          {/* 提取器代码 - Copilot 模板不需要 */}
+          {/* Extractor code (not for Copilot) */}
           {selectedTemplate !== TEMPLATE_TYPES.GITHUB_COPILOT &&
             selectedTemplate !== TEMPLATE_TYPES.TOKEN_PLAN && (
               <div className="space-y-4 glass rounded-xl border border-white/10 p-6">
@@ -1033,7 +1037,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
               </div>
             )}
 
-          {/* 帮助信息 - Copilot 模板不需要 */}
+          {/* Help (not for Copilot) */}
           {selectedTemplate !== TEMPLATE_TYPES.GITHUB_COPILOT &&
             selectedTemplate !== TEMPLATE_TYPES.TOKEN_PLAN && (
               <div className="glass rounded-xl border border-white/10 p-6 text-sm text-foreground/90">

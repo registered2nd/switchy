@@ -42,8 +42,8 @@ function parseModelsFromConfig(settingsConfig: string) {
 }
 
 /**
- * 管理模型选择状态
- * 支持 ANTHROPIC_MODEL, ANTHROPIC_REASONING_MODEL 和各类型默认模型
+ * Manages model selection state
+ * Supports ANTHROPIC_MODEL, ANTHROPIC_REASONING_MODEL and the per-type default models
  */
 export function useModelState({
   settingsConfig,
@@ -69,11 +69,11 @@ export function useModelState({
   const isUserEditingRef = useRef(false);
   const lastConfigRef = useRef(settingsConfig);
 
-  // 初始化读取：读新键；若缺失，按兼容优先级回退
+  // Initial read: use the new keys; if missing, fall back in compatibility order
   // Haiku: DEFAULT_HAIKU || SMALL_FAST || MODEL
   // Sonnet: DEFAULT_SONNET || MODEL || SMALL_FAST
   // Opus: DEFAULT_OPUS || MODEL || SMALL_FAST
-  // 仅在 settingsConfig 变化时同步一次（表单加载/切换预设时）
+  // Sync once, only when settingsConfig changes (form load or preset switch)
   useEffect(() => {
     if (lastConfigRef.current === settingsConfig) {
       return;
@@ -149,14 +149,14 @@ export function useModelState({
           : { env: {} };
         if (!currentConfig.env) currentConfig.env = {};
 
-        // 新键仅写入；旧键不再写入
+        // Write only the new keys; legacy keys are no longer written
         const trimmed = value.trim();
         if (trimmed) {
           currentConfig.env[field] = trimmed;
         } else {
           delete currentConfig.env[field];
         }
-        // 删除旧键
+        // Remove legacy keys
         delete currentConfig.env["ANTHROPIC_SMALL_FAST_MODEL"];
 
         onConfigChange(JSON.stringify(currentConfig, null, 2));

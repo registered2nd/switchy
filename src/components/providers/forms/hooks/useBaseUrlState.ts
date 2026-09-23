@@ -16,8 +16,8 @@ interface UseBaseUrlStateProps {
 }
 
 /**
- * 管理 Base URL 状态
- * 支持 Claude (JSON) 和 Codex (TOML) 两种格式
+ * Manages Base URL state
+ * Supports both Claude (JSON) and Codex (TOML) formats
  */
 export function useBaseUrlState({
   appType,
@@ -32,10 +32,10 @@ export function useBaseUrlState({
   const [geminiBaseUrl, setGeminiBaseUrl] = useState("");
   const isUpdatingRef = useRef(false);
 
-  // 从配置同步到 state（Claude）
+  // Sync from config into state (Claude)
   useEffect(() => {
     if (appType !== "claude") return;
-    // 只有 official 类别不显示 Base URL 输入框，其他类别都需要回填
+    // Only the official category hides the Base URL input; every other category needs it filled back in
     if (category === "official") return;
     if (isUpdatingRef.current) return;
 
@@ -51,10 +51,10 @@ export function useBaseUrlState({
     }
   }, [appType, category, settingsConfig, baseUrl]);
 
-  // 从配置同步到 state（Codex）
+  // Sync from config into state (Codex)
   useEffect(() => {
     if (appType !== "codex") return;
-    // 只有 official 类别不显示 Base URL 输入框，其他类别都需要回填
+    // Only the official category hides the Base URL input; every other category needs it filled back in
     if (category === "official") return;
     if (isUpdatingRef.current) return;
     if (!codexConfig) return;
@@ -63,10 +63,10 @@ export function useBaseUrlState({
     setCodexBaseUrl((prev) => (prev === extracted ? prev : extracted));
   }, [appType, category, codexConfig]);
 
-  // 从Claude配置同步到 state（Gemini）
+  // Sync from config into state (Gemini)
   useEffect(() => {
     if (appType !== "gemini") return;
-    // 只有 official 类别不显示 Base URL 输入框，其他类别都需要回填
+    // Only the official category hides the Base URL input; every other category needs it filled back in
     if (category === "official") return;
     if (isUpdatingRef.current) return;
 
@@ -76,14 +76,14 @@ export function useBaseUrlState({
       const nextUrl = typeof envUrl === "string" ? envUrl.trim() : "";
       if (nextUrl !== geminiBaseUrl) {
         setGeminiBaseUrl(nextUrl);
-        setBaseUrl(nextUrl); // 也更新 baseUrl 用于 UI
+        setBaseUrl(nextUrl); // also update baseUrl for the UI
       }
     } catch {
       // ignore
     }
   }, [appType, category, settingsConfig, geminiBaseUrl]);
 
-  // 处理 Claude Base URL 变化
+  // Handle Claude Base URL changes
   const handleClaudeBaseUrlChange = useCallback(
     (url: string) => {
       const sanitized = url.trim();
@@ -108,7 +108,7 @@ export function useBaseUrlState({
     [settingsConfig, onSettingsConfigChange],
   );
 
-  // 处理 Codex Base URL 变化
+  // Handle Codex Base URL changes
   const handleCodexBaseUrlChange = useCallback(
     (url: string) => {
       const sanitized = url.trim();
@@ -132,12 +132,12 @@ export function useBaseUrlState({
     [codexConfig, onCodexConfigChange],
   );
 
-  // 处理 Gemini Base URL 变化
+  // Handle Gemini Base URL changes
   const handleGeminiBaseUrlChange = useCallback(
     (url: string) => {
       const sanitized = url.trim();
       setGeminiBaseUrl(sanitized);
-      setBaseUrl(sanitized); // 也更新 baseUrl 用于 UI
+      setBaseUrl(sanitized); // also update baseUrl for the UI
       isUpdatingRef.current = true;
 
       try {

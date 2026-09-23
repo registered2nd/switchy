@@ -1,5 +1,6 @@
-// 供应商配置处理工具函数
+// Provider config helpers
 
+import i18n from "i18next";
 import type { TemplateValueConfig } from "../config/claudeProviderPresets";
 import { normalizeTomlText } from "@/utils/textNormalization";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -19,7 +20,7 @@ const deepMerge = (
       }
       deepMerge(target[key], value);
     } else {
-      // 直接覆盖非对象字段（数组/基础类型）
+      // Overwrite non-object fields directly (arrays/primitives)
       target[key] = value;
     }
   });
@@ -34,13 +35,13 @@ const deepRemove = (
     if (!(key in target)) return;
 
     if (isPlainObject(value) && isPlainObject(target[key])) {
-      // 只移除完全匹配的嵌套属性
+      // Remove only nested properties that match exactly
       deepRemove(target[key], value);
       if (Object.keys(target[key]).length === 0) {
         delete target[key];
       }
     } else if (isSubset(target[key], value)) {
-      // 只有当值完全匹配时才删除
+      // Delete only when the value matches exactly
       delete target[key];
     }
   });
@@ -62,7 +63,7 @@ const isSubset = (target: any, source: any): boolean => {
   return target === source;
 };
 
-// 深拷贝函数
+// Deep clone
 const deepClone = <T>(obj: T): T => {
   if (obj === null || typeof obj !== "object") return obj;
   if (obj instanceof Date) return new Date(obj.getTime()) as T;
@@ -84,10 +85,10 @@ export interface UpdateCommonConfigResult {
   error?: string;
 }
 
-// 验证JSON配置格式
+// Validate a JSON config
 export const validateJsonConfig = (
   value: string,
-  fieldName: string = "配置",
+  fieldName: string = i18n.t("providerForm.fieldConfig"),
 ): string => {
   if (!value.trim()) {
     return "";
@@ -95,15 +96,15 @@ export const validateJsonConfig = (
   try {
     const parsed = JSON.parse(value);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return `${fieldName}必须是 JSON 对象`;
+      return i18n.t("providerForm.jsonNotObject", { field: fieldName });
     }
     return "";
   } catch {
-    return `${fieldName}JSON格式错误，请检查语法`;
+    return i18n.t("providerForm.jsonSyntaxError", { field: fieldName });
   }
 };
 
-// 将通用配置片段写入/移除 settingsConfig
+// Write/remove the common config snippet in settingsConfig
 export const updateCommonConfigSnippet = (
   jsonString: string,
   snippetString: string,
@@ -115,7 +116,7 @@ export const updateCommonConfigSnippet = (
   } catch (err) {
     return {
       updatedConfig: jsonString,
-      error: "配置 JSON 解析失败，无法写入通用配置",
+      error: i18n.t("providerForm.commonConfigParseFailed"),
     };
   }
 
@@ -125,8 +126,11 @@ export const updateCommonConfigSnippet = (
     };
   }
 
-  // 使用统一的验证函数
-  const snippetError = validateJsonConfig(snippetString, "通用配置片段");
+  // Use the shared validation function
+  const snippetError = validateJsonConfig(
+    snippetString,
+    i18n.t("providerForm.fieldCommonSnippet"),
+  );
   if (snippetError) {
     return {
       updatedConfig: JSON.stringify(config, null, 2),
@@ -150,7 +154,7 @@ export const updateCommonConfigSnippet = (
   };
 };
 
-// 检查当前配置是否已包含通用配置片段
+// Whether the current config already contains the common config snippet
 export const hasCommonConfigSnippet = (
   jsonString: string,
   snippetString: string,
@@ -166,7 +170,7 @@ export const hasCommonConfigSnippet = (
   }
 };
 
-// 读取配置中的 API Key（支持 Claude, Codex, Gemini）
+// Read the API key from the config (Claude, Codex, Gemini)
 export const getApiKeyFromConfig = (
   jsonString: string,
   appType?: string,
@@ -174,7 +178,7 @@ export const getApiKeyFromConfig = (
   try {
     const config = JSON.parse(jsonString);
 
-    // 优先检查顶层 apiKey 字段（用于 Bedrock API Key 等预设）
+    // Check the top-level apiKey field first (for presets such as Bedrock API Key)
     if (
       typeof config?.apiKey === "string" &&
       config.apiKey &&
@@ -199,7 +203,7 @@ export const getApiKeyFromConfig = (
       return typeof codexKey === "string" ? codexKey : "";
     }
 
-    // Claude API Key (优先 ANTHROPIC_AUTH_TOKEN，其次 ANTHROPIC_API_KEY)
+    // Claude API key (ANTHROPIC_AUTH_TOKEN first, then ANTHROPIC_API_KEY)
     const token = env.ANTHROPIC_AUTH_TOKEN;
     const apiKey = env.ANTHROPIC_API_KEY;
     const value =
@@ -214,7 +218,7 @@ export const getApiKeyFromConfig = (
   }
 };
 
-// 模板变量替换
+// Template variable substitution
 export const applyTemplateValues = (
   config: any,
   templateValues: Record<string, TemplateValueConfig> | undefined,
@@ -259,7 +263,7 @@ export const applyTemplateValues = (
   return traverse(config);
 };
 
-// 判断配置中是否存在 API Key 字段
+// Whether the config has an API key field
 export const hasApiKeyField = (
   jsonString: string,
   appType?: string,
@@ -267,7 +271,7 @@ export const hasApiKeyField = (
   try {
     const config = JSON.parse(jsonString);
 
-    // 检查顶层 apiKey 字段（用于 Bedrock API Key 等预设）
+    // Check the top-level apiKey field (for presets such as Bedrock API Key)
     if (Object.prototype.hasOwnProperty.call(config, "apiKey")) {
       return true;
     }
@@ -291,7 +295,7 @@ export const hasApiKeyField = (
   }
 };
 
-// 写入/更新配置中的 API Key，默认不新增缺失字段
+// Write/update the API key in the config; missing fields are not added by default
 export const setApiKeyInConfig = (
   jsonString: string,
   apiKey: string,
@@ -305,7 +309,7 @@ export const setApiKeyInConfig = (
   try {
     const config = JSON.parse(jsonString);
 
-    // 优先检查顶层 apiKey 字段（用于 Bedrock API Key 等预设）
+    // Check the top-level apiKey field first (for presets such as Bedrock API Key)
     if (Object.prototype.hasOwnProperty.call(config, "apiKey")) {
       config.apiKey = apiKey;
       return JSON.stringify(config, null, 2);
@@ -341,7 +345,7 @@ export const setApiKeyInConfig = (
       return JSON.stringify(config, null, 2);
     }
 
-    // Claude API Key (优先写入已存在的字段；若两者均不存在且允许创建，则使用 apiKeyField 或默认 AUTH_TOKEN 字段)
+    // Claude API key (write to an existing field first; if neither exists and creation is allowed, use apiKeyField or the default AUTH_TOKEN field)
     if ("ANTHROPIC_AUTH_TOKEN" in env) {
       env.ANTHROPIC_AUTH_TOKEN = apiKey;
     } else if ("ANTHROPIC_API_KEY" in env) {
@@ -597,7 +601,7 @@ const getTopLevelModelProviderLineIndex = (lines: string[]): number => {
   return -1;
 };
 
-// 从 Codex 的 TOML 配置文本中提取 base_url（支持单/双引号）
+// Extract base_url from Codex TOML config text (single or double quotes)
 export const extractCodexBaseUrl = (
   configText: string | undefined | null,
 ): string | undefined => {
@@ -647,7 +651,7 @@ export const extractCodexBaseUrl = (
   }
 };
 
-// 从 Provider 对象中提取 Codex base_url（当 settingsConfig.config 为 TOML 字符串时）
+// Extract the Codex base_url from a Provider (when settingsConfig.config is a TOML string)
 export const getCodexBaseUrl = (
   provider: { settingsConfig?: Record<string, any> } | undefined | null,
 ): string | undefined => {
@@ -662,7 +666,7 @@ export const getCodexBaseUrl = (
   }
 };
 
-// 在 Codex 的 TOML 配置文本中写入或更新 base_url 字段
+// Write or update base_url in Codex TOML config text
 export const setCodexBaseUrl = (
   configText: string,
   baseUrl: string,
@@ -773,7 +777,7 @@ export const setCodexBaseUrl = (
 
 // ========== Codex model name utils ==========
 
-// 从 Codex 的 TOML 配置文本中提取 model 字段（支持单/双引号）
+// Extract the model field from Codex TOML config text (single or double quotes)
 export const extractCodexModelName = (
   configText: string | undefined | null,
 ): string | undefined => {
@@ -794,7 +798,7 @@ export const extractCodexModelName = (
   }
 };
 
-// 在 Codex 的 TOML 配置文本中写入或更新 model 字段
+// Write or update the model field in Codex TOML config text
 export const setCodexModelName = (
   configText: string,
   modelName: string,
@@ -858,7 +862,7 @@ const findTopLevelIntMatch = (
   return undefined;
 };
 
-// 从 Codex TOML 配置中提取顶级整数字段
+// Read a top-level integer field from Codex TOML config
 export const extractCodexTopLevelInt = (
   configText: string | undefined | null,
   fieldName: string,
@@ -875,7 +879,7 @@ export const extractCodexTopLevelInt = (
   }
 };
 
-// 在 Codex TOML 配置中设置或更新顶级整数字段
+// Set or update a top-level integer field in Codex TOML config
 export const setCodexTopLevelInt = (
   configText: string,
   fieldName: string,
@@ -892,7 +896,7 @@ export const setCodexTopLevelInt = (
     return finalizeTomlText(lines);
   }
 
-  // 插入位置：顶级区域末尾（section header 之前）
+  // Insert position: end of the top-level area (before the first section header)
   if (lines.length === 0) {
     return `${replacementLine}\n`;
   }
@@ -901,7 +905,7 @@ export const setCodexTopLevelInt = (
   return finalizeTomlText(lines);
 };
 
-// 从 Codex TOML 配置中移除顶级字段行
+// Remove a top-level field line from Codex TOML config
 export const removeCodexTopLevelField = (
   configText: string,
   fieldName: string,
@@ -919,11 +923,11 @@ export const removeCodexTopLevelField = (
 
 // ========== Kimi (kimi-code) config.toml utils ==========
 //
-// Kimi 的 config.toml 结构：
+// Kimi config.toml layout:
 //   default_model = "<providerId>/<model>"
 //   [providers.<id>]  type / api_key / base_url
 //   [models."<alias>"] provider / model
-// API Key、请求地址、模型名都在这里，没有单独的 auth 文件。
+// API key, endpoint and model name all live here; there is no separate auth file.
 
 const TOML_DEFAULT_MODEL_PATTERN =
   /^\s*default_model\s*=\s*(["'])([^"'\r\n]+)\1\s*(?:#.*)?$/;
@@ -934,7 +938,7 @@ const TOML_PROVIDER_REF_PATTERN =
 const TOML_TYPE_PATTERN = /^\s*type\s*=\s*(["'])([^"'\r\n]+)\1\s*(?:#.*)?$/;
 const KIMI_TOML_BARE_KEY = /^[A-Za-z0-9_-]+$/;
 
-/** 拆分 TOML 表头名（尊重引号，`models."a/b.c"` → ["models", "a/b.c"]） */
+/** Split a TOML table header name (quote-aware, `models."a/b.c"` -> ["models", "a/b.c"]) */
 const splitTomlHeaderName = (name: string): string[] => {
   const segments: string[] = [];
   let current = "";
@@ -1031,7 +1035,7 @@ const kimiLines = (configText: string | undefined | null): string[] => {
   return text ? text.split("\n") : [];
 };
 
-/** 当前生效的供应商 id：default_model 别名 → 模型表的 provider → 别名前缀 → 第一个 [providers.X] */
+/** Active provider id: default_model alias -> the model table's provider -> alias prefix -> first [providers.X] */
 export const getKimiProviderId = (
   configText: string | undefined | null,
 ): string | undefined => {
@@ -1078,7 +1082,7 @@ const findKimiProviderField = (
   );
 };
 
-/** 在当前供应商表里写入/替换/删除一行；表不存在且需要写入时新建 `[providers.<id>]` */
+/** Write/replace/delete one line in the active provider table; creates `[providers.<id>]` when the table is missing and a write is needed */
 const setKimiProviderField = (
   configText: string,
   pattern: RegExp,
@@ -1139,7 +1143,7 @@ export const extractKimiApiKey = (
 export const setKimiApiKey = (configText: string, apiKey: string): string => {
   const trimmed = apiKey.trim();
   if (!trimmed) {
-    // 保留已有的 api_key 行（置空），没有的话不新增
+    // Keep an existing api_key line (emptied); do not add one if missing
     const lines = kimiLines(configText);
     const existing = findKimiProviderField(lines, TOML_API_KEY_PATTERN);
     if (!existing) return finalizeTomlText(lines);
@@ -1174,7 +1178,7 @@ export const setKimiBaseUrl = (configText: string, baseUrl: string): string => {
   );
 };
 
-/** 当前 default_model 指向的模型名（模型表的 model 字段，回退到别名的 `/` 之后） */
+/** Model name default_model points to (the model table's model field, falling back to the part of the alias after `/`) */
 export const extractKimiModelName = (
   configText: string | undefined | null,
 ): string | undefined => {
@@ -1203,8 +1207,8 @@ export const extractKimiModelName = (
 };
 
 /**
- * 切换模型：把 default_model 指到 `<providerId>/<model>`，并保证对应的模型别名表存在。
- * 已有的其他模型表保留不动。传空串不做修改。
+ * Switch model: point default_model at `<providerId>/<model>` and make sure the matching model alias table exists.
+ * Other model tables are left alone. An empty string changes nothing.
  */
 export const setKimiModelName = (
   configText: string,
@@ -1259,7 +1263,7 @@ export const setKimiModelName = (
   return finalizeTomlText(lines);
 };
 
-/** 官方（托管登录）配置：供应商 type 为 kimi，或 default_model 走 kimi-code/ 别名 */
+/** Official (hosted login) config: provider type is kimi, or default_model uses a kimi-code/ alias */
 export const isKimiOfficialConfig = (
   configText: string | undefined | null,
 ): boolean => {

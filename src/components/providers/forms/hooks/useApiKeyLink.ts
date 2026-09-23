@@ -26,7 +26,7 @@ interface UseApiKeyLinkProps {
 }
 
 /**
- * 管理 API Key 获取链接的显示和 URL
+ * Controls whether the "get API key" link shows, and its URL
  */
 export function useApiKeyLink({
   appId,
@@ -35,7 +35,7 @@ export function useApiKeyLink({
   presetEntries,
   formWebsiteUrl,
 }: UseApiKeyLinkProps) {
-  // 判断是否显示 API Key 获取链接
+  // Whether to show the "get API key" link
   const shouldShowApiKeyLink = useMemo(() => {
     return (
       category !== "official" &&
@@ -45,7 +45,7 @@ export function useApiKeyLink({
     );
   }, [category]);
 
-  // 获取当前预设条目
+  // Current preset entry
   const currentPresetEntry = useMemo(() => {
     if (selectedPresetId && selectedPresetId !== "custom") {
       return presetEntries.find((item) => item.id === selectedPresetId);
@@ -53,11 +53,11 @@ export function useApiKeyLink({
     return undefined;
   }, [selectedPresetId, presetEntries]);
 
-  // 获取当前供应商的网址（用于 API Key 链接）
+  // Current provider's website (for the API key link)
   const getWebsiteUrl = useMemo(() => {
     if (currentPresetEntry) {
       const preset = currentPresetEntry.preset;
-      // 对于 cn_official、aggregator、third_party，优先使用 apiKeyUrl（可能包含推广参数）
+      // For cn_official, aggregator and third_party, prefer apiKeyUrl (may carry referral parameters)
       if (
         preset.category === "cn_official" ||
         preset.category === "aggregator" ||

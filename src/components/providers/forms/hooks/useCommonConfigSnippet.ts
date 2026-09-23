@@ -25,8 +25,8 @@ interface UseCommonConfigSnippetProps {
 }
 
 /**
- * 管理 Claude 通用配置片段
- * 从 config.json 读取和保存，支持从 localStorage 平滑迁移
+ * Manages the Claude common config snippet
+ * Reads and saves it in config.json, migrating from localStorage when needed
  */
 export function useCommonConfigSnippet({
   settingsConfig,
@@ -45,21 +45,21 @@ export function useCommonConfigSnippet({
   const [isLoading, setIsLoading] = useState(true);
   const [isExtracting, setIsExtracting] = useState(false);
 
-  // 用于跟踪是否正在通过通用配置更新
+  // Tracks whether an update is coming from the common config
   const isUpdatingFromCommonConfig = useRef(false);
-  // 用于跟踪新建模式是否已初始化默认勾选
+  // Tracks whether create mode has set the default checkbox state
   const hasInitializedNewMode = useRef(false);
-  // 用于跟踪编辑模式是否已初始化显式开关/预览
+  // Tracks whether edit mode has initialized the explicit toggle/preview
   const hasInitializedEditMode = useRef(false);
 
-  // 当预设变化时，重置初始化标记，使新预设能够重新触发初始化逻辑
+  // Reset the init flags when the preset changes so the new preset runs initialization again
   useEffect(() => {
     if (!enabled) return;
     hasInitializedNewMode.current = false;
     hasInitializedEditMode.current = false;
   }, [selectedPresetId, enabled, initialEnabled]);
 
-  // 初始化：从 config.json 加载，支持从 localStorage 迁移
+  // Init: load from config.json, migrating from localStorage if needed
   useEffect(() => {
     if (!enabled) {
       setIsLoading(false);
@@ -69,7 +69,7 @@ export function useCommonConfigSnippet({
 
     const loadSnippet = async () => {
       try {
-        // 使用统一 API 加载
+        // Load through the shared API
         const snippet = await configApi.getCommonConfigSnippet("claude");
 
         if (snippet && snippet.trim()) {
@@ -77,30 +77,33 @@ export function useCommonConfigSnippet({
             setCommonConfigSnippetState(snippet);
           }
         } else {
-          // 如果 config.json 中没有，尝试从 localStorage 迁移
+          // If config.json has none, try migrating from localStorage
           if (typeof window !== "undefined") {
             try {
               const legacySnippet =
                 window.localStorage.getItem(LEGACY_STORAGE_KEY);
               if (legacySnippet && legacySnippet.trim()) {
-                // 迁移到 config.json
+                // Migrate to config.json
                 await configApi.setCommonConfigSnippet("claude", legacySnippet);
                 if (mounted) {
                   setCommonConfigSnippetState(legacySnippet);
                 }
-                // 清理 localStorage
+                // Clear localStorage
                 window.localStorage.removeItem(LEGACY_STORAGE_KEY);
                 console.log(
-                  "[迁移] Claude 通用配置已从 localStorage 迁移到 config.json",
+                  "[migration] Claude common config moved from localStorage to config.json",
                 );
               }
             } catch (e) {
-              console.warn("[迁移] 从 localStorage 迁移失败:", e);
+              console.warn(
+                "[migration] Migration from localStorage failed:",
+                e,
+              );
             }
           }
         }
       } catch (error) {
-        console.error("加载通用配置失败:", error);
+        console.error("Failed to load common config:", error);
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -115,7 +118,7 @@ export function useCommonConfigSnippet({
     };
   }, [enabled]);
 
-  // 初始化时检查通用配置片段（编辑模式）
+  // On init, check for the common config snippet (edit mode)
   useEffect(() => {
     if (!enabled) return;
     if (initialData && !isLoading) {
@@ -155,20 +158,20 @@ export function useCommonConfigSnippet({
     settingsConfig,
   ]);
 
-  // 新建模式：如果通用配置片段存在且有效，默认启用
+  // Create mode: enable by default if the common config snippet exists and is valid
   useEffect(() => {
     if (!enabled) return;
-    // 仅新建模式、加载完成、尚未初始化过
+    // Only in create mode, after loading, and not yet initialized
     if (!initialData && !isLoading && !hasInitializedNewMode.current) {
       hasInitializedNewMode.current = true;
 
-      // 检查片段是否有实质内容
+      // Check that the snippet has real content
       try {
         const snippetObj = JSON.parse(commonConfigSnippet);
         const hasContent = Object.keys(snippetObj).length > 0;
         if (hasContent) {
           setUseCommonConfig(true);
-          // 合并通用配置到当前配置
+          // Merge the common config into the current config
           const { updatedConfig, error } = updateCommonConfigSnippet(
             settingsConfig,
             commonConfigSnippet,
@@ -195,7 +198,7 @@ export function useCommonConfigSnippet({
     onConfigChange,
   ]);
 
-  // 处理通用配置开关
+  // Handle the common config toggle
   const handleCommonConfigToggle = useCallback(
     (checked: boolean) => {
       const { updatedConfig, error: snippetError } = updateCommonConfigSnippet(
@@ -212,10 +215,10 @@ export function useCommonConfigSnippet({
 
       setCommonConfigError("");
       setUseCommonConfig(checked);
-      // 标记正在通过通用配置更新
+      // Mark that the update comes from the common config
       isUpdatingFromCommonConfig.current = true;
       onConfigChange(updatedConfig);
-      // 在下一个事件循环中重置标记
+      // Reset the flag on the next tick
       setTimeout(() => {
         isUpdatingFromCommonConfig.current = false;
       }, 0);
@@ -223,7 +226,7 @@ export function useCommonConfigSnippet({
     [settingsConfig, commonConfigSnippet, onConfigChange],
   );
 
-  // 处理通用配置片段变化
+  // Handle common config snippet changes
   const handleCommonConfigSnippetChange = useCallback(
     (value: string) => {
       const previousSnippet = commonConfigSnippet;
@@ -231,11 +234,11 @@ export function useCommonConfigSnippet({
 
       if (!value.trim()) {
         setCommonConfigError("");
-        // 保存到 config.json（清空）
+        // Save to config.json (cleared)
         configApi
           .setCommonConfigSnippet("claude", "")
           .catch((error: unknown) => {
-            console.error("保存通用配置失败:", error);
+            console.error("Failed to save common config:", error);
             setCommonConfigError(
               t("claudeConfig.saveFailed", { error: String(error) }),
             );
@@ -253,24 +256,27 @@ export function useCommonConfigSnippet({
         return;
       }
 
-      // 验证JSON格式
-      const validationError = validateJsonConfig(value, "通用配置片段");
+      // Validate JSON
+      const validationError = validateJsonConfig(
+        value,
+        t("providerForm.fieldCommonSnippet"),
+      );
       if (validationError) {
         setCommonConfigError(validationError);
       } else {
         setCommonConfigError("");
-        // 保存到 config.json
+        // Save to config.json
         configApi
           .setCommonConfigSnippet("claude", value)
           .catch((error: unknown) => {
-            console.error("保存通用配置失败:", error);
+            console.error("Failed to save common config:", error);
             setCommonConfigError(
               t("claudeConfig.saveFailed", { error: String(error) }),
             );
           });
       }
 
-      // 若当前启用通用配置且格式正确，需要替换为最新片段
+      // If the common config is enabled and valid, swap in the latest snippet
       if (useCommonConfig && !validationError) {
         const removeResult = updateCommonConfigSnippet(
           settingsConfig,
@@ -292,10 +298,10 @@ export function useCommonConfigSnippet({
           return;
         }
 
-        // 标记正在通过通用配置更新，避免触发状态检查
+        // Mark that the update comes from the common config so the state check does not fire
         isUpdatingFromCommonConfig.current = true;
         onConfigChange(addResult.updatedConfig);
-        // 在下一个事件循环中重置标记
+        // Reset the flag on the next tick
         setTimeout(() => {
           isUpdatingFromCommonConfig.current = false;
         }, 0);
@@ -304,7 +310,7 @@ export function useCommonConfigSnippet({
     [commonConfigSnippet, settingsConfig, useCommonConfig, onConfigChange],
   );
 
-  // 当配置变化时检查是否包含通用配置（但避免在通过通用配置更新时检查）
+  // When the config changes, check whether it contains the common config (skipped while the common config itself is updating)
   useEffect(() => {
     if (!enabled) return;
     if (isUpdatingFromCommonConfig.current || isLoading) {
@@ -317,7 +323,7 @@ export function useCommonConfigSnippet({
     setUseCommonConfig(hasCommon);
   }, [enabled, settingsConfig, commonConfigSnippet, isLoading]);
 
-  // 从编辑器当前内容提取通用配置片段
+  // Extract the common config snippet from the editor's current content
   const handleExtract = useCallback(async () => {
     setIsExtracting(true);
     setCommonConfigError("");
@@ -332,20 +338,23 @@ export function useCommonConfigSnippet({
         return;
       }
 
-      // 验证 JSON 格式
-      const validationError = validateJsonConfig(extracted, "提取的配置");
+      // Validate JSON
+      const validationError = validateJsonConfig(
+        extracted,
+        t("providerForm.fieldExtractedConfig"),
+      );
       if (validationError) {
         setCommonConfigError(validationError);
         return;
       }
 
-      // 更新片段状态
+      // Update snippet state
       setCommonConfigSnippetState(extracted);
 
-      // 保存到后端
+      // Save to the backend
       await configApi.setCommonConfigSnippet("claude", extracted);
     } catch (error) {
-      console.error("提取通用配置失败:", error);
+      console.error("Failed to extract common config:", error);
       setCommonConfigError(
         t("claudeConfig.extractFailed", { error: String(error) }),
       );

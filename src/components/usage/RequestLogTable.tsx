@@ -80,21 +80,27 @@ export function RequestLogTable({ refreshIntervalMs }: RequestLogTableProps) {
 
       if (typeof start !== "number" || typeof end !== "number") {
         setValidationError(
-          t("usage.invalidTimeRange", "请选择完整的开始/结束时间"),
+          t("usage.invalidTimeRange", "Please select complete start/end time"),
         );
         return;
       }
 
       if (start > end) {
         setValidationError(
-          t("usage.invalidTimeRangeOrder", "开始时间不能晚于结束时间"),
+          t(
+            "usage.invalidTimeRangeOrder",
+            "Start time cannot be later than end time",
+          ),
         );
         return;
       }
 
       if (end - start > MAX_FIXED_RANGE_SECONDS) {
         setValidationError(
-          t("usage.timeRangeTooLarge", "时间范围过大，请缩小范围"),
+          t(
+            "usage.timeRangeTooLarge",
+            "Time range is too large, please narrow it down",
+          ),
         );
         return;
       }
@@ -140,7 +146,7 @@ export function RequestLogTable({ refreshIntervalMs }: RequestLogTableProps) {
     });
   };
 
-  // 将 Unix 时间戳转换为本地时间的 datetime-local 格式
+  // Unix timestamp to a local datetime-local value
   const timestampToLocalDatetime = (timestamp: number): string => {
     const date = new Date(timestamp * 1000);
     const year = date.getFullYear();
@@ -151,13 +157,13 @@ export function RequestLogTable({ refreshIntervalMs }: RequestLogTableProps) {
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
-  // 将 datetime-local 格式转换为 Unix 时间戳
+  // datetime-local value to a Unix timestamp
   const localDatetimeToTimestamp = (datetime: string): number | undefined => {
     if (!datetime) return undefined;
-    // 验证格式是否完整 (YYYY-MM-DDTHH:mm)
+    // Check the format is complete (YYYY-MM-DDTHH:mm)
     if (datetime.length < 16) return undefined;
     const timestamp = new Date(datetime).getTime();
-    // 验证是否为有效日期
+    // Check it is a valid date
     if (isNaN(timestamp)) return undefined;
     return Math.floor(timestamp / 1000);
   };
@@ -170,7 +176,7 @@ export function RequestLogTable({ refreshIntervalMs }: RequestLogTableProps) {
 
   return (
     <div className="space-y-4">
-      {/* 筛选栏 */}
+      {/* Filter bar */}
       <div className="flex flex-col gap-4 rounded-lg border bg-card/50 p-4 backdrop-blur-sm">
         <div className="flex flex-wrap items-center gap-3">
           <Select
@@ -513,7 +519,7 @@ export function RequestLogTable({ refreshIntervalMs }: RequestLogTableProps) {
             </Table>
           </div>
 
-          {/* 分页控件 */}
+          {/* Pagination */}
           {total > 0 && (
             <div className="flex items-center justify-between px-2">
               <span className="text-sm text-muted-foreground">
@@ -528,7 +534,7 @@ export function RequestLogTable({ refreshIntervalMs }: RequestLogTableProps) {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                {/* 页码按钮 */}
+                {/* Page buttons */}
                 {(() => {
                   const pages: (number | string)[] = [];
                   if (totalPages <= 7) {

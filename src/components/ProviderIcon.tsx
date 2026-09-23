@@ -3,12 +3,12 @@ import { getIcon, hasIcon, getIconMetadata } from "@/icons/extracted";
 import { cn } from "@/lib/utils";
 
 interface ProviderIconProps {
-  icon?: string; // 图标名称
-  name: string; // 供应商名称（用于 fallback）
-  color?: string; // 自定义颜色 (Deprecated, kept for compatibility but ignored for SVG)
-  size?: number | string; // 尺寸
+  icon?: string; // Icon name
+  name: string; // Provider name (used for the fallback)
+  color?: string; // Custom color (Deprecated, kept for compatibility but ignored for SVG)
+  size?: number | string; // Size
   className?: string;
-  showFallback?: boolean; // 是否显示 fallback
+  showFallback?: boolean; // Show the fallback
 }
 
 export const ProviderIcon: React.FC<ProviderIconProps> = ({
@@ -19,7 +19,7 @@ export const ProviderIcon: React.FC<ProviderIconProps> = ({
   className,
   showFallback = true,
 }) => {
-  // 获取图标 SVG
+  // Icon SVG
   const iconSvg = useMemo(() => {
     if (icon && hasIcon(icon)) {
       return getIcon(icon);
@@ -27,28 +27,28 @@ export const ProviderIcon: React.FC<ProviderIconProps> = ({
     return "";
   }, [icon]);
 
-  // 计算尺寸样式
+  // Size style
   const sizeStyle = useMemo(() => {
     const sizeValue = typeof size === "number" ? `${size}px` : size;
     return {
       width: sizeValue,
       height: sizeValue,
-      // 内嵌 SVG 使用 1em 作为尺寸基准，这里同步 fontSize 让图标实际跟随 size 放大
+      // Inline SVGs are sized in em, so set fontSize too to make the icon follow size
       fontSize: sizeValue,
       lineHeight: 1,
     };
   }, [size]);
 
-  // 获取有效颜色：优先使用传入的有效 color，否则从元数据获取 defaultColor
+  // Effective color: the color prop if valid, else defaultColor from metadata
   const effectiveColor = useMemo(() => {
-    // 只有当 color 是有效的非空字符串时才使用
+    // Use color only when it is a non-empty string
     if (color && typeof color === "string" && color.trim() !== "") {
       return color;
     }
-    // 否则从元数据获取 defaultColor
+    // Otherwise take defaultColor from metadata
     if (icon) {
       const metadata = getIconMetadata(icon);
-      // 只有当 defaultColor 不是 currentColor 时才使用
+      // Use defaultColor only when it is not currentColor
       if (metadata?.defaultColor && metadata.defaultColor !== "currentColor") {
         return metadata.defaultColor;
       }
@@ -56,7 +56,7 @@ export const ProviderIcon: React.FC<ProviderIconProps> = ({
     return undefined;
   }, [color, icon]);
 
-  // 如果有图标，显示图标
+  // Show the icon if there is one
   if (iconSvg) {
     return (
       <span
@@ -70,7 +70,7 @@ export const ProviderIcon: React.FC<ProviderIconProps> = ({
     );
   }
 
-  // Fallback：显示首字母
+  // Fallback: show the initial
   if (showFallback) {
     const initials = name
       .split(" ")

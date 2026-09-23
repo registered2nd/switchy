@@ -102,13 +102,13 @@ export interface UseDirectorySettingsResult {
 }
 
 /**
- * useDirectorySettings - 目录管理
- * 负责：
- * - appConfigDir 状态
- * - resolvedDirs 状态
- * - 目录选择（browse）
- * - 目录重置
- * - 默认值计算
+ * useDirectorySettings - directory management
+ * Handles:
+ * - appConfigDir state
+ * - resolvedDirs state
+ * - directory picking (browse)
+ * - directory reset
+ * - default value calculation
  */
 export function useDirectorySettings({
   settings,
@@ -153,7 +153,7 @@ export function useDirectorySettings({
   const mirrorSeededRef = useRef(false);
   const codexMirrorSeededRef = useRef(false);
 
-  // 加载目录信息
+  // Load directory info
   useEffect(() => {
     let active = true;
     setIsLoading(true);
@@ -384,7 +384,7 @@ export function useDirectorySettings({
         console.error("[useDirectorySettings] Failed to pick directory", error);
         toast.error(
           t("settings.selectFileFailed", {
-            defaultValue: "选择目录失败",
+            defaultValue: "Please choose a valid SQL backup file",
           }),
         );
       }
@@ -406,7 +406,7 @@ export function useDirectorySettings({
       );
       toast.error(
         t("settings.selectFileFailed", {
-          defaultValue: "选择目录失败",
+          defaultValue: "Please choose a valid SQL backup file",
         }),
       );
     }
@@ -427,7 +427,7 @@ export function useDirectorySettings({
       );
       toast.error(
         t("settings.selectFileFailed", {
-          defaultValue: "选择目录失败",
+          defaultValue: "Please choose a valid SQL backup file",
         }),
       );
     }
@@ -452,7 +452,7 @@ export function useDirectorySettings({
       );
       toast.error(
         t("settings.selectFileFailed", {
-          defaultValue: "选择目录失败",
+          defaultValue: "Please choose a valid SQL backup file",
         }),
       );
     }

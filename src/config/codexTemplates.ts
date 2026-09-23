@@ -1,6 +1,6 @@
 /**
- * Codex 配置模板
- * 用于新建自定义供应商时的默认配置
+ * Codex config template
+ * Default config for a new custom provider
  */
 
 export interface CodexTemplate {
@@ -9,8 +9,8 @@ export interface CodexTemplate {
 }
 
 /**
- * 获取 Codex 自定义模板
- * @returns Codex 模板配置
+ * Get the Codex custom template
+ * @returns Codex template config
  */
 export function getCodexCustomTemplate(): CodexTemplate {
   const config = `model_provider = "custom"

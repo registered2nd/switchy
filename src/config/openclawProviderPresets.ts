@@ -1350,7 +1350,7 @@ export const openclawProviderPresets: OpenClawProviderPreset[] = [
     name: "AWS Bedrock",
     websiteUrl: "https://aws.amazon.com/bedrock/",
     settingsConfig: {
-      // 请将 us-west-2 替换为你的 AWS Region
+      // Replace us-west-2 with your AWS region
       baseUrl: "https://bedrock-runtime.us-west-2.amazonaws.com",
       apiKey: "",
       api: "bedrock-converse-stream",

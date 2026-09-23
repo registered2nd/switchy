@@ -203,12 +203,12 @@ function App() {
   const handleDisableOmo = () => {
     disableOmoMutation.mutate(undefined, {
       onSuccess: () => {
-        toast.success(t("omo.disabled", { defaultValue: "OMO 已停用" }));
+        toast.success(t("omo.disabled", { defaultValue: "OMO disabled" }));
       },
       onError: (error: Error) => {
         toast.error(
           t("omo.disableFailed", {
-            defaultValue: "停用 OMO 失败: {{error}}",
+            defaultValue: "Failed to disable OMO: {{error}}",
             error: extractErrorMessage(error),
           }),
         );
@@ -220,12 +220,12 @@ function App() {
   const handleDisableOmoSlim = () => {
     disableOmoSlimMutation.mutate(undefined, {
       onSuccess: () => {
-        toast.success(t("omo.disabled", { defaultValue: "OMO 已停用" }));
+        toast.success(t("omo.disabled", { defaultValue: "OMO disabled" }));
       },
       onError: (error: Error) => {
         toast.error(
           t("omo.disableFailed", {
-            defaultValue: "停用 OMO 失败: {{error}}",
+            defaultValue: "Failed to disable OMO: {{error}}",
             error: extractErrorMessage(error),
           }),
         );
@@ -255,6 +255,43 @@ function App() {
       unsubscribe?.();
     };
   }, [activeApp, refetch]);
+
+  // Name the account when a request finds its login refused for good. The
+  // proxy moves on to another account; this says which one needs signing in.
+  const signedOutNoticeAt = useRef<Record<string, number>>({});
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    providersApi
+      .onAccountNeedsSignIn((event) => {
+        const now = Date.now();
+        const last = signedOutNoticeAt.current[event.providerId] ?? 0;
+        if (now - last < 30 * 60 * 1000) return;
+        signedOutNoticeAt.current[event.providerId] = now;
+        toast.warning(
+          t("notifications.accountSignedOut", {
+            account: event.account || event.providerName,
+            app: t(`apps.${event.appType}`, { defaultValue: event.appType }),
+          }),
+          {
+            description: t(`subscription.signedOutHint.${event.appType}`, {
+              defaultValue: t("subscription.signedOutHint.claude"),
+            }),
+            duration: 12000,
+            closeButton: true,
+          },
+        );
+        queryClient.invalidateQueries({ queryKey: ["subscription", "quota"] });
+      })
+      .then((fn) => {
+        unsubscribe = fn;
+      })
+      .catch((error) =>
+        console.error("[App] Failed to subscribe to sign-in notices", error),
+      );
+    return () => {
+      unsubscribe?.();
+    };
+  }, [queryClient, t]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -379,7 +416,7 @@ function App() {
       const detail =
         extractErrorMessage(error) ||
         t("notifications.openLinkFailed", {
-          defaultValue: "链接打开失败",
+          defaultValue: "Failed to open link",
         });
       toast.error(detail);
     }
@@ -419,7 +456,7 @@ function App() {
       }
       toast.success(
         t("notifications.removeFromConfigSuccess", {
-          defaultValue: "已从配置移除",
+          defaultValue: "Removed from config",
         }),
         { closeButton: true },
       );
@@ -455,13 +492,13 @@ function App() {
       addToLive?: boolean;
     } = {
       name: `${provider.name} copy`,
-      settingsConfig: JSON.parse(JSON.stringify(provider.settingsConfig)), // 深拷贝
+      settingsConfig: JSON.parse(JSON.stringify(provider.settingsConfig)), // Deep copy
       websiteUrl: provider.websiteUrl,
       category: provider.category,
-      sortIndex: newSortIndex, // 复制原 sortIndex + 1
+      sortIndex: newSortIndex, // Original sortIndex + 1
       meta: provider.meta
         ? JSON.parse(JSON.stringify(provider.meta))
-        : undefined, // 深拷贝
+        : undefined, // Deep copy
       icon: provider.icon,
       iconColor: provider.iconColor,
     };
@@ -487,7 +524,8 @@ function App() {
         const errorMessage = extractErrorMessage(error);
         toast.error(
           t("provider.duplicateLiveIdsLoadFailed", {
-            defaultValue: "读取配置中的供应商标识失败，请先修复配置后再试",
+            defaultValue:
+              "Failed to read provider IDs from config. Please fix the config and try again.",
           }) + (errorMessage ? `: ${errorMessage}` : ""),
         );
         return;
@@ -522,10 +560,10 @@ function App() {
           console.error("[App] Failed to update sort order", error);
           toast.error(
             t("provider.sortUpdateFailed", {
-              defaultValue: "排序更新失败",
+              defaultValue: "Failed to update sort order",
             }),
           );
-          return; // 如果排序更新失败，不继续添加
+          return; // Stop here if the sort update failed
         }
       }
     }
@@ -545,7 +583,7 @@ function App() {
       });
       toast.success(
         t("provider.terminalOpened", {
-          defaultValue: "终端已打开",
+          defaultValue: "Terminal opened",
         }),
       );
     } catch (error) {
@@ -553,7 +591,7 @@ function App() {
       const errorMessage = extractErrorMessage(error);
       toast.error(
         t("provider.terminalOpenFailed", {
-          defaultValue: "打开终端失败",
+          defaultValue: "Failed to open terminal",
         }) + (errorMessage ? `: ${errorMessage}` : ""),
       );
     }
@@ -755,7 +793,7 @@ function App() {
                   {currentView === "settings" && t("settings.title")}
                   {currentView === "universal" &&
                     t("universalProvider.title", {
-                      defaultValue: "统一供应商",
+                      defaultValue: "Universal Provider",
                     })}
                   {currentView === "workspace" && t("workspace.title")}
                   {currentView === "openclawEnv" && t("openclaw.env.title")}
@@ -799,7 +837,7 @@ function App() {
                       setCurrentView("settings");
                     }}
                     title={t("usage.title", {
-                      defaultValue: "使用统计",
+                      defaultValue: "Usage Statistics",
                     })}
                     className="hover:bg-black/5 dark:hover:bg-white/5"
                   >
@@ -977,7 +1015,6 @@ function App() {
         onConfirm={() => void handleConfirmAction()}
         onCancel={() => setConfirmAction(null)}
       />
-
     </div>
   );
 }

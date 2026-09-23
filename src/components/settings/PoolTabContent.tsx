@@ -183,7 +183,7 @@ export function PoolTabContent({ settings, onAutoSave }: PoolTabContentProps) {
                 <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
                   <p className="text-sm text-yellow-600 dark:text-yellow-400">
                     {t("proxy.failover.proxyRequired", {
-                      defaultValue: "需要先启动代理服务才能配置故障转移",
+                      defaultValue: "Start the local proxy to set up switching",
                     })}
                   </p>
                 </div>

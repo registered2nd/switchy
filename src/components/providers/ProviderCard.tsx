@@ -34,7 +34,7 @@ interface ProviderCardProps {
   provider: Provider;
   isCurrent: boolean;
   appId: AppId;
-  isInConfig?: boolean; // OpenCode: 是否已添加到 opencode.json
+  isInConfig?: boolean; // OpenCode: whether it is already in opencode.json
   isOmo?: boolean;
   isOmoSlim?: boolean;
   onSwitch: (provider: Provider) => void;
@@ -50,19 +50,19 @@ interface ProviderCardProps {
   onOpenTerminal?: (provider: Provider) => void;
   isTesting?: boolean;
   isProxyRunning: boolean;
-  isProxyTakeover?: boolean; // 代理接管模式（Live配置已被接管，切换为热切换）
+  isProxyTakeover?: boolean; // proxy takeover mode (the live config is taken over; switching is hot)
   dragHandleProps?: DragHandleProps;
-  isAutoFailoverEnabled?: boolean; // 是否开启自动故障转移
-  failoverPriority?: number; // 故障转移优先级（1 = P1, 2 = P2, ...）
-  isInFailoverQueue?: boolean; // 是否在故障转移队列中
-  onToggleFailover?: (enabled: boolean) => void; // 切换故障转移队列
-  activeProviderId?: string; // 代理当前实际使用的供应商 ID（用于故障转移模式下标注绿色边框）
+  isAutoFailoverEnabled?: boolean; // whether automatic failover is on
+  failoverPriority?: number; // failover priority (1 = P1, 2 = P2, ...)
+  isInFailoverQueue?: boolean; // whether it is in the failover queue
+  onToggleFailover?: (enabled: boolean) => void; // toggle failover queue membership
+  activeProviderId?: string; // provider ID the proxy is actually using (green border in failover mode)
   // OpenClaw: default model
   isDefaultModel?: boolean;
   onSetAsDefault?: () => void;
 }
 
-/** 判断是否为官方供应商（无自定义 base URL / API key，直连官方 API） */
+/** Whether this is an official provider (no custom base URL or API key; talks to the official API directly) */
 function isOfficialProvider(provider: Provider, appId: AppId): boolean {
   const config = provider.settingsConfig as Record<string, any>;
   if (appId === "claude") {
@@ -70,16 +70,16 @@ function isOfficialProvider(provider: Provider, appId: AppId): boolean {
     return !baseUrl || (typeof baseUrl === "string" && baseUrl.trim() === "");
   }
   if (appId === "codex") {
-    // 无 OPENAI_API_KEY → 使用 Codex CLI 内置 OAuth（官方）
+    // No OPENAI_API_KEY → Codex CLI's built-in OAuth (official)
     const apiKey = config?.auth?.OPENAI_API_KEY;
     return !apiKey || (typeof apiKey === "string" && apiKey.trim() === "");
   }
   if (appId === "kimi") {
-    // default_model 走 kimi-code/ 托管登录（kimi login）→ 官方
+    // default_model uses the kimi-code/ managed login (kimi login) → official
     return isKimiOfficialConfig(config?.config);
   }
   if (appId === "gemini") {
-    // 无 GEMINI_API_KEY 且无 GOOGLE_GEMINI_BASE_URL → Google OAuth 官方模式
+    // No GEMINI_API_KEY and no GOOGLE_GEMINI_BASE_URL → official Google OAuth mode
     const apiKey = config?.env?.GEMINI_API_KEY;
     const baseUrl = config?.env?.GOOGLE_GEMINI_BASE_URL;
     return (
@@ -166,7 +166,7 @@ export function ProviderCard({
   const { data: health } = useProviderHealth(provider.id, appId);
 
   const fallbackUrlText = t("provider.notConfigured", {
-    defaultValue: "未配置接口地址",
+    defaultValue: "Not configured for official website",
   });
 
   const displayUrl = useMemo(() => {
@@ -190,10 +190,10 @@ export function ProviderCard({
     appId === "codex" && isOfficial,
   );
   // Non-current Official cards read their own login rather than the live one.
-  // So does the current Codex card while the proxy serves Codex: the proxy
-  // presents the card's login, not the one in Codex's own auth.json.
+  // So does the current card while the proxy serves the app: the proxy
+  // presents the card's login, not the one the CLI has saved.
   const quotaProviderId =
-    isCurrent && !(appId === "codex" && isProxyTakeover)
+    isCurrent && !isProxyTakeover
       ? undefined
       : appId === "claude" && provider.meta?.capturedClaudeAccount
         ? provider.id
@@ -201,8 +201,8 @@ export function ProviderCard({
           ? provider.id
           : undefined;
 
-  // 获取用量数据以判断是否有多套餐
-  // 累加模式应用（OpenCode/OpenClaw）：使用 isInConfig 代替 isCurrent
+  // Fetch usage to tell whether there are multiple plans
+  // Additive-mode apps (OpenCode/OpenClaw): use isInConfig instead of isCurrent
   const shouldAutoQuery =
     appId === "opencode" || appId === "openclaw" ? isInConfig : isCurrent;
   const autoQueryInterval = shouldAutoQuery
@@ -234,12 +234,12 @@ export function ProviderCard({
     onOpenWebsite(displayUrl);
   };
 
-  // 判断是否是"当前使用中"的供应商
-  // - OMO/OMO Slim 供应商：使用 isCurrent
-  // - OpenClaw：使用默认模型归属的 provider 作为当前项（蓝色边框）
-  // - OpenCode（非 OMO）：不存在"当前"概念，返回 false
-  // - 故障转移模式：代理实际使用的供应商（activeProviderId）
-  // - 普通模式：isCurrent
+  // Whether this is the provider "currently in use"
+  // - OMO/OMO Slim providers: use isCurrent
+  // - OpenClaw: the provider owning the default model is current (blue border)
+  // - OpenCode (non-OMO): no notion of "current"; returns false
+  // - Failover mode: the provider the proxy is actually using (activeProviderId)
+  // - Normal mode: isCurrent
   const isActiveProvider = isAnyOmo
     ? isCurrent
     : appId === "openclaw"
@@ -340,7 +340,6 @@ export function ProviderCard({
                 failoverPriority && (
                   <FailoverPriorityBadge priority={failoverPriority} />
                 )}
-
             </div>
 
             {appId === "claude" &&
@@ -436,7 +435,7 @@ export function ProviderCard({
                   <span className="font-medium">
                     {t("usage.multiplePlans", {
                       count: usage?.data?.length || 0,
-                      defaultValue: `${usage?.data?.length || 0} 个套餐`,
+                      defaultValue: "{{count}} plans",
                     })}
                   </span>
                 </div>
@@ -460,8 +459,8 @@ export function ProviderCard({
                   className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500 dark:text-gray-400 flex-shrink-0"
                   title={
                     isExpanded
-                      ? t("usage.collapse", { defaultValue: "收起" })
-                      : t("usage.expand", { defaultValue: "展开" })
+                      ? t("usage.collapse", { defaultValue: "Collapse" })
+                      : t("usage.expand", { defaultValue: "Expand" })
                   }
                 >
                   {isExpanded ? (

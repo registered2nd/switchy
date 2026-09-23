@@ -102,7 +102,7 @@ export function CodexFormFields({
 
   return (
     <>
-      {/* Codex API Key 输入框 */}
+      {/* Codex API key input */}
       <ApiKeySection
         id="codexApiKey"
         label="API Key"
@@ -113,15 +113,16 @@ export function CodexFormFields({
         websiteUrl={websiteUrl}
         placeholder={{
           official: t("providerForm.codexOfficialNoApiKey", {
-            defaultValue: "官方供应商无需 API Key",
+            defaultValue: "Official does not require API Key, save directly",
           }),
           thirdParty: t("providerForm.codexApiKeyAutoFill", {
-            defaultValue: "输入 API Key，将自动填充到配置",
+            defaultValue:
+              "Just fill in here, auth.json below will be auto-filled",
           }),
         }}
       />
 
-      {/* Codex Base URL 输入框 */}
+      {/* Codex Base URL input */}
       {shouldShowSpeedTest && (
         <EndpointField
           id="codexBaseUrl"
@@ -137,7 +138,7 @@ export function CodexFormFields({
         />
       )}
 
-      {/* Codex Model Name 输入框 */}
+      {/* Codex model name input */}
       {shouldShowModelField && onModelNameChange && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -145,7 +146,7 @@ export function CodexFormFields({
               htmlFor="codexModelName"
               className="block text-sm font-medium text-foreground"
             >
-              {t("codexConfig.modelName", { defaultValue: "模型名称" })}
+              {t("codexConfig.modelName", { defaultValue: "Model Name" })}
             </label>
             <Button
               type="button"
@@ -168,7 +169,7 @@ export function CodexFormFields({
             value={modelName}
             onChange={(v) => onModelNameChange!(v)}
             placeholder={t("codexConfig.modelNamePlaceholder", {
-              defaultValue: "例如: gpt-5.4",
+              defaultValue: "e.g., gpt-5-codex",
             })}
             fetchedModels={fetchedModels}
             isLoading={isFetchingModels}
@@ -176,16 +177,18 @@ export function CodexFormFields({
           <p className="text-xs text-muted-foreground">
             {modelName.trim()
               ? t("codexConfig.modelNameHint", {
-                  defaultValue: "指定使用的模型，将自动更新到 config.toml 中",
+                  defaultValue:
+                    "Specify the model to use, will be auto-updated in config.toml",
                 })
               : t("providerForm.modelHint", {
-                  defaultValue: "💡 留空将使用供应商的默认模型",
+                  defaultValue:
+                    "💡 Leave blank to use provider's default model",
                 })}
           </p>
         </div>
       )}
 
-      {/* 端点测速弹窗 - Codex */}
+      {/* Endpoint speed-test dialog - Codex */}
       {shouldShowSpeedTest && isEndpointModalOpen && (
         <EndpointSpeedTest
           appId="codex"

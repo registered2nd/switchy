@@ -98,7 +98,7 @@ export function KimiFormFields({
 
   return (
     <>
-      {/* Kimi API Key 输入框 */}
+      {/* Kimi API key input */}
       <ApiKeySection
         id="kimiApiKey"
         label="API Key"
@@ -109,32 +109,36 @@ export function KimiFormFields({
         websiteUrl={websiteUrl}
         placeholder={{
           official: t("providerForm.kimiOfficialNoApiKey", {
-            defaultValue: "官方供应商使用 kimi login 登录，无需 API Key",
+            defaultValue:
+              "Official provider signs in with `kimi login`; no API Key needed",
           }),
           thirdParty: t("providerForm.kimiApiKeyAutoFill", {
-            defaultValue: "输入 API Key，将自动填充到 config.toml",
+            defaultValue: "Enter API Key; it is written into config.toml",
           }),
         }}
       />
 
-      {/* Kimi Base URL 输入框 */}
+      {/* Kimi Base URL input */}
       {shouldShowSpeedTest && (
         <EndpointField
           id="kimiBaseUrl"
-          label={t("kimiConfig.apiUrlLabel", { defaultValue: "API 请求地址" })}
+          label={t("kimiConfig.apiUrlLabel", {
+            defaultValue: "API Request URL",
+          })}
           value={kimiBaseUrl}
           onChange={onBaseUrlChange}
           placeholder={t("providerForm.kimiApiEndpointPlaceholder", {
-            defaultValue: "例如: https://api.example.com/v1",
+            defaultValue: "e.g., https://api.example.com/v1",
           })}
           hint={t("providerForm.kimiApiHint", {
-            defaultValue: "写入 config.toml 中当前供应商的 base_url",
+            defaultValue:
+              "Written as base_url of the active provider in config.toml",
           })}
           onManageClick={() => onEndpointModalToggle(true)}
         />
       )}
 
-      {/* Kimi Model Name 输入框 */}
+      {/* Kimi model name input */}
       {shouldShowModelField && onModelNameChange && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
@@ -142,7 +146,7 @@ export function KimiFormFields({
               htmlFor="kimiModelName"
               className="block text-sm font-medium text-foreground"
             >
-              {t("kimiConfig.modelName", { defaultValue: "模型名称" })}
+              {t("kimiConfig.modelName", { defaultValue: "Model Name" })}
             </label>
             <Button
               type="button"
@@ -165,7 +169,7 @@ export function KimiFormFields({
             value={modelName}
             onChange={(v) => onModelNameChange!(v)}
             placeholder={t("kimiConfig.modelNamePlaceholder", {
-              defaultValue: "例如: gpt-4o",
+              defaultValue: "e.g., gpt-4o",
             })}
             fetchedModels={fetchedModels}
             isLoading={isFetchingModels}
@@ -174,16 +178,17 @@ export function KimiFormFields({
             {modelName.trim()
               ? t("kimiConfig.modelNameHint", {
                   defaultValue:
-                    "指定使用的模型，将自动更新 config.toml 的 default_model 与模型别名",
+                    "Sets default_model and the model alias in config.toml",
                 })
               : t("providerForm.modelHint", {
-                  defaultValue: "💡 留空将使用供应商的默认模型",
+                  defaultValue:
+                    "💡 Leave blank to use provider's default model",
                 })}
           </p>
         </div>
       )}
 
-      {/* 端点测速弹窗 - Kimi */}
+      {/* Endpoint speed-test dialog - Kimi */}
       {shouldShowSpeedTest && isEndpointModalOpen && (
         <EndpointSpeedTest
           appId="kimi"

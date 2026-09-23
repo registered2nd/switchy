@@ -4,16 +4,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UsageSummaryCards } from "./UsageSummaryCards";
 import { UsageTrendChart } from "./UsageTrendChart";
 import { RequestLogTable } from "./RequestLogTable";
-import { ProviderStatsTable } from "./ProviderStatsTable";
+import { AccountStatsTable } from "./AccountStatsTable";
+import { SwitchHistoryTable } from "./SwitchHistoryTable";
 import { ModelStatsTable } from "./ModelStatsTable";
 import type { TimeRange } from "@/types/usage";
 import { motion } from "framer-motion";
 import {
   BarChart3,
   ListFilter,
-  Activity,
+  Users,
+  ArrowLeftRight,
   RefreshCw,
   Coins,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
@@ -25,6 +28,10 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { PricingConfigPanel } from "@/components/usage/PricingConfigPanel";
+import {
+  useGlobalProxyConfig,
+  useUpdateGlobalProxyConfig,
+} from "@/lib/query/proxy";
 
 export function UsageDashboard() {
   const { t } = useTranslation();
@@ -45,6 +52,11 @@ export function UsageDashboard() {
   };
 
   const days = timeRange === "1d" ? 1 : timeRange === "7d" ? 7 : 30;
+
+  // Successful requests are recorded only while request logging is on.
+  const { data: globalProxyConfig } = useGlobalProxyConfig();
+  const updateGlobalProxyConfig = useUpdateGlobalProxyConfig();
+  const loggingOff = globalProxyConfig?.enableLogging === false;
 
   return (
     <motion.div
@@ -70,7 +82,7 @@ export function UsageDashboard() {
               variant="ghost"
               size="sm"
               className="h-10 px-2 text-xs text-muted-foreground"
-              title={t("common.refresh", "刷新")}
+              title={t("common.refresh", "Refresh")}
               onClick={changeRefreshInterval}
             >
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
@@ -100,21 +112,48 @@ export function UsageDashboard() {
         </Tabs>
       </div>
 
+      {loggingOff && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
+          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+            <Info className="h-4 w-4 shrink-0" />
+            {t("usage.loggingOff")}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={updateGlobalProxyConfig.isPending}
+            onClick={() =>
+              globalProxyConfig &&
+              updateGlobalProxyConfig.mutate({
+                ...globalProxyConfig,
+                enableLogging: true,
+              })
+            }
+          >
+            {t("usage.turnOnLogging")}
+          </Button>
+        </div>
+      )}
+
       <UsageSummaryCards days={days} refreshIntervalMs={refreshIntervalMs} />
 
       <UsageTrendChart days={days} refreshIntervalMs={refreshIntervalMs} />
 
       <div className="space-y-4">
-        <Tabs defaultValue="logs" className="w-full">
+        <Tabs defaultValue="accounts" className="w-full">
           <div className="flex items-center justify-between mb-4">
             <TabsList className="bg-muted/50">
+              <TabsTrigger value="accounts" className="gap-2">
+                <Users className="h-4 w-4" />
+                {t("usage.accounts")}
+              </TabsTrigger>
+              <TabsTrigger value="switches" className="gap-2">
+                <ArrowLeftRight className="h-4 w-4" />
+                {t("usage.switches")}
+              </TabsTrigger>
               <TabsTrigger value="logs" className="gap-2">
                 <ListFilter className="h-4 w-4" />
                 {t("usage.requestLogs")}
-              </TabsTrigger>
-              <TabsTrigger value="providers" className="gap-2">
-                <Activity className="h-4 w-4" />
-                {t("usage.providerStats")}
               </TabsTrigger>
               <TabsTrigger value="models" className="gap-2">
                 <BarChart3 className="h-4 w-4" />
@@ -128,16 +167,29 @@ export function UsageDashboard() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
           >
+            <TabsContent value="accounts" className="mt-0">
+              <AccountStatsTable
+                days={days}
+                refreshIntervalMs={refreshIntervalMs}
+              />
+            </TabsContent>
+
+            <TabsContent value="switches" className="mt-0">
+              <SwitchHistoryTable
+                days={days}
+                refreshIntervalMs={refreshIntervalMs}
+              />
+            </TabsContent>
+
             <TabsContent value="logs" className="mt-0">
               <RequestLogTable refreshIntervalMs={refreshIntervalMs} />
             </TabsContent>
 
-            <TabsContent value="providers" className="mt-0">
-              <ProviderStatsTable refreshIntervalMs={refreshIntervalMs} />
-            </TabsContent>
-
             <TabsContent value="models" className="mt-0">
-              <ModelStatsTable refreshIntervalMs={refreshIntervalMs} />
+              <ModelStatsTable
+                days={days}
+                refreshIntervalMs={refreshIntervalMs}
+              />
             </TabsContent>
           </motion.div>
         </Tabs>

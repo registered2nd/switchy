@@ -1,29 +1,29 @@
 /**
- * 环境变量冲突检测相关类型定义
+ * Types for environment variable conflict detection
  */
 
 /**
- * 环境变量冲突信息
+ * Environment variable conflict
  */
 export interface EnvConflict {
-  /** 环境变量名称 */
+  /** Variable name */
   varName: string;
-  /** 环境变量的值 */
+  /** Variable value */
   varValue: string;
-  /** 来源类型: "system" 表示系统环境变量, "file" 表示配置文件 */
+  /** Source type: "system" for a system environment variable, "file" for a config file */
   sourceType: "system" | "file";
-  /** 来源路径 (注册表路径或文件路径:行号) */
+  /** Source path (registry path or file path:line) */
   sourcePath: string;
 }
 
 /**
- * 备份信息
+ * Backup info
  */
 export interface BackupInfo {
-  /** 备份文件路径 */
+  /** Backup file path */
   backupPath: string;
-  /** 备份时间戳 */
+  /** Backup timestamp */
   timestamp: string;
-  /** 被备份的环境变量冲突列表 */
+  /** Conflicting variables that were backed up */
   conflicts: EnvConflict[];
 }

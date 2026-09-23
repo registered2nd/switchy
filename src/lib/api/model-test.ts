@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { AppId } from "./types";
 
-// ===== 流式健康检查类型 =====
+// ===== Stream health check types =====
 
 export type HealthStatus = "operational" | "degraded" | "failed";
 
@@ -26,10 +26,10 @@ export interface StreamCheckResult {
   retryCount: number;
 }
 
-// ===== 流式健康检查 API =====
+// ===== Stream health check API =====
 
 /**
- * 流式健康检查（单个供应商）
+ * Stream health check (one provider)
  */
 export async function streamCheckProvider(
   appType: AppId,
@@ -39,7 +39,7 @@ export async function streamCheckProvider(
 }
 
 /**
- * 批量流式健康检查
+ * Batch stream health check
  */
 export async function streamCheckAllProviders(
   appType: AppId,
@@ -49,14 +49,14 @@ export async function streamCheckAllProviders(
 }
 
 /**
- * 获取流式检查配置
+ * Get the stream check config
  */
 export async function getStreamCheckConfig(): Promise<StreamCheckConfig> {
   return invoke("get_stream_check_config");
 }
 
 /**
- * 保存流式检查配置
+ * Save the stream check config
  */
 export async function saveStreamCheckConfig(
   config: StreamCheckConfig,

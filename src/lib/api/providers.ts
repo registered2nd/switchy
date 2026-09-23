@@ -25,6 +25,13 @@ export interface OpenTerminalOptions {
   cwd?: string;
 }
 
+export interface AccountNeedsSignInEvent {
+  appType: string;
+  providerId: string;
+  providerName: string;
+  account?: string | null;
+}
+
 export const providersApi = {
   async getAll(appId: AppId): Promise<Record<string, Provider>> {
     return await invoke("get_providers", { app: appId });
@@ -85,6 +92,15 @@ export const providersApi = {
     return await invoke("update_providers_sort_order", { updates, app: appId });
   },
 
+  /** A pooled account's login was refused for good while serving a request. */
+  async onAccountNeedsSignIn(
+    handler: (event: AccountNeedsSignInEvent) => void,
+  ): Promise<UnlistenFn> {
+    return await listen("account-needs-sign-in", (event) => {
+      handler(event.payload as AccountNeedsSignInEvent);
+    });
+  },
+
   async onSwitched(
     handler: (event: ProviderSwitchEvent) => void,
   ): Promise<UnlistenFn> {
@@ -95,9 +111,9 @@ export const providersApi = {
   },
 
   /**
-   * 打开指定提供商的终端
-   * 任何提供商都可以打开终端，不受是否为当前激活提供商的限制
-   * 终端会使用该提供商特定的 API 配置，不影响全局设置
+   * Open a terminal for a provider
+   * Works for any provider, whether or not it is the active one
+   * The terminal uses that provider's API config and leaves the global settings alone
    */
   async openTerminal(
     providerId: string,
@@ -113,32 +129,32 @@ export const providersApi = {
   },
 
   /**
-   * 从 OpenCode live 配置导入供应商到数据库
-   * OpenCode 特有功能：由于累加模式，用户可能已在 opencode.json 中配置供应商
+   * Import providers from the OpenCode live config into the database
+   * OpenCode only: in additive mode the user may already have providers in opencode.json
    */
   async importOpenCodeFromLive(): Promise<number> {
     return await invoke("import_opencode_providers_from_live");
   },
 
   /**
-   * 获取 OpenCode live 配置中的供应商 ID 列表
-   * 用于前端判断供应商是否已添加到 opencode.json
+   * Get the provider IDs in the OpenCode live config
+   * Lets the frontend tell whether a provider is already in opencode.json
    */
   async getOpenCodeLiveProviderIds(): Promise<string[]> {
     return await invoke("get_opencode_live_provider_ids");
   },
 
   /**
-   * 获取 OpenClaw live 配置中的供应商 ID 列表
-   * 用于前端判断供应商是否已添加到 openclaw.json
+   * Get the provider IDs in the OpenClaw live config
+   * Lets the frontend tell whether a provider is already in openclaw.json
    */
   async getOpenClawLiveProviderIds(): Promise<string[]> {
     return await invoke("get_openclaw_live_provider_ids");
   },
 
   /**
-   * 从 OpenClaw live 配置导入供应商到数据库
-   * OpenClaw 特有功能：由于累加模式，用户可能已在 openclaw.json 中配置供应商
+   * Import providers from the OpenClaw live config into the database
+   * OpenClaw only: in additive mode the user may already have providers in openclaw.json
    */
   async importOpenClawFromLive(): Promise<number> {
     return await invoke("import_openclaw_providers_from_live");
@@ -146,40 +162,40 @@ export const providersApi = {
 };
 
 // ============================================================================
-// 统一供应商（Universal Provider）API
+// Universal provider API
 // ============================================================================
 
 export const universalProvidersApi = {
   /**
-   * 获取所有统一供应商
+   * Get all universal providers
    */
   async getAll(): Promise<UniversalProvidersMap> {
     return await invoke("get_universal_providers");
   },
 
   /**
-   * 获取单个统一供应商
+   * Get one universal provider
    */
   async get(id: string): Promise<UniversalProvider | null> {
     return await invoke("get_universal_provider", { id });
   },
 
   /**
-   * 添加或更新统一供应商
+   * Add or update a universal provider
    */
   async upsert(provider: UniversalProvider): Promise<boolean> {
     return await invoke("upsert_universal_provider", { provider });
   },
 
   /**
-   * 删除统一供应商
+   * Delete a universal provider
    */
   async delete(id: string): Promise<boolean> {
     return await invoke("delete_universal_provider", { id });
   },
 
   /**
-   * 手动同步统一供应商到各应用
+   * Sync a universal provider to each app manually
    */
   async sync(id: string): Promise<boolean> {
     return await invoke("sync_universal_provider", { id });

@@ -32,10 +32,10 @@ export function ApiKeySection({
 
   const defaultPlaceholder = {
     official: t("providerForm.officialNoApiKey", {
-      defaultValue: "官方供应商无需 API Key",
+      defaultValue: "Official login does not require API Key, save directly",
     }),
     thirdParty: t("providerForm.apiKeyAutoFill", {
-      defaultValue: "输入 API Key，将自动填充到配置",
+      defaultValue: "Just fill in here, config below will be auto-filled",
     }),
   };
 
@@ -55,7 +55,7 @@ export function ApiKeySection({
         }
         disabled={disabled ?? category === "official"}
       />
-      {/* API Key 获取链接 */}
+      {/* "Get API key" link */}
       {shouldShowLink && websiteUrl && (
         <div className="space-y-2 -mt-1 pl-1">
           <a
@@ -65,7 +65,7 @@ export function ApiKeySection({
             className="text-xs text-blue-400 dark:text-blue-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
           >
             {t("providerForm.getApiKey", {
-              defaultValue: "获取 API Key",
+              defaultValue: "Get API Key",
             })}
           </a>
 

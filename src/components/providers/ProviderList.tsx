@@ -60,9 +60,9 @@ interface ProviderListProps {
   onOpenTerminal?: (provider: Provider) => void;
   onCreate?: () => void;
   isLoading?: boolean;
-  isProxyRunning?: boolean; // 代理服务运行状态
-  isProxyTakeover?: boolean; // 代理接管模式（Live配置已被接管）
-  activeProviderId?: string; // 代理当前实际使用的供应商 ID（用于故障转移模式下标注绿色边框）
+  isProxyRunning?: boolean; // whether the proxy is running
+  isProxyTakeover?: boolean; // proxy takeover mode (the live config is taken over)
+  activeProviderId?: string; // provider ID the proxy is actually using (green border in failover mode)
   onSetAsDefault?: (provider: Provider) => void; // OpenClaw: set as default model
 }
 
@@ -100,12 +100,12 @@ export function ProviderList({
     enabled: appId === "opencode",
   });
 
-  // OpenClaw: 查询 live 配置中的供应商 ID 列表，用于判断 isInConfig
+  // OpenClaw: fetch the provider IDs in the live config to determine isInConfig
   const { data: openclawLiveIds } = useOpenClawLiveProviderIds(
     appId === "openclaw",
   );
 
-  // 判断供应商是否已添加到配置（累加模式应用：OpenCode/OpenClaw）
+  // Whether the provider is already in the config (additive-mode apps: OpenCode/OpenClaw)
   const isProviderInConfig = useCallback(
     (providerId: string): boolean => {
       if (appId === "opencode") {
@@ -114,7 +114,7 @@ export function ProviderList({
       if (appId === "openclaw") {
         return openclawLiveIds?.includes(providerId) ?? false;
       }
-      return true; // 其他应用始终返回 true
+      return true; // always true for other apps
     },
     [appId, opencodeLiveIds, openclawLiveIds],
   );
@@ -132,7 +132,7 @@ export function ProviderList({
     [appId, openclawDefaultModel],
   );
 
-  // 故障转移相关
+  // Failover
   const { data: isAutoFailoverEnabled } = useAutoFailoverEnabled(appId);
   const { data: failoverQueue } = useFailoverQueue(appId);
   const addToQueue = useAddToFailoverQueue();

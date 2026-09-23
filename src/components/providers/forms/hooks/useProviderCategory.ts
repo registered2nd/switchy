@@ -15,8 +15,8 @@ interface UseProviderCategoryProps {
 }
 
 /**
- * 管理供应商类别状态
- * 根据选择的预设自动更新类别
+ * Manages provider category state
+ * Updates the category from the selected preset
  */
 export function useProviderCategory({
   appId,
@@ -25,12 +25,12 @@ export function useProviderCategory({
   initialCategory,
 }: UseProviderCategoryProps) {
   const [category, setCategory] = useState<ProviderCategory | undefined>(
-    // 编辑模式：使用 initialCategory
+    // Edit mode: use initialCategory
     isEditMode ? initialCategory : undefined,
   );
 
   useEffect(() => {
-    // 编辑模式：只在初始化时设置，后续不自动更新
+    // Edit mode: set only on init, never updated automatically afterwards
     if (isEditMode) {
       setCategory(initialCategory);
       return;
@@ -43,7 +43,7 @@ export function useProviderCategory({
 
     if (!selectedPresetId) return;
 
-    // 从预设 ID 提取索引
+    // Extract the index from the preset ID
     const match = selectedPresetId.match(
       /^(claude|codex|gemini|kimi|opencode)-(\d+)$/,
     );

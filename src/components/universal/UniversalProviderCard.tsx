@@ -19,7 +19,7 @@ export function UniversalProviderCard({
 }: UniversalProviderCardProps) {
   const { t } = useTranslation();
 
-  // 获取启用的应用列表
+  // Enabled apps
   const enabledApps: string[] = [
     provider.apps.claude ? "Claude" : null,
     provider.apps.codex ? "Codex" : null,
@@ -28,7 +28,7 @@ export function UniversalProviderCard({
 
   return (
     <div className="group relative rounded-xl border border-border/50 bg-card p-4 transition-all hover:border-border hover:shadow-md">
-      {/* 头部：图标和名称 */}
+      {/* Header: icon and name */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent">
@@ -42,14 +42,16 @@ export function UniversalProviderCard({
           </div>
         </div>
 
-        {/* 操作按钮 */}
+        {/* Action buttons */}
         <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <Button
             variant="ghost"
             size="icon"
             className="h-8 w-8"
             onClick={() => onSync(provider.id)}
-            title={t("universalProvider.sync", { defaultValue: "同步到应用" })}
+            title={t("universalProvider.sync", {
+              defaultValue: "Sync to Apps",
+            })}
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -58,7 +60,7 @@ export function UniversalProviderCard({
             size="icon"
             className="h-8 w-8"
             onClick={() => onEdit(provider)}
-            title={t("common.edit", { defaultValue: "编辑" })}
+            title={t("common.edit", { defaultValue: "Edit" })}
           >
             <Edit2 className="h-4 w-4" />
           </Button>
@@ -67,14 +69,14 @@ export function UniversalProviderCard({
             size="icon"
             className="h-8 w-8 text-destructive hover:text-destructive"
             onClick={() => onDelete(provider.id)}
-            title={t("common.delete", { defaultValue: "删除" })}
+            title={t("common.delete", { defaultValue: "Delete" })}
           >
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
-      {/* 配置信息 */}
+      {/* Config details */}
       <div className="mt-4 space-y-2">
         {/* Base URL */}
         <div className="flex items-center gap-2 text-sm">
@@ -84,7 +86,7 @@ export function UniversalProviderCard({
           </span>
         </div>
 
-        {/* 启用的应用 */}
+        {/* Enabled apps */}
         <div className="flex flex-wrap gap-1.5">
           {enabledApps.map((app) => (
             <span
@@ -97,14 +99,14 @@ export function UniversalProviderCard({
           {enabledApps.length === 0 && (
             <span className="text-xs text-muted-foreground">
               {t("universalProvider.noAppsEnabled", {
-                defaultValue: "未启用任何应用",
+                defaultValue: "No apps enabled",
               })}
             </span>
           )}
         </div>
       </div>
 
-      {/* 备注 */}
+      {/* Notes */}
       {provider.notes && (
         <p className="mt-3 text-xs text-muted-foreground line-clamp-2">
           {provider.notes}

@@ -15,14 +15,14 @@ export function AuthCenterPanel() {
               <ShieldCheck className="h-5 w-5 text-primary" />
               <h3 className="text-base font-semibold">
                 {t("settings.authCenter.title", {
-                  defaultValue: "OAuth 认证中心",
+                  defaultValue: "OAuth Auth Center",
                 })}
               </h3>
             </div>
             <p className="text-sm text-muted-foreground">
               {t("settings.authCenter.description", {
                 defaultValue:
-                  "集中管理跨应用复用的 OAuth 账号。Provider 只绑定这些认证源，不再重复登录。",
+                  "Centrally manage OAuth accounts reused across apps. Providers bind to these auth sources — no repeated login.",
               })}
             </p>
           </div>
@@ -42,7 +42,7 @@ export function AuthCenterPanel() {
             <p className="text-sm text-muted-foreground">
               {t("settings.authCenter.copilotDescription", {
                 defaultValue:
-                  "管理 GitHub Copilot 账号、默认账号以及供 Claude / Codex / Gemini 绑定的托管凭据。",
+                  "Manage GitHub Copilot accounts, defaults, and managed credentials bound to Claude / Codex / Gemini.",
               })}
             </p>
           </div>

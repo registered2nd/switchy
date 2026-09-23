@@ -32,7 +32,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
   const deleteProviderMutation = useDeleteProviderMutation(activeApp);
   const switchProviderMutation = useSwitchProviderMutation(activeApp);
 
-  // 添加供应商
+  // Add provider
   const addProvider = useCallback(
     async (
       provider: Omit<Provider, "id"> & {
@@ -75,7 +75,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
           if (modelsRegistered) {
             toast.success(
               t("notifications.openclawModelsRegistered", {
-                defaultValue: "模型已注册到 /model 列表",
+                defaultValue: "Models have been registered to /model list",
               }),
               { closeButton: true },
             );
@@ -92,12 +92,12 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
     [addProviderMutation, activeApp, queryClient, t],
   );
 
-  // 更新供应商
+  // Update provider
   const updateProvider = useCallback(
     async (provider: Provider, originalId?: string) => {
       await updateProviderMutation.mutateAsync({ provider, originalId });
 
-      // 更新托盘菜单（失败不影响主操作）
+      // Update the tray menu (a failure does not affect the main action)
       try {
         await providersApi.updateTrayMenu();
       } catch (trayError) {
@@ -110,7 +110,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
     [updateProviderMutation],
   );
 
-  // 切换供应商
+  // Switch provider
   const switchProvider = useCallback(
     async (provider: Provider) => {
       const isCopilotProvider =
@@ -122,28 +122,28 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
       if (!isProxyRunning && provider.category !== "official") {
         if (isCopilotProvider) {
           proxyRequiredReason = t("notifications.proxyReasonCopilot", {
-            defaultValue: "使用 GitHub Copilot 作为 Claude 供应商",
+            defaultValue: "uses GitHub Copilot as a Claude provider",
           });
         } else if (
           provider.meta?.apiFormat === "openai_chat" &&
           activeApp === "claude"
         ) {
           proxyRequiredReason = t("notifications.proxyReasonOpenAIChat", {
-            defaultValue: "使用 OpenAI Chat 接口格式",
+            defaultValue: "uses OpenAI Chat API format",
           });
         } else if (
           provider.meta?.apiFormat === "openai_responses" &&
           activeApp === "claude"
         ) {
           proxyRequiredReason = t("notifications.proxyReasonOpenAIResponses", {
-            defaultValue: "使用 OpenAI Responses 接口格式",
+            defaultValue: "uses OpenAI Responses API format",
           });
         } else if (
           provider.meta?.isFullUrl &&
           (activeApp === "claude" || activeApp === "codex")
         ) {
           proxyRequiredReason = t("notifications.proxyReasonFullUrl", {
-            defaultValue: "开启了完整 URL 连接模式",
+            defaultValue: "has full URL connection mode enabled",
           });
         }
       }
@@ -153,7 +153,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
           t("notifications.proxyRequiredForSwitch", {
             reason: proxyRequiredReason,
             defaultValue:
-              "此供应商{{reason}}，需要代理服务才能正常使用，请先启动代理",
+              "This provider {{reason}}, requires the proxy service to work properly. Start the proxy first.",
           }),
         );
       }
@@ -221,7 +221,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
               toast.warning(
                 t("notifications.backfillWarning", {
                   defaultValue:
-                    "切换成功，但旧供应商配置回填失败，您手动修改的配置可能未保存",
+                    "Switched successfully, but failed to save changes back to the previous provider",
                 }),
                 { duration: 5000 },
               );
@@ -229,7 +229,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
           }
         }
 
-        // 根据供应商类型显示不同的成功提示
+        // Show a different success toast depending on the provider type
         if (
           !proxyRequiredReason &&
           activeApp === "claude" &&
@@ -249,7 +249,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
             },
           );
         } else {
-          // 普通供应商：显示切换成功
+          // Regular provider: show switch success
           // OpenCode/OpenClaw: show "added to config" message instead of "switched"
           const isMultiProviderApp =
             activeApp === "opencode" || activeApp === "openclaw";
@@ -257,21 +257,21 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
             ? "notifications.addToConfigSuccess"
             : "notifications.switchSuccess";
           const defaultMessage = isMultiProviderApp
-            ? "已添加到配置"
-            : "切换成功！";
+            ? "Added to config"
+            : "Switch successful!";
 
           toast.success(t(messageKey, { defaultValue: defaultMessage }), {
             closeButton: true,
           });
         }
       } catch {
-        // 错误提示由 mutation 处理
+        // The mutation handles the error toast
       }
     },
     [switchProviderMutation, activeApp, isProxyRunning, t],
   );
 
-  // 删除供应商
+  // Delete provider
   const deleteProvider = useCallback(
     async (id: string) => {
       await deleteProviderMutation.mutateAsync(id);
@@ -279,7 +279,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
     [deleteProviderMutation],
   );
 
-  // 保存用量脚本
+  // Save usage script
   const saveUsageScript = useCallback(
     async (provider: Provider, script: UsageScript) => {
       try {
@@ -295,14 +295,14 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
         await queryClient.invalidateQueries({
           queryKey: ["providers", activeApp],
         });
-        // 🔧 保存用量脚本后，也应该失效该 provider 的用量查询缓存
-        // 这样主页列表会使用新配置重新查询，而不是使用测试时的缓存
+        // After saving the usage script, also invalidate this provider's usage query cache
+        // so the main list re-queries with the new config instead of the cache from the test run
         await queryClient.invalidateQueries({
           queryKey: ["usage", provider.id, activeApp],
         });
         toast.success(
           t("provider.usageSaved", {
-            defaultValue: "用量查询配置已保存",
+            defaultValue: "Usage query configuration saved",
           }),
           { closeButton: true },
         );
@@ -310,7 +310,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
         const detail =
           extractErrorMessage(error) ||
           t("provider.usageSaveFailed", {
-            defaultValue: "用量查询配置保存失败",
+            defaultValue: "Failed to save usage query configuration",
           });
         toast.error(detail);
       }
@@ -325,7 +325,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
       if (!config.models || config.models.length === 0) {
         toast.error(
           t("notifications.openclawNoModels", {
-            defaultValue: "该供应商没有配置模型",
+            defaultValue: "No models configured",
           }),
         );
         return;
@@ -346,7 +346,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
         });
         toast.success(
           t("notifications.openclawDefaultModelSet", {
-            defaultValue: "已设为默认模型",
+            defaultValue: "Set as default model",
           }),
           { closeButton: true },
         );
@@ -354,7 +354,7 @@ export function useProviderActions(activeApp: AppId, isProxyRunning?: boolean) {
         const detail =
           extractErrorMessage(error) ||
           t("notifications.openclawDefaultModelSetFailed", {
-            defaultValue: "设置默认模型失败",
+            defaultValue: "Failed to set default model",
           });
         toast.error(detail);
       }

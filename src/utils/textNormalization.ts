@@ -1,22 +1,22 @@
 /**
- * 将常见的中文/全角/弯引号统一为 ASCII 引号，以避免 TOML 解析失败。
- * - 双引号：” “ „ ‟ ＂ → "
- * - 单引号：’ ‘ ＇ → '
- * 保守起见，不替换书名号/角引号（《》、「」等），避免误伤内容语义。
+ * Normalize common CJK, fullwidth and curly quotes to ASCII quotes so TOML parsing does not fail.
+ * - Double quotes: U+201C U+201D U+201E U+201F U+FF02 -> "
+ * - Single quotes: U+2018 U+2019 U+FF07 -> '
+ * To be safe, CJK title marks and corner brackets are left alone so the content keeps its meaning.
  */
 export const normalizeQuotes = (text: string): string => {
   if (!text) return text;
   return (
     text
-      // 双引号族 → "
-      .replace(/[“”„‟＂]/g, '"')
-      // 单引号族 → '
-      .replace(/[‘’＇]/g, "'")
+      // Double-quote family -> "
+      .replace(/[\u201C\u201D\u201E\u201F\uFF02]/g, '"')
+      // Single-quote family -> '
+      .replace(/[\u2018\u2019\uFF07]/g, "'")
   );
 };
 
 /**
- * 专用于 TOML 文本的归一化；目前等同于 normalizeQuotes，后续可扩展（如空白、行尾等）。
+ * Normalization for TOML text; currently the same as normalizeQuotes, can be extended later (whitespace, line endings, etc.).
  */
 export const normalizeTomlText = (text: string): string =>
   normalizeQuotes(text);

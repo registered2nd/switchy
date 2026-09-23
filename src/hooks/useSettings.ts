@@ -60,18 +60,18 @@ const sanitizeDir = (value?: string | null): string | undefined => {
 };
 
 /**
- * useSettings - 组合层
- * 负责：
- * - 组合 useSettingsForm、useDirectorySettings、useSettingsMetadata
- * - 保存设置逻辑
- * - 重置设置逻辑
+ * useSettings - composition layer
+ * Handles:
+ * - composing useSettingsForm, useDirectorySettings, useSettingsMetadata
+ * - saving settings
+ * - resetting settings
  */
 export function useSettings(): UseSettingsResult {
   const { t } = useTranslation();
   const { data } = useSettingsQuery();
   const saveMutation = useSaveSettingsMutation();
 
-  // 1️⃣ 表单状态管理
+  // 1. Form state
   const {
     settings,
     isLoading: isFormLoading,
@@ -81,7 +81,7 @@ export function useSettings(): UseSettingsResult {
     syncLanguage,
   } = useSettingsForm();
 
-  // 2️⃣ 目录管理
+  // 2. Directories
   const {
     appConfigDir,
     claudeMirrorDir,
@@ -107,7 +107,7 @@ export function useSettings(): UseSettingsResult {
     onUpdateSettings: updateSettings,
   });
 
-  // 3️⃣ 元数据管理
+  // 3. Metadata
   const {
     requiresRestart,
     isLoading: isMetadataLoading,
@@ -115,7 +115,7 @@ export function useSettings(): UseSettingsResult {
     setRequiresRestart,
   } = useSettingsMetadata();
 
-  // 重置设置
+  // Reset settings
   const resetSettings = useCallback(() => {
     resetForm(data ?? null);
     syncLanguage(initialLanguage);
@@ -138,8 +138,8 @@ export function useSettings(): UseSettingsResult {
     setRequiresRestart,
   ]);
 
-  // 即时保存设置（用于 General 标签页的实时更新）
-  // 保存基础配置 + 独立的系统 API 调用（开机自启）
+  // Save settings immediately (live updates on the General tab)
+  // Saves the base config plus the separate system API call (launch at login)
   const autoSaveSettings = useCallback(
     async (updates: Partial<SettingsFormState>): Promise<SaveResult | null> => {
       const mergedSettings = settings ? { ...settings, ...updates } : null;
@@ -173,10 +173,10 @@ export function useSettings(): UseSettingsResult {
           language: mergedSettings.language,
         };
 
-        // 保存到配置文件
+        // Save to the config file
         await saveMutation.mutateAsync(payload);
 
-        // 如果开机自启状态改变，调用系统 API
+        // Call the system API if the launch-at-login state changed
         if (
           payload.launchOnStartup !== undefined &&
           payload.launchOnStartup !== data?.launchOnStartup
@@ -187,13 +187,13 @@ export function useSettings(): UseSettingsResult {
             console.error("Failed to update auto-launch:", error);
             toast.error(
               t("settings.autoLaunchFailed", {
-                defaultValue: "设置开机自启失败",
+                defaultValue: "Failed to set auto-launch",
               }),
             );
           }
         }
 
-        // 持久化语言偏好
+        // Persist the language preference
         try {
           if (typeof window !== "undefined" && updates.language) {
             window.localStorage.setItem("language", updates.language);
@@ -205,7 +205,7 @@ export function useSettings(): UseSettingsResult {
           );
         }
 
-        // 更新托盘菜单
+        // Update the tray menu
         try {
           await providersApi.updateTrayMenu();
         } catch (error) {
@@ -217,7 +217,7 @@ export function useSettings(): UseSettingsResult {
         console.error("[useSettings] Failed to auto-save settings", error);
         toast.error(
           t("notifications.settingsSaveFailed", {
-            defaultValue: "保存设置失败: {{error}}",
+            defaultValue: "Failed to save settings: {{error}}",
             error: (error as Error)?.message ?? String(error),
           }),
         );
@@ -227,8 +227,8 @@ export function useSettings(): UseSettingsResult {
     [data, saveMutation, settings, t],
   );
 
-  // 完整保存设置（用于 Advanced 标签页的手动保存）
-  // 包含所有系统 API 调用和完整的验证流程
+  // Full settings save (manual save on the Advanced tab)
+  // Includes every system API call and the full validation flow
   const saveSettings = useCallback(
     async (
       overrides?: Partial<SettingsFormState>,
@@ -279,7 +279,7 @@ export function useSettings(): UseSettingsResult {
 
         await settingsApi.setAppConfigDirOverride(sanitizedAppDir ?? null);
 
-        // 只在开机自启状态真正改变时调用系统 API
+        // Call the system API only when the launch-at-login state actually changed
         if (
           payload.launchOnStartup !== undefined &&
           payload.launchOnStartup !== data?.launchOnStartup
@@ -290,7 +290,7 @@ export function useSettings(): UseSettingsResult {
             console.error("Failed to update auto-launch:", error);
             toast.error(
               t("settings.autoLaunchFailed", {
-                defaultValue: "设置开机自启失败",
+                defaultValue: "Failed to set auto-launch",
               }),
             );
           }
@@ -316,7 +316,7 @@ export function useSettings(): UseSettingsResult {
           console.warn("[useSettings] Failed to refresh tray menu", error);
         }
 
-        // 如果 Claude/Codex/Gemini/OpenCode 的目录覆盖发生变化，则立即将"当前使用的供应商"写回对应应用的 live 配置
+        // If the Claude/Codex/Gemini/OpenCode directory override changed, write the current provider back to that app's live config right away
         const claudeDirChanged = sanitizedClaudeDir !== previousClaudeDir;
         const claudeMirrorDirChanged =
           sanitizedClaudeMirrorDir !== previousClaudeMirrorDir;
@@ -350,7 +350,7 @@ export function useSettings(): UseSettingsResult {
         if (!options?.silent) {
           toast.success(
             t("notifications.settingsSaved", {
-              defaultValue: "设置已保存",
+              defaultValue: "Settings saved",
             }),
             { closeButton: true },
           );
@@ -361,7 +361,7 @@ export function useSettings(): UseSettingsResult {
         console.error("[useSettings] Failed to save settings", error);
         toast.error(
           t("notifications.settingsSaveFailed", {
-            defaultValue: "保存设置失败: {{error}}",
+            defaultValue: "Failed to save settings: {{error}}",
             error: (error as Error)?.message ?? String(error),
           }),
         );

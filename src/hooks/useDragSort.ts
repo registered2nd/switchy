@@ -75,22 +75,22 @@ export function useDragSort(providers: Record<string, Provider>, appId: AppId) {
           queryKey: ["providers", appId],
         });
 
-        // 刷新故障转移队列（因为队列顺序依赖 sort_index）
+        // Refresh the failover queue (its order depends on sort_index)
         await queryClient.invalidateQueries({
           queryKey: ["failoverQueue", appId],
         });
 
-        // 更新托盘菜单以反映新的排序（失败不影响主操作）
+        // Update the tray menu to reflect the new order (a failure does not affect the main action)
         try {
           await providersApi.updateTrayMenu();
         } catch (trayError) {
           console.error("Failed to update tray menu after sort", trayError);
-          // 托盘菜单更新失败不影响排序成功
+          // A tray menu update failure does not undo the sort
         }
 
         toast.success(
           t("provider.sortUpdated", {
-            defaultValue: "排序已更新",
+            defaultValue: "Sort order updated",
           }),
           { closeButton: true },
         );
@@ -98,7 +98,7 @@ export function useDragSort(providers: Record<string, Provider>, appId: AppId) {
         console.error("Failed to update provider sort order", error);
         toast.error(
           t("provider.sortUpdateFailed", {
-            defaultValue: "排序更新失败",
+            defaultValue: "Failed to update sort order",
           }),
         );
       }

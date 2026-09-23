@@ -1,5 +1,5 @@
 /**
- * Codex 预设供应商配置模板
+ * Codex provider preset templates
  */
 import { ProviderCategory } from "../types";
 import type { PresetTheme } from "./claudeProviderPresets";
@@ -8,24 +8,24 @@ export interface CodexProviderPreset {
   name: string;
   nameKey?: string; // i18n key for localized display name
   websiteUrl: string;
-  // 第三方供应商可提供单独的获取 API Key 链接
+  // Separate "get an API key" link for third-party providers
   apiKeyUrl?: string;
-  auth: Record<string, any>; // 将写入 ~/.codex/auth.json
-  config: string; // 将写入 ~/.codex/config.toml（TOML 字符串）
-  isOfficial?: boolean; // 标识是否为官方预设
-  category?: ProviderCategory; // 新增：分类
-  isCustomTemplate?: boolean; // 标识是否为自定义模板
-  // 新增：请求地址候选列表（用于地址管理/测速）
+  auth: Record<string, any>; // Written to ~/.codex/auth.json
+  config: string; // Written to ~/.codex/config.toml (TOML string)
+  isOfficial?: boolean; // Official preset
+  category?: ProviderCategory; // Category
+  isCustomTemplate?: boolean; // Custom template
+  // Candidate endpoints (for endpoint management and speed tests)
   endpointCandidates?: string[];
-  // 新增：视觉主题配置
+  // Visual theme
   theme?: PresetTheme;
-  // 图标配置
-  icon?: string; // 图标名称
-  iconColor?: string; // 图标颜色
+  // Icon
+  icon?: string; // Icon name
+  iconColor?: string; // Icon color
 }
 
 /**
- * 生成第三方供应商的 auth.json
+ * Build auth.json for a third-party provider
  */
 export function generateThirdPartyAuth(apiKey: string): Record<string, any> {
   return {
@@ -34,14 +34,14 @@ export function generateThirdPartyAuth(apiKey: string): Record<string, any> {
 }
 
 /**
- * 生成第三方供应商的 config.toml
+ * Build config.toml for a third-party provider
  */
 export function generateThirdPartyConfig(
   providerName: string,
   baseUrl: string,
   modelName = "gpt-5.4",
 ): string {
-  // 清理供应商名称，确保符合TOML键名规范
+  // Sanitize the provider name into a valid TOML key
   const cleanProviderName =
     providerName
       .toLowerCase()

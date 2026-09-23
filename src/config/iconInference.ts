@@ -1,9 +1,9 @@
 /**
- * 根据供应商名称智能推断图标配置
+ * Infer a provider's icon from its name
  */
 
 const iconMappings = {
-  // AI 服务商
+  // AI providers
   claude: { icon: "claude", iconColor: "#D4915D" },
   anthropic: { icon: "anthropic", iconColor: "#D4915D" },
   deepseek: { icon: "deepseek", iconColor: "#1E88E5" },
@@ -29,7 +29,7 @@ const iconMappings = {
   huggingface: { icon: "huggingface", iconColor: "#FFD21E" },
   novita: { icon: "novita", iconColor: "#000000" },
 
-  // 云平台
+  // Cloud platforms
   aws: { icon: "aws", iconColor: "#FF9900" },
   azure: { icon: "azure", iconColor: "#0078D4" },
   huawei: { icon: "huawei", iconColor: "#FF0000" },
@@ -37,7 +37,7 @@ const iconMappings = {
 };
 
 /**
- * 根据预设名称推断图标
+ * Infer an icon from a preset name
  */
 export function inferIconForPreset(presetName: string): {
   icon?: string;
@@ -45,7 +45,7 @@ export function inferIconForPreset(presetName: string): {
 } {
   const nameLower = presetName.toLowerCase();
 
-  // 精确匹配或模糊匹配
+  // Substring match
   for (const [key, config] of Object.entries(iconMappings)) {
     if (nameLower.includes(key)) {
       return config;
@@ -56,18 +56,18 @@ export function inferIconForPreset(presetName: string): {
 }
 
 /**
- * 批量为预设添加图标配置
+ * Add icons to a list of presets
  */
 export function addIconsToPresets<
   T extends { name: string; icon?: string; iconColor?: string },
 >(presets: T[]): T[] {
   return presets.map((preset) => {
-    // 如果已经配置了图标，则保留原配置
+    // Keep an icon that is already set
     if (preset.icon) {
       return preset;
     }
 
-    // 否则根据名称推断
+    // Otherwise infer it from the name
     const inferred = inferIconForPreset(preset.name);
     return {
       ...preset,

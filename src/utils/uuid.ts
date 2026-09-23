@@ -1,21 +1,21 @@
 /**
- * 生成 UUID v4
+ * Generate a UUID v4
  *
- * 优先使用 crypto.randomUUID()，不可用时使用 crypto.getRandomValues() 实现
+ * Uses crypto.randomUUID() when available, otherwise builds one with crypto.getRandomValues()
  *
- * 兼容性：
+ * Compatibility:
  * - crypto.randomUUID(): Chrome 92+, Safari 15.4+, Firefox 95+
  * - crypto.getRandomValues(): Chrome 11+, Safari 5+, Firefox 21+
  */
 export function generateUUID(): string {
   const cryptoApi = globalThis.crypto;
 
-  // 优先使用原生 API
+  // Prefer the native API
   if (typeof cryptoApi?.randomUUID === "function") {
     return cryptoApi.randomUUID();
   }
 
-  // Fallback: 使用 crypto.getRandomValues 实现 UUID v4
+  // Fallback: build a UUID v4 with crypto.getRandomValues
   if (!cryptoApi?.getRandomValues) {
     throw new Error(
       "crypto API not available - please update your operating system",
@@ -25,7 +25,7 @@ export function generateUUID(): string {
   const bytes = new Uint8Array(16);
   cryptoApi.getRandomValues(bytes);
 
-  // 设置版本 (4) 和变体 (RFC 4122)
+  // Set the version (4) and variant (RFC 4122)
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
 

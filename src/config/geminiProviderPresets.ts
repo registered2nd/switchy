@@ -1,14 +1,14 @@
 import type { ProviderCategory } from "@/types";
 
 /**
- * Gemini 预设供应商的视觉主题配置
+ * Visual theme for a Gemini provider preset
  */
 export interface GeminiPresetTheme {
-  /** 图标类型：'gemini' | 'generic' */
+  /** Icon type: 'gemini' | 'generic' */
   icon?: "gemini" | "generic";
-  /** 背景色（选中状态），支持 hex 颜色 */
+  /** Background color when selected (hex) */
   backgroundColor?: string;
-  /** 文字色（选中状态），支持 hex 颜色 */
+  /** Text color when selected (hex) */
   textColor?: string;
 }
 
@@ -25,9 +25,9 @@ export interface GeminiProviderPreset {
   partnerPromotionKey?: string;
   endpointCandidates?: string[];
   theme?: GeminiPresetTheme;
-  // 图标配置
-  icon?: string; // 图标名称
-  iconColor?: string; // 图标颜色
+  // Icon
+  icon?: string; // Icon name
+  iconColor?: string; // Icon color
 }
 
 export const geminiProviderPresets: GeminiProviderPreset[] = [
@@ -38,7 +38,7 @@ export const geminiProviderPresets: GeminiProviderPreset[] = [
     settingsConfig: {
       env: {},
     },
-    description: "Google 官方 Gemini API (OAuth)",
+    description: "Official Google Gemini API (OAuth)",
     category: "official",
     partnerPromotionKey: "google-official",
     theme: {
@@ -226,7 +226,7 @@ export const geminiProviderPresets: GeminiProviderPreset[] = [
     iconColor: "#6566F1",
   },
   {
-    name: "自定义",
+    name: "Custom",
     websiteUrl: "",
     settingsConfig: {
       env: {
@@ -235,7 +235,7 @@ export const geminiProviderPresets: GeminiProviderPreset[] = [
       },
     },
     model: "gemini-3.1-pro",
-    description: "自定义 Gemini API 端点",
+    description: "Custom Gemini API endpoint",
     category: "custom",
   },
 ];

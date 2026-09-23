@@ -1,4 +1,4 @@
-// 轻量平台检测，避免在 SSR 或无 navigator 的环境报错
+// Lightweight platform detection that does not fail under SSR or without navigator
 export const isMac = (): boolean => {
   try {
     const ua = navigator.userAgent || "";
@@ -21,7 +21,7 @@ export const isWindows = (): boolean => {
 export const isLinux = (): boolean => {
   try {
     const ua = navigator.userAgent || "";
-    // WebKitGTK/Chromium 在 Linux/Wayland/X11 下 UA 通常包含 Linux 或 X11
+    // WebKitGTK/Chromium UA on Linux/Wayland/X11 usually contains Linux or X11
     return (
       /linux|x11/i.test(ua) && !/android/i.test(ua) && !isMac() && !isWindows()
     );
