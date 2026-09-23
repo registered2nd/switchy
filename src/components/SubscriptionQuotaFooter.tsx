@@ -237,8 +237,9 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
       <div className="flex flex-shrink-0 items-center gap-5 text-xs">
         {tiers
           .filter((tier) => !HIDDEN_INLINE_TIERS.has(tier.name))
-          // A model's own limit shows once that model has been used.
-          .filter((tier) => !isModelTier(tier.name) || tier.utilization >= 1)
+          // A limit narrower than the account's (one model's, or one the API
+          // names without a window) shows once it has been used.
+          .filter((tier) => TIER_I18N_KEYS[tier.name] || tier.utilization >= 1)
           .map((tier) => (
             <TierMeter key={tier.name} tier={tier} t={t} />
           ))}
@@ -336,11 +337,6 @@ export const TierBadge: React.FC<{
     </div>
   );
 };
-
-/** A limit that applies to one model rather than the whole account. */
-function isModelTier(name: string): boolean {
-  return /^(five_hour|seven_day)_/.test(name) && !TIER_I18N_KEYS[name];
-}
 
 /** A tier's label as people read it: "7-day nimbus quill" for a model tier. */
 function tierLabel(

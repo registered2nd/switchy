@@ -81,6 +81,7 @@
     "searchCloseAriaLabel": "Close provider search",
     "noSearchResults": "No providers match your search.",
     "duplicate": "Duplicate",
+    "moreActions": "More actions",
     "sortUpdateFailed": "Failed to update sort order",
     "configureUsage": "Configure usage query",
     "openTerminal": "Open Terminal",
@@ -404,14 +405,9 @@
       "defaultCostMultiplierInvalid": "Invalid multiplier format"
     },
     "saveFailedGeneric": "Save failed. Try again.",
-    "authCenter": {
-      "copilotDescription": "Sign in with GitHub to use your Copilot subscription as the model behind Claude Code: add the GitHub Copilot provider under Claude after signing in."
-    },
-    "tabAuth": "Sign-in",
     "page": {
       "general": "Language, appearance, the tray and which apps show in the sidebar.",
       "pool": "How Switchy routes requests and moves between your accounts.",
-      "auth": "Accounts Switchy signs in to for providers that need one, such as GitHub Copilot.",
       "advanced": "Where each tool keeps its configuration, provider tests, logging and session repair.",
       "usage": "Requests Switchy routed, counted on this machine. Nothing is sent anywhere."
     },

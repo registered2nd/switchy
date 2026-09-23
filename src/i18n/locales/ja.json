@@ -81,6 +81,7 @@
     "searchCloseAriaLabel": "検索を閉じる",
     "noSearchResults": "一致するプロバイダーがありません。",
     "duplicate": "複製",
+    "moreActions": "その他の操作",
     "sortUpdateFailed": "並び順の更新に失敗しました",
     "configureUsage": "利用状況を設定",
     "openTerminal": "ターミナルを開く",
@@ -404,14 +405,9 @@
       "defaultCostMultiplierInvalid": "デフォルト倍率の形式が正しくありません"
     },
     "saveFailedGeneric": "保存に失敗しました。もう一度お試しください",
-    "authCenter": {
-      "copilotDescription": "GitHub でサインインすると、Copilot のサブスクリプションを Claude Code の背後のモデルとして使えます。サインイン後、Claude の下に GitHub Copilot プロバイダーを追加してください。"
-    },
-    "tabAuth": "サインイン",
     "page": {
       "general": "言語、外観、トレイ、サイドバーに表示するアプリ。",
       "pool": "Switchy がリクエストをどう中継し、アカウント間をどう切り替えるか。",
-      "auth": "GitHub Copilot など、サインインが必要なプロバイダーのために Switchy がサインインするアカウント。",
       "advanced": "各ツールの設定の場所、プロバイダーのテスト、ログ、セッション修復。",
       "usage": "Switchy が中継したリクエストをこのマシン上で集計します。どこにも送信されません。"
     },

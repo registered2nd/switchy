@@ -16,9 +16,12 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   apps, Usage Statistics and Settings, and inside Settings it lists the
   settings pages. Each account is one line with its email, whether it is in
   use, and its 5-hour and 7-day limits as small bars with the time to reset;
-  a model's own limit shows once that model has been used. Settings pages are
-  plain sections instead of accordion cards. Backups and import/export are one
-  page, *Switchy data*, and the Auth page is *Sign-in*. The type is IBM Plex,
+  a narrower limit, such as one model's, shows once it has been used. Pointing
+  at a line shows Enable and a menu with edit, duplicate, the switching order
+  and delete. The window opens larger, so full email addresses fit. Settings
+  pages are plain sections instead of accordion cards. Backups and
+  import/export are one page, *Switchy data*. The GitHub Copilot provider signs
+  in from its own form, so Settings has no sign-in page. The type is IBM Plex,
   the accent is brass, and light and dark modes both follow it.
 
 - **Usage Statistics is built around accounts.** A per-account table shows
@@ -42,8 +45,11 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   Chinese and Japanese, and the tray menu follows the app language.
 - **Enable stays on every card with Switch automatically on.** Enabling an
   account puts it first in the switching order, so it answers from the next
-  request, in open sessions too. Adding or removing a card from the
-  switching order is the small list button next to it.
+  request, in open sessions too. Adding or removing an account from the
+  switching order is in its line's menu.
+- **The previous run's log is kept.** Switchy moves its log to
+  `switchy.prev.log` when it starts instead of deleting it, and records what
+  asked it to quit.
 
 ### Fixed
 

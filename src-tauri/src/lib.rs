@@ -129,6 +129,7 @@ pub fn run() {
                         tray::apply_tray_policy(window.app_handle(), false);
                     }
                 } else {
+                    log::info!("Main window closed; quitting");
                     window.app_handle().exit(0);
                 }
             }
@@ -142,7 +143,7 @@ pub fn run() {
             app_store::refresh_app_config_dir_override(app.handle());
             panic_hook::init_app_config_dir(crate::config::get_app_config_dir());
 
-            // Initialise logging (a single file at <app_config_dir>/logs/switchy.log)
+            // Initialise logging (<app_config_dir>/logs/switchy.log, plus the previous run's switchy.prev.log)
             {
                 use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
 
@@ -153,9 +154,10 @@ pub fn run() {
                     eprintln!("Failed to create the log directory: {e}");
                 }
 
-                // Delete the old log file at startup, so there is only ever one file
+                // Keep the previous run's log as switchy.prev.log, so the reason the
+                // last run ended can still be read after a restart
                 let log_file_path = log_dir.join("switchy.log");
-                let _ = std::fs::remove_file(&log_file_path);
+                let _ = std::fs::rename(&log_file_path, log_dir.join("switchy.prev.log"));
 
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -168,7 +170,7 @@ pub fn run() {
                                 file_name: Some("switchy".into()),
                             }),
                         ])
-                        // Single-file mode: the old file is deleted at startup and rotated when it reaches the size limit
+                        // The file is rotated when it reaches the size limit
                         // Note: KeepSome(n) computes n-2 internally, so n=1 underflows usize
                         // KeepSome(2) is the smallest safe value and keeps no rotated files
                         .rotation_strategy(RotationStrategy::KeepSome(2))

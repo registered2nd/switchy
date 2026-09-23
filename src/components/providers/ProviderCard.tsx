@@ -295,17 +295,17 @@ export function ProviderCard({
             size={22}
           />
 
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2">
               <h3
-                className="truncate text-[14.5px] font-medium leading-snug"
+                className="min-w-0 truncate text-[14.5px] font-medium leading-snug"
                 title={accountEmail || provider.name}
               >
                 {accountEmail || provider.name}
               </h3>
 
               {isLive && (
-                <span className="text-[12px] font-medium text-primary">
+                <span className="shrink-0 whitespace-nowrap text-[12px] font-medium text-primary">
                   {isAdditiveMode
                     ? t("provider.inConfig", { defaultValue: "In config" })
                     : t("provider.live", { defaultValue: "In use" })}
@@ -331,8 +331,8 @@ export function ProviderCard({
               )}
             </div>
 
-            <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
-              <span className="truncate">
+            <div className="flex min-w-0 items-center gap-2 text-[12px] text-muted-foreground">
+              <span className="min-w-0 truncate">
                 {accountEmail ? provider.name : null}
                 {!accountEmail && displayUrl ? (
                   <button
@@ -352,47 +352,16 @@ export function ProviderCard({
                 ) : null}
               </span>
               {isAutoFailoverEnabled && isInFailoverQueue && failoverPriority && (
-                <FailoverPriorityBadge priority={failoverPriority} />
+                <FailoverPriorityBadge
+                  priority={failoverPriority}
+                  className="shrink-0 whitespace-nowrap"
+                />
               )}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center ml-auto min-w-0 gap-3">
-          <div className="hidden items-center gap-1 group-hover:flex group-focus-within:flex">
-            <ProviderActions
-              appId={appId}
-              isCurrent={isCurrent}
-              isInConfig={isInConfig}
-              isTesting={isTesting}
-              isProxyTakeover={isProxyTakeover}
-              isOmo={isAnyOmo}
-              onSwitch={() => onSwitch(provider)}
-              onEdit={() => onEdit(provider)}
-              onDuplicate={() => onDuplicate(provider)}
-              onTest={
-                onTest && !isOfficial ? () => onTest(provider) : undefined
-              }
-              onConfigureUsage={
-                isOfficial ? undefined : () => onConfigureUsage(provider)
-              }
-              onDelete={() => onDelete(provider)}
-              onRemoveFromConfig={
-                onRemoveFromConfig
-                  ? () => onRemoveFromConfig(provider)
-                  : undefined
-              }
-              onDisableOmo={handleDisableAnyOmo}
-              onOpenTerminal={
-                onOpenTerminal ? () => onOpenTerminal(provider) : undefined
-              }
-              isAutoFailoverEnabled={isAutoFailoverEnabled}
-              isInFailoverQueue={isInFailoverQueue}
-              onToggleFailover={onToggleFailover}
-              isDefaultModel={isDefaultModel}
-              onSetAsDefault={onSetAsDefault}
-            />
-          </div>
+        <div className="ml-auto flex shrink-0 items-center gap-3">
           <div className="relative z-20 ml-auto">
             <div className="flex items-center gap-1">
               {isOfficial ? (
@@ -442,6 +411,39 @@ export function ProviderCard({
                 </button>
               )}
             </div>
+          </div>
+          <div className="shrink-0">
+            <ProviderActions
+              appId={appId}
+              isCurrent={isCurrent}
+              isInConfig={isInConfig}
+              isTesting={isTesting}
+              isOmo={isAnyOmo}
+              onSwitch={() => onSwitch(provider)}
+              onEdit={() => onEdit(provider)}
+              onDuplicate={() => onDuplicate(provider)}
+              onTest={
+                onTest && !isOfficial ? () => onTest(provider) : undefined
+              }
+              onConfigureUsage={
+                isOfficial ? undefined : () => onConfigureUsage(provider)
+              }
+              onDelete={() => onDelete(provider)}
+              onRemoveFromConfig={
+                onRemoveFromConfig
+                  ? () => onRemoveFromConfig(provider)
+                  : undefined
+              }
+              onDisableOmo={handleDisableAnyOmo}
+              onOpenTerminal={
+                onOpenTerminal ? () => onOpenTerminal(provider) : undefined
+              }
+              isAutoFailoverEnabled={isAutoFailoverEnabled}
+              isInFailoverQueue={isInFailoverQueue}
+              onToggleFailover={onToggleFailover}
+              isDefaultModel={isDefaultModel}
+              onSetAsDefault={onSetAsDefault}
+            />
           </div>
         </div>
       </div>

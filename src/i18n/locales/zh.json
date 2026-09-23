@@ -81,6 +81,7 @@
     "searchCloseAriaLabel": "关闭供应商搜索",
     "noSearchResults": "没有符合搜索条件的供应商。",
     "duplicate": "复制",
+    "moreActions": "更多操作",
     "sortUpdateFailed": "排序更新失败",
     "configureUsage": "配置用量查询",
     "openTerminal": "打开终端",
@@ -404,14 +405,9 @@
       "defaultCostMultiplierInvalid": "默认倍率格式不正确"
     },
     "saveFailedGeneric": "保存失败，请重试",
-    "authCenter": {
-      "copilotDescription": "用 GitHub 登录后，可以把你的 Copilot 订阅作为 Claude Code 背后的模型：登录后在 Claude 下添加 GitHub Copilot 提供商。"
-    },
-    "tabAuth": "登录",
     "page": {
       "general": "语言、外观、托盘，以及侧边栏显示哪些应用。",
       "pool": "Switchy 如何转发请求，以及如何在你的账号之间切换。",
-      "auth": "Switchy 为需要登录的提供商（如 GitHub Copilot）所登录的账号。",
       "advanced": "各工具的配置位置、提供商测试、日志与会话修复。",
       "usage": "Switchy 转发过的请求，在本机统计，不会发送到任何地方。"
     },

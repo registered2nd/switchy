@@ -18,6 +18,7 @@ pub async fn save_settings(settings: crate::settings::AppSettings) -> Result<boo
 /// Restart the app (used after app_config_dir changes)
 #[tauri::command]
 pub async fn restart_app(app: AppHandle) -> Result<bool, String> {
+    log::info!("Restart requested from the settings page");
     // Restart after a short delay in the background so this call can return
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;

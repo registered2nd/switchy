@@ -4,7 +4,7 @@
  * Sits in the main header; turns Switch automatically on or off in one click
  */
 
-import { Loader2 } from "lucide-react";
+import { Loader2, Shuffle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
   useAutoFailoverEnabled,
@@ -55,8 +55,15 @@ export function FailoverToggle({ className, activeApp }: FailoverToggleProps) {
       )}
       title={tooltipText}
     >
-      {(setEnabled.isPending || isLoading) && (
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+      {setEnabled.isPending || isLoading ? (
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      ) : (
+        <Shuffle
+          className={cn(
+            "h-4 w-4 transition-colors",
+            isEnabled ? "animate-pulse text-primary" : "text-muted-foreground",
+          )}
+        />
       )}
       {t("failover.toggleLabel", { defaultValue: "Switch automatically" })}
       <Switch

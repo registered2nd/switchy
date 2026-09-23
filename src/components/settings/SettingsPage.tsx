@@ -24,7 +24,6 @@ import { ModelTestConfigPanel } from "@/components/usage/ModelTestConfigPanel";
 import { UsageDashboard } from "@/components/usage/UsageDashboard";
 import { LogConfigPanel } from "@/components/settings/LogConfigPanel";
 import { SessionRecoveryPanel } from "@/components/settings/SessionRecoveryPanel";
-import { AuthCenterPanel } from "@/components/settings/AuthCenterPanel";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import type { SettingsSection as SettingsSectionId } from "@/components/layout/AppRail";
 import { useSettings } from "@/hooks/useSettings";
@@ -182,13 +181,6 @@ export function SettingsPage({
           "How Switchy routes requests and moves between your accounts.",
       }),
     },
-    auth: {
-      title: t("settings.tabAuth", { defaultValue: "Sign-in" }),
-      description: t("settings.page.auth", {
-        defaultValue:
-          "Accounts Switchy signs in to for providers that need one, such as GitHub Copilot.",
-      }),
-    },
     data: {
       title: t("settings.advanced.data.title"),
       description: t("settings.advanced.data.description"),
@@ -236,8 +228,6 @@ export function SettingsPage({
         );
       case "pool":
         return <PoolTabContent settings={settings} onAutoSave={handleAutoSave} />;
-      case "auth":
-        return <AuthCenterPanel />;
       case "data":
         return (
           <div className="space-y-8">

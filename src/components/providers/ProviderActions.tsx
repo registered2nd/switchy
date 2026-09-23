@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   BarChart3,
   Check,
@@ -7,7 +8,7 @@ import {
   ListPlus,
   Loader2,
   Minus,
-  Play,
+  MoreHorizontal,
   Plus,
   Terminal,
   TestTube2,
@@ -16,6 +17,13 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { AppId } from "@/lib/api";
 
@@ -24,7 +32,6 @@ interface ProviderActionsProps {
   isCurrent: boolean;
   isInConfig?: boolean;
   isTesting?: boolean;
-  isProxyTakeover?: boolean;
   isOmo?: boolean;
   onSwitch: () => void;
   onEdit: () => void;
@@ -48,7 +55,6 @@ export function ProviderActions({
   isCurrent,
   isInConfig = false,
   isTesting,
-  isProxyTakeover = false,
   isOmo = false,
   onSwitch,
   onEdit,
@@ -67,7 +73,7 @@ export function ProviderActions({
   onSetAsDefault,
 }: ProviderActionsProps) {
   const { t } = useTranslation();
-  const iconButtonClass = "h-8 w-8 p-1";
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Additive-mode apps (OpenCode without OMO, and OpenClaw)
   const isAdditiveMode =
@@ -116,7 +122,7 @@ export function ProviderActions({
         disabled: false,
         variant: "default" as const,
         className: "",
-        icon: <Play className="h-4 w-4" />,
+        icon: null,
         text: t("provider.enable"),
       };
     }
@@ -138,8 +144,7 @@ export function ProviderActions({
       return {
         disabled: false,
         variant: "default" as const,
-        className:
-          "bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-700",
+        className: "",
         icon: <Plus className="h-4 w-4" />,
         text: t("provider.addToConfig", { defaultValue: "Add" }),
       };
@@ -159,10 +164,8 @@ export function ProviderActions({
     return {
       disabled: false,
       variant: "default" as const,
-      className: isProxyTakeover
-        ? "bg-emerald-500 hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-700"
-        : "",
-      icon: <Play className="h-4 w-4" />,
+      className: "",
+      icon: null,
       text: t("provider.enable"),
     };
   };
@@ -170,9 +173,18 @@ export function ProviderActions({
   const buttonState = getMainButtonState();
 
   const canDelete = isOmo || isAdditiveMode ? true : !isCurrent;
+  // The line already says "In use"; a disabled button repeating it adds nothing.
+  const showMainButton = isOmo || isAdditiveMode || !isCurrent;
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div
+      className={cn(
+        "flex min-w-[6.75rem] items-center justify-end gap-1 transition-opacity",
+        menuOpen
+          ? "opacity-100"
+          : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+      )}
+    >
       {appId === "openclaw" && isInConfig && onSetAsDefault && (
         <Button
           size="sm"
@@ -181,9 +193,8 @@ export function ProviderActions({
           disabled={isDefaultModel}
           className={cn(
             "w-fit px-2.5",
-            isDefaultModel
-              ? "bg-gray-200 text-muted-foreground dark:bg-gray-700 opacity-60 cursor-not-allowed"
-              : "bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700",
+            isDefaultModel &&
+              "bg-gray-200 text-muted-foreground dark:bg-gray-700 opacity-60 cursor-not-allowed",
           )}
         >
           <Zap className="h-4 w-4" />
@@ -193,125 +204,93 @@ export function ProviderActions({
         </Button>
       )}
 
-      <Button
-        size="sm"
-        variant={buttonState.variant}
-        onClick={handleMainButtonClick}
-        disabled={buttonState.disabled}
-        className={cn("w-[4.5rem] px-2.5", buttonState.className)}
-      >
-        {buttonState.icon}
-        {buttonState.text}
-      </Button>
+      {showMainButton && (
+        <Button
+          size="sm"
+          variant={buttonState.variant}
+          onClick={handleMainButtonClick}
+          disabled={buttonState.disabled}
+          className={cn("min-w-[4.25rem]", buttonState.className)}
+        >
+          {buttonState.icon}
+          {buttonState.text}
+        </Button>
+      )}
 
-      <div className="flex items-center gap-1">
-        {isFailoverMode && (
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => onToggleFailover(!isInFailoverQueue)}
-            title={
-              isInFailoverQueue
+            className="h-8 w-8"
+            title={t("provider.moreActions", { defaultValue: "More actions" })}
+            aria-label={t("provider.moreActions", {
+              defaultValue: "More actions",
+            })}
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-[13rem]">
+          {isFailoverMode && (
+            <DropdownMenuItem
+              onSelect={() => onToggleFailover(!isInFailoverQueue)}
+            >
+              {isInFailoverQueue ? (
+                <ListMinus className="h-4 w-4" />
+              ) : (
+                <ListPlus className="h-4 w-4" />
+              )}
+              {isInFailoverQueue
                 ? t("failover.removeQueue", {
                     defaultValue: "Remove from the switching order",
                   })
                 : t("failover.addQueue", {
                     defaultValue: "Add to the switching order",
-                  })
-            }
-            className={cn(
-              iconButtonClass,
-              isInFailoverQueue
-                ? "text-blue-600 dark:text-blue-400"
-                : "text-muted-foreground",
-            )}
-          >
-            {isInFailoverQueue ? (
-              <ListMinus className="h-4 w-4" />
-            ) : (
-              <ListPlus className="h-4 w-4" />
-            )}
-          </Button>
-        )}
-
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={onEdit}
-          title={t("common.edit")}
-          className={iconButtonClass}
-        >
-          <Edit className="h-4 w-4" />
-        </Button>
-
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={onDuplicate}
-          title={t("provider.duplicate")}
-          className={iconButtonClass}
-        >
-          <Copy className="h-4 w-4" />
-        </Button>
-
-        {onTest && (
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onTest}
-            disabled={isTesting}
-            title={t("modelTest.testProvider", "Test model")}
-            className={iconButtonClass}
-          >
-            {isTesting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <TestTube2 className="h-4 w-4" />
-            )}
-          </Button>
-        )}
-
-        {onConfigureUsage && (
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onConfigureUsage}
-            title={t("provider.configureUsage")}
-            className={iconButtonClass}
-          >
-            <BarChart3 className="h-4 w-4" />
-          </Button>
-        )}
-
-        {onOpenTerminal && (
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={onOpenTerminal}
-            title={t("provider.openTerminal", "Open Terminal")}
-            className={cn(
-              iconButtonClass,
-              "hover:text-emerald-600 dark:hover:text-emerald-400",
-            )}
-          >
-            <Terminal className="h-4 w-4" />
-          </Button>
-        )}
-
-        <Button
-          size="icon"
-          variant="ghost"
-          onClick={canDelete ? onDelete : undefined}
-          title={t("common.delete")}
-          className={cn(
-            iconButtonClass,
-            canDelete && "hover:text-red-500 dark:hover:text-red-400",
-            !canDelete && "opacity-40 cursor-not-allowed text-muted-foreground",
+                  })}
+            </DropdownMenuItem>
           )}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </div>
+          <DropdownMenuItem onSelect={onEdit}>
+            <Edit className="h-4 w-4" />
+            {t("common.edit")}
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onDuplicate}>
+            <Copy className="h-4 w-4" />
+            {t("provider.duplicate")}
+          </DropdownMenuItem>
+          {onTest && (
+            <DropdownMenuItem onSelect={onTest} disabled={isTesting}>
+              {isTesting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <TestTube2 className="h-4 w-4" />
+              )}
+              {t("modelTest.testProvider", "Test model")}
+            </DropdownMenuItem>
+          )}
+          {onConfigureUsage && (
+            <DropdownMenuItem onSelect={onConfigureUsage}>
+              <BarChart3 className="h-4 w-4" />
+              {t("provider.configureUsage")}
+            </DropdownMenuItem>
+          )}
+          {onOpenTerminal && (
+            <DropdownMenuItem onSelect={onOpenTerminal}>
+              <Terminal className="h-4 w-4" />
+              {t("provider.openTerminal", "Open Terminal")}
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={onDelete}
+            disabled={!canDelete}
+            className="text-destructive focus:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+            {t("common.delete")}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

@@ -38,7 +38,6 @@ export const APP_NAME: Record<AppId, string> = {
 export const SETTINGS_SECTIONS = [
   "general",
   "pool",
-  "auth",
   "data",
   "advanced",
   "usage",
@@ -103,7 +102,6 @@ export function AppRail({
   const sectionLabel: Record<SettingsSection, string> = {
     general: t("settings.tabGeneral"),
     pool: t("settings.tabPool"),
-    auth: t("settings.tabAuth", { defaultValue: "Sign-in" }),
     data: t("settings.advanced.data.title"),
     advanced: t("settings.tabAdvanced"),
     usage: t("usage.title"),
