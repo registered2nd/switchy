@@ -160,9 +160,6 @@ fn refresh_lock(provider_id: &str) -> Arc<tokio::sync::Mutex<()>> {
     locks.entry(provider_id.to_string()).or_default().clone()
 }
 
-/// The provider whose login Codex's saved login last got from here.
-static SAVED_LOGIN_OF: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
-
 /// Puts `provider`'s login into Codex's saved login (`auth.json`, and the WSL
 /// mirror's) after that account has answered a request, so new sessions and
 /// `/status` show the account the proxy serves. Only a login that just worked
@@ -170,12 +167,6 @@ static SAVED_LOGIN_OF: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(Non
 /// and cannot start (or reach `/login`) on a refused one. A login Codex
 /// renewed on its own is filed with its account first.
 pub fn save_login_of_serving_account(db: &Database, provider: &Provider) {
-    {
-        let saved = SAVED_LOGIN_OF.lock().unwrap_or_else(|e| e.into_inner());
-        if saved.as_deref() == Some(provider.id.as_str()) {
-            return;
-        }
-    }
     let live = read_live_auth();
     let Some(login) = db
         .get_provider_by_id(&provider.id, "codex")
@@ -217,7 +208,6 @@ pub fn save_login_of_serving_account(db: &Database, provider: &Provider) {
             provider.id
         );
     }
-    *SAVED_LOGIN_OF.lock().unwrap_or_else(|e| e.into_inner()) = Some(provider.id.clone());
 }
 
 /// Signs Codex out when `provider` is the account picked by hand (held) and
@@ -256,7 +246,6 @@ pub fn sign_codex_out_for(provider: &Provider) {
         }
     }
     if signed_out {
-        *SAVED_LOGIN_OF.lock().unwrap_or_else(|e| e.into_inner()) = None;
         log::info!(
             "[codex_pool] signed Codex out: provider={} was picked by hand and its login was refused",
             provider.id
@@ -406,11 +395,14 @@ fn live_login_home(
         .then(|| LiveLoginHome::Current(current.id.clone()))
 }
 
-/// Called before a stored Codex config replaces the live one. Files the live
-/// login under the provider that owns its account, and carries it into
-/// `incoming` when that holds an older login of the same account — so a login
-/// Codex refreshed itself is never overwritten by a spent copy.
-pub fn keep_newer_live_login(db: &Database, incoming: &mut Value) {
+/// When the proxy hands Codex's config back, Codex keeps the login it has
+/// if that is a ChatGPT login: under the proxy it is the login of the last
+/// account that answered (`save_login_of_serving_account`), or a login Codex
+/// renewed or signed in itself. `incoming` (the current provider's settings)
+/// supplies the login only when Codex has none, so a refused login the
+/// current provider holds is not handed to Codex, which could not start on
+/// it. Logins Codex renewed are filed with their accounts first.
+pub fn keep_live_login(db: &Database, incoming: &mut Value) {
     if let Ok(providers) = db.get_all_providers("codex") {
         for mut provider in providers.into_values() {
             adopt_newer_live_login(db, &mut provider);
@@ -418,24 +410,15 @@ pub fn keep_newer_live_login(db: &Database, incoming: &mut Value) {
     }
 
     let live = read_live_auth();
-    let incoming_auth = incoming.get("auth").cloned().unwrap_or(Value::Null);
-    let (Some(live_login), Some(incoming_login)) = (
-        codex_account::inspect(&live),
-        codex_account::inspect(&incoming_auth),
-    ) else {
+    if !codex_account::inspect(&live).is_some_and(|login| login.alive) {
         return;
-    };
-    if live_login.alive
-        && live_login.account_key().is_some()
-        && live_login.account_key() == incoming_login.account_key()
-        && live_login.last_refresh > incoming_login.last_refresh
-    {
-        if let Some(obj) = incoming.as_object_mut() {
-            obj.insert(
-                "auth".to_string(),
-                codex_account::transplant_login(&incoming_auth, &live),
-            );
-        }
+    }
+    let incoming_auth = incoming.get("auth").cloned().unwrap_or(Value::Null);
+    if let Some(obj) = incoming.as_object_mut() {
+        obj.insert(
+            "auth".to_string(),
+            codex_account::transplant_login(&incoming_auth, &live),
+        );
     }
 }
 

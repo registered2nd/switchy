@@ -1926,9 +1926,9 @@ impl ProxyService {
     /// disk, so only what the takeover changed is put back.
     async fn config_to_restore(&self, app_type: &AppType, mut target: Value) -> Value {
         if matches!(app_type, AppType::Codex) {
-            // Codex may have refreshed its own login while the proxy was on;
-            // the target's copy of that login is then spent.
-            crate::proxy::codex_pool::keep_newer_live_login(&self.db, &mut target);
+            // Codex keeps the login it has (the last account that answered,
+            // or one it renewed or signed in itself).
+            crate::proxy::codex_pool::keep_live_login(&self.db, &mut target);
         }
         self.merge_onto_live(app_type, target).await
     }
@@ -2417,18 +2417,10 @@ impl ProxyService {
         if let Some(login) = login.filter(Value::is_object) {
             let auth_path = path.with_file_name("auth.json");
             let current: Value = read_json_file(&auth_path).unwrap_or(Value::Null);
-            let keep_current = match (
-                crate::services::codex_account::inspect(&current),
-                crate::services::codex_account::inspect(&login),
-            ) {
-                (Some(cur), Some(new)) => {
-                    cur.alive
-                        && cur.account_key().is_some()
-                        && cur.account_key() == new.account_key()
-                        && cur.last_refresh >= new.last_refresh
-                }
-                _ => false,
-            };
+            // As on Windows, the mirror keeps a ChatGPT login it has; the
+            // current provider's login fills in only when it has none.
+            let keep_current =
+                crate::services::codex_account::inspect(&current).is_some_and(|cur| cur.alive);
             if !keep_current {
                 write_json_file(&auth_path, &login).map_err(|e| e.to_string())?;
             }
@@ -4270,7 +4262,7 @@ command = "latest-command"
 
     #[tokio::test]
     #[serial]
-    async fn switching_codex_accounts_under_the_proxy_reaches_the_wsl_login_when_handed_back() {
+    async fn codex_in_wsl_keeps_the_login_of_the_account_that_answered_when_handed_back() {
         let home = TempHome::new();
         crate::settings::reload_settings().expect("reload settings");
         let db = Arc::new(Database::memory().expect("init db"));
@@ -4316,11 +4308,26 @@ command = "latest-command"
             "under the proxy the WSL login stays; the proxy presents b's"
         );
 
+        // b has not answered a request, so Codex keeps a's working login
+        // when the proxy lets go.
         service
             .stop_with_restore()
             .await
             .expect("stop with restore");
+        let auth: Value = read_json_file(&mirror.join("auth.json")).expect("read auth");
+        assert_eq!(auth["tokens"]["account_id"], "acct-a");
 
+        // Once b has answered through the proxy, b's login is Codex's, and it
+        // is what the hand-back leaves in place.
+        service
+            .takeover_live_config_strict(&AppType::Codex)
+            .await
+            .expect("take over again");
+        crate::proxy::codex_pool::save_login_of_serving_account(db.as_ref(), &provider_b);
+        service
+            .stop_with_restore()
+            .await
+            .expect("stop with restore");
         let auth: Value = read_json_file(&mirror.join("auth.json")).expect("read auth");
         assert_eq!(auth["tokens"]["account_id"], "acct-b");
         let table: toml::Table = std::fs::read_to_string(mirror.join("config.toml"))
