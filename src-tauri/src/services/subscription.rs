@@ -1445,7 +1445,19 @@ async fn get_codex_quota_for_provider_uncached(
         return Ok(SubscriptionQuota::signed_out("codex"));
     }
     let content = serde_json::to_string(auth).map_err(|e| e.to_string())?;
-    Ok(codex_quota_from_credentials(parse_codex_credentials_json(&content)).await)
+    let quota = codex_quota_from_credentials(parse_codex_credentials_json(&content)).await;
+    if quota.success || !matches!(quota.credential_status, CredentialStatus::Expired) {
+        return Ok(quota);
+    }
+    // Renew the login the way the proxy does before presenting it: a login
+    // OpenAI refuses shows as signed out, a renewed one shows its usage.
+    match crate::proxy::codex_pool::credentials_for(&state.db, &provider, false).await {
+        Ok(creds) => Ok(query_codex_quota(&creds.access_token, creds.account_id.as_deref()).await),
+        Err(_) if crate::proxy::codex_pool::needs_sign_in(&provider) => {
+            Ok(SubscriptionQuota::signed_out("codex"))
+        }
+        Err(_) => Ok(quota),
+    }
 }
 
 /// Claude subscription quota for a specific provider's captured snapshot.
@@ -1460,11 +1472,35 @@ async fn get_claude_quota_for_provider_uncached(
     state: &crate::store::AppState,
     provider_id: &str,
 ) -> Result<SubscriptionQuota, String> {
-    if let Ok(Some(provider)) = state.db.get_provider_by_id(provider_id, "claude") {
-        if crate::proxy::claude_pool::needs_sign_in(&provider) {
+    let provider = state
+        .db
+        .get_provider_by_id(provider_id, "claude")
+        .ok()
+        .flatten();
+    if let Some(provider) = provider.as_ref() {
+        if crate::proxy::claude_pool::needs_sign_in(provider) {
             return Ok(SubscriptionQuota::signed_out("claude"));
         }
     }
+    let quota = read_claude_snapshot_quota(provider_id).await?;
+    if quota.success || !matches!(quota.credential_status, CredentialStatus::Expired) {
+        return Ok(quota);
+    }
+    // Renew the captured login the way the proxy does before presenting it.
+    let Some(provider) = provider.filter(crate::proxy::claude_pool::is_oauth_provider) else {
+        return Ok(quota);
+    };
+    match crate::proxy::claude_pool::access_token_for(&provider, false).await {
+        Ok(token) => Ok(query_claude_quota(&token).await),
+        Err(_) if crate::proxy::claude_pool::needs_sign_in(&provider) => {
+            Ok(SubscriptionQuota::signed_out("claude"))
+        }
+        Err(_) => Ok(quota),
+    }
+}
+
+/// The captured snapshot's usage, as read from its stored access token.
+async fn read_claude_snapshot_quota(provider_id: &str) -> Result<SubscriptionQuota, String> {
     let cred_path = crate::services::claude_account::paths::snapshot_credentials_path(provider_id);
 
     if !cred_path.exists() {
