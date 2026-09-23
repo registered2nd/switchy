@@ -422,7 +422,7 @@ impl ProxyService {
 
             // 4) 同步 Live Token 到数据库（仅当前 app）
             if let Err(e) = self.sync_live_to_provider(&app).await {
-                let _ = self.db.delete_live_backup(app_type_str).await;
+                self.delete_backups_for_app(&app).await;
                 return Err(e);
             }
 
@@ -432,7 +432,7 @@ impl ProxyService {
                 match self.restore_live_config_for_app(&app).await {
                     Ok(()) => {
                         // 恢复成功才清理备份，避免失败场景下丢失唯一可回滚来源
-                        let _ = self.db.delete_live_backup(app_type_str).await;
+                        self.delete_backups_for_app(&app).await;
                     }
                     Err(restore_err) => {
                         log::error!(
@@ -479,6 +479,9 @@ impl ProxyService {
             .delete_live_backup(app_type_str)
             .await
             .map_err(|e| format!("Could not delete the {app_type_str} live backup: {e}"))?;
+        if let Some(key) = Self::mirror_backup_key(&app) {
+            let _ = self.db.delete_live_backup(key).await;
+        }
 
         // 3) 设置 proxy_config.enabled = false
         let mut updated_config = self
@@ -1083,6 +1086,8 @@ impl ProxyService {
             Self::apply_claude_takeover_fields(&mut live_config, &proxy_url, keep_login);
             self.write_claude_live_during_takeover(&live_config).await?;
             log::info!("Claude Live 配置已接管，代理地址: {proxy_url}");
+            self.take_over_mirror(&AppType::Claude, &proxy_url, keep_login)
+                .await;
         }
 
         // Codex: 修改 config.toml 的 base_url，auth.json 的 OPENAI_API_KEY（代理会注入真实 Token）
@@ -1090,6 +1095,8 @@ impl ProxyService {
             Self::apply_codex_takeover_fields(&mut live_config, &proxy_url, &proxy_codex_base_url);
             self.write_codex_live_during_takeover(&live_config).await?;
             log::info!("Codex Live 配置已接管，代理地址: {proxy_codex_base_url}");
+            self.take_over_mirror(&AppType::Codex, &proxy_url, false)
+                .await;
         }
 
         // Gemini: 修改 GOOGLE_GEMINI_BASE_URL，使用占位符替代真实 Token（代理会注入真实 Token）
@@ -1122,6 +1129,8 @@ impl ProxyService {
                 Self::apply_claude_takeover_fields(&mut live_config, &proxy_url, keep_login);
                 self.write_claude_live_during_takeover(&live_config).await?;
                 log::info!("Claude Live 配置已接管，代理地址: {proxy_url}");
+                self.take_over_mirror(app_type, &proxy_url, keep_login)
+                    .await;
             }
             AppType::Codex => {
                 let mut live_config = self.read_codex_live()?;
@@ -1132,6 +1141,7 @@ impl ProxyService {
                 );
                 self.write_codex_live_during_takeover(&live_config).await?;
                 log::info!("Codex Live 配置已接管，代理地址: {proxy_codex_base_url}");
+                self.take_over_mirror(app_type, &proxy_url, false).await;
             }
             AppType::Gemini => {
                 let mut live_config = self.read_gemini_live()?;
@@ -1172,6 +1182,8 @@ impl ProxyService {
                     let keep_login = self.claude_takeover_keeps_login(None);
                     Self::apply_claude_takeover_fields(&mut live_config, &proxy_url, keep_login);
                     let _ = self.write_claude_live_during_takeover(&live_config).await;
+                    self.take_over_mirror(app_type, &proxy_url, keep_login)
+                        .await;
                 }
             }
             AppType::Codex => {
@@ -1182,6 +1194,7 @@ impl ProxyService {
                         &proxy_codex_base_url,
                     );
                     let _ = self.write_codex_live_during_takeover(&live_config).await;
+                    self.take_over_mirror(app_type, &proxy_url, false).await;
                 }
             }
             AppType::Gemini => {
@@ -1222,6 +1235,7 @@ impl ProxyService {
             return Ok(());
         }
         let app_type_str = app_type.as_str();
+        self.restore_mirror(app_type).await;
         if let Ok(Some(backup)) = self.db.get_live_backup(app_type_str).await {
             let config: Value = serde_json::from_str(&backup.original_config)
                 .map_err(|e| format!("Could not parse the {app_type_str} backup: {e}"))?;
@@ -1267,6 +1281,7 @@ impl ProxyService {
         app_type: &AppType,
     ) -> Result<(), String> {
         let app_type_str = app_type.as_str();
+        self.restore_mirror(app_type).await;
 
         // 1) 优先从 Live 备份恢复（这是"原始 Live"的唯一可靠来源）
         let backup = self
@@ -1431,17 +1446,22 @@ impl ProxyService {
 
     fn cleanup_claude_takeover_placeholders_in_live(&self) -> Result<(), String> {
         let mut config = self.read_claude_live()?;
-
-        let Some(env) = config.get_mut("env").and_then(|v| v.as_object_mut()) else {
+        if config.get("env").and_then(|v| v.as_object()).is_none() {
             return Ok(());
+        }
+        Self::strip_claude_takeover(&mut config);
+        self.write_claude_live(&config)?;
+        Ok(())
+    }
+
+    /// Removes the token placeholders and the local proxy address a Claude
+    /// takeover writes.
+    fn strip_claude_takeover(config: &mut Value) {
+        let Some(env) = config.get_mut("env").and_then(|v| v.as_object_mut()) else {
+            return;
         };
 
-        for key in [
-            "ANTHROPIC_AUTH_TOKEN",
-            "ANTHROPIC_API_KEY",
-            "OPENROUTER_API_KEY",
-            "OPENAI_API_KEY",
-        ] {
+        for key in CLAUDE_TOKEN_ENV_KEYS {
             if env.get(key).and_then(|v| v.as_str()) == Some(PROXY_TOKEN_PLACEHOLDER) {
                 env.remove(key);
             }
@@ -1455,9 +1475,6 @@ impl ProxyService {
         {
             env.remove("ANTHROPIC_BASE_URL");
         }
-
-        self.write_claude_live(&config)?;
-        Ok(())
     }
 
     fn cleanup_codex_takeover_placeholders_in_live(&self) -> Result<(), String> {
@@ -1564,7 +1581,9 @@ impl ProxyService {
             }
         }
 
-        false
+        [AppType::Claude, AppType::Codex]
+            .iter()
+            .any(|app| Self::mirror_is_taken_over(app))
     }
 
     fn is_claude_live_taken_over(config: &Value) -> bool {
@@ -1682,6 +1701,8 @@ impl ProxyService {
         };
 
         self.ensure_live_written_record(&app_type_enum).await;
+        self.update_mirror_backup(&app_type_enum, &effective_settings)
+            .await;
         self.db
             .save_live_backup(app_type, &backup_json)
             .await
@@ -1853,7 +1874,7 @@ impl ProxyService {
     /// `target` with the keys the takeover manages as they are on disk.
     /// Claude's settings and Codex's `config.toml` are merged; anything else
     /// in `target` (Codex's login) is written as it is.
-    async fn merge_onto_live(&self, app_type: &AppType, mut target: Value) -> Value {
+    async fn merge_onto_live(&self, app_type: &AppType, target: Value) -> Value {
         let Some(live) = self.read_live_for_merge(app_type) else {
             return target;
         };
@@ -1861,13 +1882,19 @@ impl ProxyService {
             Some(written) => written,
             None => Self::takeover_base(app_type, &target, &live),
         };
+        Self::merge_live(app_type, &base, target, &live)
+    }
+
+    /// Three-way merge of `target` onto `live` against `base`; see
+    /// `merge_onto_live`.
+    fn merge_live(app_type: &AppType, base: &Value, mut target: Value, live: &Value) -> Value {
         match app_type {
-            AppType::Claude => live_merge::merge_json(Some(&base), Some(&target), Some(&live))
+            AppType::Claude => live_merge::merge_json(Some(base), Some(&target), Some(live))
                 .unwrap_or_else(|| json!({})),
             AppType::Codex => {
                 let text = |v: &Value| v.get("config").and_then(Value::as_str).map(str::to_string);
                 if let (Some(base), Some(ours), Some(theirs)) =
-                    (text(&base), text(&target), text(&live))
+                    (text(base), text(&target), text(live))
                 {
                     if let Some(merged) = live_merge::merge_toml(&base, &ours, &theirs) {
                         target["config"] = json!(merged);
@@ -1985,12 +2012,12 @@ impl ProxyService {
 
     /// The record of what the takeover last wrote to `app_type`'s live file.
     async fn live_written(&self, app_type: &AppType) -> Option<Value> {
-        let text = self
-            .db
-            .get_live_written(app_type.as_str())
-            .await
-            .ok()
-            .flatten()?;
+        self.written(app_type.as_str()).await
+    }
+
+    /// The record kept with the backup row `key`.
+    async fn written(&self, key: &str) -> Option<Value> {
+        let text = self.db.get_live_written(key).await.ok().flatten()?;
         serde_json::from_str(&text).ok()
     }
 
@@ -1999,19 +2026,20 @@ impl ProxyService {
     /// merge kept. A failure is logged: a restore then changes only the keys
     /// the takeover manages.
     async fn record_live_written(&self, app_type: &AppType, written: &Value) {
+        self.record_written(app_type.as_str(), written).await;
+    }
+
+    async fn record_written(&self, key: &str, written: &Value) {
         let result = match serde_json::to_string(written) {
             Ok(text) => self
                 .db
-                .record_live_written(app_type.as_str(), &text)
+                .record_live_written(key, &text)
                 .await
                 .map_err(|e| e.to_string()),
             Err(e) => Err(e.to_string()),
         };
         if let Err(e) = result {
-            log::warn!(
-                "Could not record what the {} takeover wrote: {e}",
-                app_type.as_str()
-            );
+            log::warn!("Could not record what the {key} takeover wrote: {e}");
         }
     }
 
@@ -2051,6 +2079,348 @@ impl ProxyService {
                 .await;
         }
         Ok(())
+    }
+
+    // ==================== The second install (WSL) ====================
+
+    /// Backup-table key for the second install of `app_type` — the mirror
+    /// directory a switch keeps in step, usually the WSL home.
+    fn mirror_backup_key(app_type: &AppType) -> Option<&'static str> {
+        match app_type {
+            AppType::Claude => Some("claude_mirror"),
+            AppType::Codex => Some("codex_mirror"),
+            _ => None,
+        }
+    }
+
+    /// The second install's directory, when one is configured and is not the
+    /// install Switchy already manages.
+    fn mirror_dir(app_type: &AppType) -> Option<std::path::PathBuf> {
+        let (dir, own) = match app_type {
+            AppType::Claude => (
+                crate::settings::get_claude_mirror_override_dir()?,
+                crate::config::get_claude_config_dir(),
+            ),
+            AppType::Codex => (
+                crate::settings::get_codex_mirror_override_dir()?,
+                crate::codex_config::get_codex_config_dir(),
+            ),
+            _ => return None,
+        };
+        (dir != own).then_some(dir)
+    }
+
+    /// The second install's live file: Claude's `settings.json` (or the older
+    /// `claude.json`), Codex's `config.toml`. Only an existing file is used.
+    fn mirror_live_path(app_type: &AppType) -> Option<std::path::PathBuf> {
+        let dir = Self::mirror_dir(app_type)?;
+        let names: &[&str] = match app_type {
+            AppType::Claude => &["settings.json", "claude.json"],
+            _ => &["config.toml"],
+        };
+        names.iter().map(|name| dir.join(name)).find(|p| p.exists())
+    }
+
+    /// Whether an install in `dir` reaches the proxy at this machine's
+    /// loopback address. A WSL home does only with WSL's mirrored networking.
+    fn mirror_reaches_proxy(dir: &std::path::Path) -> bool {
+        let path = dir
+            .to_string_lossy()
+            .replace('/', "\\")
+            .to_ascii_lowercase();
+        if !(path.starts_with("\\\\wsl$") || path.starts_with("\\\\wsl.localhost")) {
+            return true;
+        }
+        let Ok(text) = std::fs::read_to_string(crate::config::get_home_dir().join(".wslconfig"))
+        else {
+            return false;
+        };
+        text.lines().any(|line| {
+            let line: String = line
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect::<String>()
+                .to_ascii_lowercase();
+            line == "networkingmode=mirrored"
+        })
+    }
+
+    /// The part of the second install a takeover changes and a restore
+    /// merges: Claude's settings, or Codex's `config.toml` as `{"config": text}`.
+    fn read_mirror_live(app_type: &AppType, path: &std::path::Path) -> Result<Value, String> {
+        match app_type {
+            AppType::Claude => {
+                let value: Value = read_json_file(path).map_err(|e| e.to_string())?;
+                if value.is_object() {
+                    Ok(value)
+                } else {
+                    Err(format!("{} is not a JSON object", path.display()))
+                }
+            }
+            _ => std::fs::read_to_string(path)
+                .map(|text| json!({ "config": text }))
+                .map_err(|e| e.to_string()),
+        }
+    }
+
+    fn write_mirror_live(
+        app_type: &AppType,
+        path: &std::path::Path,
+        value: &Value,
+    ) -> Result<(), String> {
+        match app_type {
+            AppType::Claude => write_json_file(path, value).map_err(|e| e.to_string()),
+            _ => {
+                let text = value.get("config").and_then(Value::as_str).unwrap_or("");
+                crate::config::write_text_file(path, text).map_err(|e| e.to_string())
+            }
+        }
+    }
+
+    fn mirror_is_taken_over(app_type: &AppType) -> bool {
+        let Some(path) = Self::mirror_live_path(app_type) else {
+            return false;
+        };
+        match (app_type, Self::read_mirror_live(app_type, &path)) {
+            (AppType::Claude, Ok(value)) => Self::is_claude_live_taken_over(&value),
+            (AppType::Codex, Ok(value)) => value
+                .get("config")
+                .and_then(Value::as_str)
+                .is_some_and(Self::codex_openai_base_url_is_local),
+            _ => false,
+        }
+    }
+
+    /// Points the second install (WSL) at the proxy the way the takeover
+    /// points this machine's install at it, so open sessions there are served
+    /// by the proxy too. The file as it was is backed up once per takeover.
+    /// Codex is taken over only when it is signed in with ChatGPT on the
+    /// built-in provider; an API-key install there is left alone. Failures
+    /// are logged: this machine's takeover stands without the mirror.
+    async fn take_over_mirror(&self, app_type: &AppType, proxy_url: &str, keep_login: bool) {
+        let Some(key) = Self::mirror_backup_key(app_type) else {
+            return;
+        };
+        let Some(path) = Self::mirror_live_path(app_type) else {
+            return;
+        };
+        if !path.parent().is_some_and(Self::mirror_reaches_proxy) {
+            log::warn!(
+                "{} is not taken over: WSL reaches the proxy on this machine's loopback address only with networkingMode=mirrored in .wslconfig",
+                path.display()
+            );
+            return;
+        }
+        if let Err(e) = self
+            .take_over_mirror_inner(app_type, key, &path, proxy_url, keep_login)
+            .await
+        {
+            log::warn!("Could not take over {}: {e}", path.display());
+        }
+    }
+
+    async fn take_over_mirror_inner(
+        &self,
+        app_type: &AppType,
+        key: &str,
+        path: &std::path::Path,
+        proxy_url: &str,
+        keep_login: bool,
+    ) -> Result<(), String> {
+        let mut live = Self::read_mirror_live(app_type, path)?;
+        let mut original = live.clone();
+        match app_type {
+            AppType::Claude => {
+                Self::strip_claude_takeover(&mut original);
+                Self::apply_claude_takeover_fields(&mut live, proxy_url, keep_login);
+            }
+            _ => {
+                let text = live
+                    .get("config")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let auth: Value = path
+                    .parent()
+                    .map(|dir| dir.join("auth.json"))
+                    .and_then(|p| read_json_file(&p).ok())
+                    .unwrap_or(Value::Null);
+                if !crate::proxy::codex_pool::is_chatgpt_live_auth(&auth)
+                    || Self::codex_config_names_model_provider(&text)
+                {
+                    log::info!(
+                        "{} is not taken over: it is not signed in with ChatGPT on the built-in provider",
+                        path.display()
+                    );
+                    return Ok(());
+                }
+                if Self::codex_openai_base_url_is_local(&text) {
+                    original["config"] = json!(Self::set_codex_openai_base_url(&text, None));
+                }
+                let backend_url = format!(
+                    "{}{}",
+                    proxy_url.trim_end_matches('/'),
+                    crate::proxy::codex_pool::BACKEND_PATH_PREFIX
+                );
+                live["config"] = json!(Self::set_codex_openai_base_url(&text, Some(&backend_url)));
+            }
+        }
+
+        let has_backup = self
+            .db
+            .get_live_backup(key)
+            .await
+            .map_err(|e| e.to_string())?
+            .is_some();
+        if !has_backup {
+            self.db
+                .start_live_backup(key, &original.to_string())
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        Self::write_mirror_live(app_type, path, &live)?;
+        self.record_written(key, &live).await;
+        log::info!("{} 已接管，代理地址: {proxy_url}", path.display());
+        Ok(())
+    }
+
+    /// Hands the second install back under the same rule as this machine's:
+    /// the backup, with any provider switch made during the takeover, merged
+    /// onto the file as it is now. With no backup, a leftover proxy address is
+    /// removed. Failures are logged.
+    async fn restore_mirror(&self, app_type: &AppType) {
+        let Some(key) = Self::mirror_backup_key(app_type) else {
+            return;
+        };
+        let Some(path) = Self::mirror_live_path(app_type) else {
+            return;
+        };
+        if let Err(e) = self.restore_mirror_inner(app_type, key, &path).await {
+            log::warn!("Could not restore {}: {e}", path.display());
+        }
+    }
+
+    async fn restore_mirror_inner(
+        &self,
+        app_type: &AppType,
+        key: &str,
+        path: &std::path::Path,
+    ) -> Result<(), String> {
+        let live = Self::read_mirror_live(app_type, path)?;
+        let backup = self
+            .db
+            .get_live_backup(key)
+            .await
+            .map_err(|e| e.to_string())?
+            .map(|b| serde_json::from_str::<Value>(&b.original_config))
+            .transpose()
+            .map_err(|e| e.to_string())?;
+
+        let Some(mut backup) = backup else {
+            let mut cleaned = live.clone();
+            match app_type {
+                AppType::Claude => Self::strip_claude_takeover(&mut cleaned),
+                _ => {
+                    let text = live.get("config").and_then(Value::as_str).unwrap_or("");
+                    if Self::codex_openai_base_url_is_local(text) {
+                        cleaned["config"] = json!(Self::set_codex_openai_base_url(text, None));
+                    }
+                }
+            }
+            if cleaned != live {
+                Self::write_mirror_live(app_type, path, &cleaned)?;
+                log::info!("{} 接管残留已清理（无备份）", path.display());
+            }
+            return Ok(());
+        };
+
+        // A switch made during the takeover left the new account's login in
+        // the backup; it goes to the mirror as a switch would have put it
+        // there, unless the mirror holds a newer login of the same account.
+        let login = match backup.as_object_mut() {
+            Some(obj) if matches!(app_type, AppType::Codex) => obj.remove("auth"),
+            _ => None,
+        };
+
+        let base = match self.written(key).await {
+            Some(written) => written,
+            None => Self::takeover_base(app_type, &backup, &live),
+        };
+        let merged = Self::merge_live(app_type, &base, backup, &live);
+        Self::write_mirror_live(app_type, path, &merged)?;
+
+        if let Some(login) = login.filter(Value::is_object) {
+            let auth_path = path.with_file_name("auth.json");
+            let current: Value = read_json_file(&auth_path).unwrap_or(Value::Null);
+            let keep_current = match (
+                crate::services::codex_account::inspect(&current),
+                crate::services::codex_account::inspect(&login),
+            ) {
+                (Some(cur), Some(new)) => {
+                    cur.alive
+                        && cur.account_key().is_some()
+                        && cur.account_key() == new.account_key()
+                        && cur.last_refresh >= new.last_refresh
+                }
+                _ => false,
+            };
+            if !keep_current {
+                write_json_file(&auth_path, &login).map_err(|e| e.to_string())?;
+            }
+        }
+        log::info!("{} 已从备份恢复", path.display());
+        Ok(())
+    }
+
+    /// Carries a provider switch made during the takeover into the second
+    /// install's backup, the way the switch would have written it to the
+    /// mirror with the proxy off.
+    async fn update_mirror_backup(&self, app_type: &AppType, effective: &Value) {
+        let Some(key) = Self::mirror_backup_key(app_type) else {
+            return;
+        };
+        let Ok(Some(row)) = self.db.get_live_backup(key).await else {
+            return;
+        };
+        let Ok(mut backup) = serde_json::from_str::<Value>(&row.original_config) else {
+            return;
+        };
+        match app_type {
+            AppType::Claude => {
+                let settings =
+                    crate::services::provider::sanitize_claude_settings_for_live(effective);
+                backup = crate::services::provider::merge_claude_provider_fields_into_target(
+                    &backup, &settings,
+                );
+            }
+            _ => {
+                let current = backup.get("config").and_then(Value::as_str).unwrap_or("");
+                let source = effective
+                    .get("config")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                match crate::services::provider::codex_mirror_config(current, source) {
+                    Ok(text) => backup["config"] = json!(text),
+                    Err(e) => {
+                        log::warn!("Could not update the {key} backup: {e}");
+                        return;
+                    }
+                }
+                if let Some(auth) = effective.get("auth") {
+                    backup["auth"] = auth.clone();
+                }
+            }
+        }
+        if let Err(e) = self.db.save_live_backup(key, &backup.to_string()).await {
+            log::warn!("Could not update the {key} backup: {e}");
+        }
+    }
+
+    async fn delete_backups_for_app(&self, app_type: &AppType) {
+        let _ = self.db.delete_live_backup(app_type.as_str()).await;
+        if let Some(key) = Self::mirror_backup_key(app_type) {
+            let _ = self.db.delete_live_backup(key).await;
+        }
     }
 
     // ==================== Live 配置读写辅助方法 ====================
@@ -3622,5 +3992,207 @@ command = "latest-command"
         let auth: Value =
             read_json_file(&crate::codex_config::get_codex_auth_path()).expect("read auth");
         assert_eq!(auth["OPENAI_API_KEY"], "b-key");
+    }
+
+    /// A ChatGPT login of `account`, refreshed at `last_refresh`.
+    fn chatgpt_login(account: &str, last_refresh: &str) -> Value {
+        json!({
+            "tokens": {
+                "id_token": "x.e30.y",
+                "access_token": format!("access-{account}"),
+                "refresh_token": format!("refresh-{account}"),
+                "account_id": account
+            },
+            "last_refresh": last_refresh
+        })
+    }
+
+    fn set_codex_mirror_dir(dir: &std::path::Path) {
+        let mut settings = crate::settings::get_settings();
+        settings.codex_mirror_config_dir = Some(dir.to_string_lossy().to_string());
+        crate::settings::update_settings(settings).expect("set codex mirror dir");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn the_wsl_claude_install_is_routed_through_the_proxy_and_handed_back() {
+        let home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        service
+            .write_claude_live(&json!({ "env": { "ANTHROPIC_AUTH_TOKEN": "sk-real" } }))
+            .expect("seed live");
+        let mirror = home.dir.path().join("wsl").join(".claude");
+        std::fs::create_dir_all(&mirror).expect("mirror dir");
+        let mirror_settings = mirror.join("settings.json");
+        let original = json!({
+            "env": { "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000" },
+            "model": "opus"
+        });
+        write_json_file(&mirror_settings, &original).expect("seed mirror");
+        crate::settings::set_claude_mirror_config_dir(Some(mirror.clone()))
+            .expect("set claude mirror dir");
+
+        take_over_claude(&service).await;
+        let taken_over: Value = read_json_file(&mirror_settings).expect("read mirror");
+        assert!(ProxyService::is_claude_live_taken_over(&taken_over));
+
+        let mut edited = taken_over.clone();
+        edited["hooks"] = orca_hooks();
+        write_json_file(&mirror_settings, &edited).expect("add hooks in WSL");
+
+        service
+            .stop_with_restore()
+            .await
+            .expect("stop with restore");
+
+        let mut expected = original.clone();
+        expected["hooks"] = orca_hooks();
+        assert_eq!(
+            read_json_file::<Value>(&mirror_settings).expect("read mirror"),
+            expected
+        );
+        assert!(db
+            .get_live_backup("claude_mirror")
+            .await
+            .expect("read")
+            .is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn a_wsl_codex_install_left_on_the_proxy_is_recovered_after_an_unclean_exit() {
+        let home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+
+        let mirror = home.dir.path().join("wsl").join(".codex");
+        std::fs::create_dir_all(&mirror).expect("mirror dir");
+        let mirror_config = mirror.join("config.toml");
+        std::fs::write(&mirror_config, "# wsl\nmodel = \"gpt-5\"\n").expect("seed config");
+        write_json_file(
+            &mirror.join("auth.json"),
+            &chatgpt_login("acct-a", "2026-09-01T00:00:00Z"),
+        )
+        .expect("seed auth");
+        set_codex_mirror_dir(&mirror);
+
+        {
+            let service = ProxyService::new(db.clone());
+            service
+                .write_codex_live(&chatgpt_live("model = \"gpt-5\"\n"))
+                .expect("seed live");
+            service
+                .backup_live_config_strict(&AppType::Codex)
+                .await
+                .expect("back up");
+            service
+                .takeover_live_config_strict(&AppType::Codex)
+                .await
+                .expect("take over");
+            // Killed here: no restore runs.
+        }
+        let taken_over = std::fs::read_to_string(&mirror_config).expect("read config");
+        assert!(ProxyService::codex_openai_base_url_is_local(&taken_over));
+        std::fs::write(
+            &mirror_config,
+            format!("{taken_over}\n[mcp_servers.orca]\ncommand = \"orca\"\n"),
+        )
+        .expect("add a table in WSL");
+
+        let restarted = ProxyService::new(db.clone());
+        assert!(restarted.detect_takeover_in_live_configs());
+        restarted.recover_from_crash().await.expect("recover");
+
+        let restored = std::fs::read_to_string(&mirror_config).expect("read config");
+        let table: toml::Table = restored.parse().expect("valid toml");
+        assert!(table.get("openai_base_url").is_none());
+        assert_eq!(
+            table["mcp_servers"]["orca"]["command"].as_str(),
+            Some("orca")
+        );
+        assert!(restored.starts_with("# wsl"));
+        assert!(!restarted.detect_takeover_in_live_configs());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn switching_codex_accounts_under_the_proxy_reaches_the_wsl_login_when_handed_back() {
+        let home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        let official = |account: &str| json!({ "auth": chatgpt_login(account, "2026-09-01T00:00:00Z"), "config": "model = \"gpt-5\"\n" });
+        let provider_a = Provider::with_id("a".into(), "A".into(), official("acct-a"), None);
+        let provider_b = Provider::with_id("b".into(), "B".into(), official("acct-b"), None);
+        db.save_provider("codex", &provider_a).expect("save a");
+        db.save_provider("codex", &provider_b).expect("save b");
+        db.set_current_provider("codex", "a").expect("set current");
+        crate::settings::set_current_provider(&AppType::Codex, Some("a"))
+            .expect("set local current");
+        service
+            .write_codex_live(&provider_a.settings_config)
+            .expect("seed live");
+
+        let mirror = home.dir.path().join("wsl").join(".codex");
+        std::fs::create_dir_all(&mirror).expect("mirror dir");
+        std::fs::write(mirror.join("config.toml"), "model = \"gpt-5\"\n").expect("seed config");
+        write_json_file(
+            &mirror.join("auth.json"),
+            &chatgpt_login("acct-a", "2026-09-01T00:00:00Z"),
+        )
+        .expect("seed auth");
+        set_codex_mirror_dir(&mirror);
+
+        service
+            .backup_live_config_strict(&AppType::Codex)
+            .await
+            .expect("back up");
+        service
+            .takeover_live_config_strict(&AppType::Codex)
+            .await
+            .expect("take over");
+        service
+            .hot_switch_provider("codex", "b")
+            .await
+            .expect("hot switch");
+        let auth: Value = read_json_file(&mirror.join("auth.json")).expect("read auth");
+        assert_eq!(
+            auth["tokens"]["account_id"], "acct-a",
+            "under the proxy the WSL login stays; the proxy presents b's"
+        );
+
+        service
+            .stop_with_restore()
+            .await
+            .expect("stop with restore");
+
+        let auth: Value = read_json_file(&mirror.join("auth.json")).expect("read auth");
+        assert_eq!(auth["tokens"]["account_id"], "acct-b");
+        let table: toml::Table = std::fs::read_to_string(mirror.join("config.toml"))
+            .expect("read config")
+            .parse()
+            .expect("valid toml");
+        assert!(table.get("openai_base_url").is_none());
+    }
+
+    #[test]
+    #[serial]
+    fn a_wsl_home_reaches_the_proxy_only_with_mirrored_networking() {
+        let home = TempHome::new();
+        let wsl = std::path::Path::new(r"\\wsl$\Ubuntu-22.04\home\agentcode\.codex");
+        assert!(!ProxyService::mirror_reaches_proxy(wsl));
+        std::fs::write(
+            home.dir.path().join(".wslconfig"),
+            "[wsl2]\nnetworkingMode = mirrored\n",
+        )
+        .expect("write .wslconfig");
+        assert!(ProxyService::mirror_reaches_proxy(wsl));
+        assert!(ProxyService::mirror_reaches_proxy(std::path::Path::new(
+            r"D:\other\.codex"
+        )));
     }
 }

@@ -17,6 +17,12 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ### Fixed
 
+- **Switching accounts under the proxy reaches Claude Code and Codex in
+  WSL.** Routing an app through the proxy now points its WSL install at the
+  proxy too, so enabling another account, or rotation moving on, switches the
+  sessions running there. Needs WSL's mirrored networking. WSL sessions
+  started before this need a restart to pick it up.
+
 - **Turning the proxy off no longer undoes other tools' settings.** When the
   proxy hands Claude Code's `settings.json` or Codex's `config.toml` back —
   turned off, Switchy quit, or Switchy restarting after a crash — only what

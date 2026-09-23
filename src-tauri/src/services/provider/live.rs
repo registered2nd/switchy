@@ -60,7 +60,7 @@ fn build_claude_mirror_env(source: &serde_json::Map<String, Value>) -> Option<Va
     Some(Value::Object(merged_env))
 }
 
-fn merge_claude_provider_fields_into_target(target: &Value, source: &Value) -> Value {
+pub(crate) fn merge_claude_provider_fields_into_target(target: &Value, source: &Value) -> Value {
     let mut merged = target.clone();
 
     let Some(target_obj) = merged.as_object_mut() else {
@@ -105,18 +105,28 @@ fn write_codex_mirror(
     write_json_file(&mirror_dir.join("auth.json"), auth)?;
 
     let config_path = mirror_dir.join("config.toml");
-    let mut target_doc = match std::fs::read_to_string(&config_path) {
-        Ok(text) if !text.trim().is_empty() => match text.parse::<DocumentMut>() {
-            Ok(doc) => doc,
-            Err(e) => {
-                log::warn!(
-                    "Codex mirror config '{}' is not valid TOML ({e}); leaving it untouched",
-                    config_path.display()
-                );
-                return Ok(());
-            }
-        },
-        _ => DocumentMut::new(),
+    let current = std::fs::read_to_string(&config_path).unwrap_or_default();
+    if !current.trim().is_empty() && current.parse::<DocumentMut>().is_err() {
+        log::warn!(
+            "Codex mirror config '{}' is not valid TOML; leaving it untouched",
+            config_path.display()
+        );
+        return Ok(());
+    }
+    let text = codex_mirror_config(&current, config_text)?;
+    crate::config::write_text_file(&config_path, &text)
+}
+
+/// The mirror's `config.toml` after a switch to a provider whose config is
+/// `config_text`: the provider-owned keys are replaced, the rest of `current`
+/// stays.
+pub(crate) fn codex_mirror_config(current: &str, config_text: &str) -> Result<String, AppError> {
+    let mut target_doc = if current.trim().is_empty() {
+        DocumentMut::new()
+    } else {
+        current
+            .parse::<DocumentMut>()
+            .map_err(|e| AppError::Message(format!("Invalid Codex mirror config.toml: {e}")))?
     };
     let source_doc = config_text
         .parse::<DocumentMut>()
@@ -126,7 +136,7 @@ fn write_codex_mirror(
         target_doc.remove(key);
     }
     merge_toml_table_like(target_doc.as_table_mut(), source_doc.as_table());
-    crate::config::write_text_file(&config_path, &target_doc.to_string())
+    Ok(target_doc.to_string())
 }
 
 fn build_claude_mirror_settings(source: &Value) -> Value {

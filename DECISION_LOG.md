@@ -2,6 +2,17 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-23 — The takeover covers the WSL install: its sessions go through the proxy too
+
+- Context: every Codex and Claude session the user runs is in WSL, and the takeover edited only the Windows files, so enabling or rotating an account under the proxy never reached them — the case the proxy was built for.
+- Decision:
+  1. **Taking an app over also points its mirror install at the proxy** — the Claude or Codex mirror directory a switch already keeps in step. Claude gets the same takeover fields as Windows; Codex gets `openai_base_url`, and only when it is signed in with ChatGPT on the built-in provider.
+  2. **Only when WSL can reach the proxy**: a WSL mirror is taken over only with `networkingMode=mirrored` in `.wslconfig`, which makes Windows' loopback address WSL's. Pointing a NAT-networked WSL at `127.0.0.1` would cut its sessions off.
+  3. **The mirror is backed up and handed back by the same three-way merge**, under backup keys of its own (`claude_mirror`, `codex_mirror`). A provider switch made during the takeover is carried into the mirror backup the way a switch writes the mirror with the proxy off, and a Codex account switch writes that account's login to the mirror when the proxy lets go, unless the mirror holds a newer login of the same account.
+  4. **Startup recovery covers the mirror**: a mirror still pointing at the proxy counts as a leftover takeover, and with no backup the proxy address is removed.
+- Why: WSL talks to OpenAI and Anthropic directly otherwise, so neither mid-session switching nor rotation applies to the sessions that exist.
+- Files: the mirror section of `src-tauri/src/services/proxy.rs` (`take_over_mirror`, `restore_mirror`, `update_mirror_backup`); `codex_mirror_config` in `services/provider/live.rs`.
+
 ## 2026-09-22 — Handing a live config back is a three-way merge against a record of what the takeover wrote
 
 - Context: every restore (clean stop, recovery after an unclean exit, a takeover switched off) wrote the takeover backup over Claude's `settings.json` and Codex's `config.toml` whole. The backup is as old as the takeover, and a takeover lasts as long as Switchy runs, so everything other tools wrote to those files meanwhile was lost. Orca keeps its status hooks in `settings.json`; the recoveries at 22:45 and 22:58 on 2026-09-22 restored a backup taken before Orca put them back, and every Claude session started afterwards was missing from Orca's sidebar.
@@ -93,7 +104,7 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
 - Consequence:
   - Claude gets the same path behind its own toggle, off by default — see the entry below.
   - Renewing a ChatGPT login from Switchy uses the Codex CLI's OAuth client id against `auth.openai.com`. OpenAI's terms on this were not reviewed.
-  - A Codex install in WSL is not routed through the Windows proxy; the takeover edits only the Windows `config.toml`.
+  - ~~A Codex install in WSL is not routed through the Windows proxy.~~ Superseded 2026-09-23: the WSL install is taken over too; see "The takeover covers the WSL install".
 - Files: `src-tauri/src/proxy/codex_pool.rs`; the ChatGPT arms of `proxy/providers/codex.rs`, `proxy/forwarder.rs` and `proxy/handlers.rs`; `apply_codex_takeover_fields` in `services/proxy.rs`; `src/components/proxy/AccountPoolPanel.tsx`.
 
 ## 2026-09-12 — Kimi Code is an exclusive-mode app whose provider is the whole `config.toml` plus its login file
