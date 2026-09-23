@@ -2,6 +2,26 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-23 — Only failures about the account count against it; every account switch is recorded with its reason
+
+- Context: every failed request counted toward the account's health and circuit breaker, including Anthropic's 400 "prompt is too long" and the 429s that hit all three Claude accounts in the same second when one oversized request went round them. Healthy accounts showed "Degraded", and five such requests take an account out of rotation. The usage view could not say which account served a request or why the pool moved.
+- Decision:
+  1. **An error counts against an account only when it is about the account**: a refused login (401/403), a server error (5xx), a timeout or a dropped connection. Other errors (400, 404, 413, 429, a cancelled request) still move the request to the next account but leave the health count and the breaker alone.
+  2. **Every change of the account serving an app is recorded** (`account_switches`, 90 days) with a reason: picked by hand, a failed request, a usage limit (429), a refused login, rotation near the limit or after the breaker opened, or an earlier account recovering. The usage view is built around accounts: per-account requests, tokens, 429s and last use over the chosen range, and the switch history.
+  3. **A refused login is shown as one**: the card says *Signed out* with how to sign in again, and a notice names the account when a request finds it refused.
+- Why: an account's health label and breaker must describe the account, or oversized requests knock good accounts out of rotation. Without the reasons, a switch the pool made looks like an Enable click that did nothing.
+- Files: `counts_against_provider` and `switch_reason_for` in `src-tauri/src/proxy/forwarder.rs`; `database/dao/account_switches.rs`; `needs_sign_in` in `proxy/codex_pool.rs` and `proxy/claude_pool.rs`; `src/components/usage/`.
+
+## 2026-09-23 — Switchy keeps only switching and pooling; code is English and Chinese exists only as a translation
+
+- Context: the fork still carried upstream cc-switch's MCP, prompt and skill managers, deep-link import, WebDAV sync, the auto-updater, the session browser, the Claude plugin and onboarding toggles, partner promotion and the config.json migration, with Chinese comments, log lines and error text throughout the code.
+- Decision:
+  1. **Removed**: the MCP, prompt and skill managers, deep links, WebDAV sync, the updater, the session browser, the Agents placeholder, the Claude plugin and onboarding toggles, partner promotion and the one-time migrations. Kept: every provider type and preset, universal providers, OpenCode and OpenClaw, usage scripts, coding-plan quota, the speed test and session repair.
+  2. **Code, comments, logs and backend errors are English.** User-visible text goes through the locale files, and `zh.json` is a natural Chinese translation of `en.json` with the same key set. Backend errors carry English only.
+  3. **Tray labels come from the locale files** (`tray.*`), read into the Rust build.
+- Why: the user — anything not useful for switching and pooling goes; Chinese belongs in the Chinese version, not in the code. Removed features can come back later as Switchy's own.
+- Files: `src-tauri/src/lib.rs` (command list), `src-tauri/src/tray.rs`, `src/i18n/locales/*.json`.
+
 ## 2026-09-23 — The takeover covers the WSL install: its sessions go through the proxy too
 
 - Context: every Codex and Claude session the user runs is in WSL, and the takeover edited only the Windows files, so enabling or rotating an account under the proxy never reached them — the case the proxy was built for.

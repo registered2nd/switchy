@@ -72,9 +72,8 @@ Routing an app through the proxy edits its config — Claude Code's `settings.js
 
 ## Other tools in the app
 
-- **Session Manager** (header button): browse, search and resume Claude Code and Codex sessions.
 - **Session Recovery** (Settings → Advanced): finds Claude Code transcripts that fail to resume after a switch because they carry thinking blocks the new account or endpoint cannot validate. Repair strips those blocks and relinks the conversation, keeping a backup of the original file.
-- **Usage Statistics** (a tab in Settings): requests that went through the proxy, per provider.
+- **Usage Statistics** (a tab in Settings): per account, the requests, tokens and rate-limit refusals that went through the proxy and when it was last used; and a history of every account switch with its reason (picked by hand, a failed request, a usage limit, a refused login, rotation). Successful requests are recorded only while request logging is on (Settings → Pool → Proxy server).
 - **Health check**: the test button on a provider card sends it one request to see that it answers. The models used are set under Settings → Advanced → Model Test Config.
 - **Environment variable conflicts**: a banner lists environment variables whose names contain `ANTHROPIC`, `OPENAI` or `GEMINI`, since they can override the config Switchy writes, and can delete them after backing them up.
 - **Tray**: switch providers without opening the window.

@@ -8,14 +8,48 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+### Added
+
+- **Usage Statistics is built around accounts.** A per-account table shows
+  requests, tokens, success rate, rate-limit refusals and when each account
+  was last used, over the range you pick. A Switches tab lists every account
+  switch with its reason: picked by you, a failed request, a usage limit, a
+  refused login, or rotation. When request logging is off, the page says so
+  and can turn it on.
+- **Signed-out accounts say so.** A card whose login was refused shows
+  *Signed out* and how to sign in again, and a notice names the account when
+  Switchy moves off it for that reason.
+
 ### Changed
 
+- **Switchy is only about switching and pooling.** The MCP, prompt and skill
+  managers, deep-link import, WebDAV sync, the updater, the session browser,
+  the Claude plugin and onboarding toggles and partner promotion are gone.
+  Providers, presets, universal providers, usage scripts, coding-plan quota,
+  the speed test and session repair stay.
+- **The Chinese interface is a full translation.** Labels read naturally in
+  Chinese and Japanese, and the tray menu follows the app language.
 - **Enable stays on every card with Switch automatically on.** Enabling an
   account puts it first in the switching order, so it answers from the next
   request, in open sessions too. Adding or removing a card from the
   switching order is the small list button next to it.
 
 ### Fixed
+
+- **"Degraded" no longer appears on healthy accounts.** Only failures that
+  are about the account count against it: a refused login, a server error, a
+  timeout or a dropped connection. A request that is too long, or a rate limit
+  that every account hits at once, no longer marks accounts as failing or
+  takes them out of rotation.
+
+- **The current card shows its own account's usage with the proxy on.** It
+  showed the usage of the login Claude Code has saved, which the proxy does
+  not use. Claude Code's `/status` also shows that saved login; with the proxy
+  on, requests go out as the account you enabled.
+
+- **Usage badges stop showing "Query failed" when you switch often.** Each
+  account's usage is fetched at most once a minute, and when the usage service
+  refuses or the network fails, the last reading stays with its time.
 
 - **Switching accounts under the proxy reaches Claude Code and Codex in
   WSL.** Routing an app through the proxy now points its WSL install at the
