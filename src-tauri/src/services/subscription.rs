@@ -1449,13 +1449,15 @@ async fn get_codex_quota_for_provider_uncached(
     if quota.success || !matches!(quota.credential_status, CredentialStatus::Expired) {
         return Ok(quota);
     }
-    // Renew the login the way the proxy does before presenting it: a login
-    // OpenAI refuses shows as signed out, a renewed one shows its usage.
-    match crate::proxy::codex_pool::credentials_for(&state.db, &provider, false).await {
+    // Renew the login the way the proxy does after a refusal (the access
+    // token can be revoked before it expires): a login OpenAI refuses to
+    // renew shows as signed out, a renewed one shows its usage.
+    let renewed = crate::proxy::codex_pool::credentials_for(&state.db, &provider, true).await;
+    if crate::proxy::codex_pool::needs_sign_in(&provider) {
+        return Ok(SubscriptionQuota::signed_out("codex"));
+    }
+    match renewed {
         Ok(creds) => Ok(query_codex_quota(&creds.access_token, creds.account_id.as_deref()).await),
-        Err(_) if crate::proxy::codex_pool::needs_sign_in(&provider) => {
-            Ok(SubscriptionQuota::signed_out("codex"))
-        }
         Err(_) => Ok(quota),
     }
 }
@@ -1486,15 +1488,16 @@ async fn get_claude_quota_for_provider_uncached(
     if quota.success || !matches!(quota.credential_status, CredentialStatus::Expired) {
         return Ok(quota);
     }
-    // Renew the captured login the way the proxy does before presenting it.
+    // Renew the captured login the way the proxy does after a refusal.
     let Some(provider) = provider.filter(crate::proxy::claude_pool::is_oauth_provider) else {
         return Ok(quota);
     };
-    match crate::proxy::claude_pool::access_token_for(&provider, false).await {
+    let renewed = crate::proxy::claude_pool::access_token_for(&provider, true).await;
+    if crate::proxy::claude_pool::needs_sign_in(&provider) {
+        return Ok(SubscriptionQuota::signed_out("claude"));
+    }
+    match renewed {
         Ok(token) => Ok(query_claude_quota(&token).await),
-        Err(_) if crate::proxy::claude_pool::needs_sign_in(&provider) => {
-            Ok(SubscriptionQuota::signed_out("claude"))
-        }
         Err(_) => Ok(quota),
     }
 }
