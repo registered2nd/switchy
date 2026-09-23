@@ -10,7 +10,6 @@ export interface ToggleRowProps {
 }
 
 export function ToggleRow({
-  icon,
   title,
   description,
   checked,
@@ -18,17 +17,14 @@ export function ToggleRow({
   disabled,
 }: ToggleRowProps) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card/50 p-4 transition-colors hover:bg-muted/50">
-      <div className="flex items-center gap-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-background ring-1 ring-border">
-          {icon}
-        </div>
-        <div className="space-y-1">
-          <p className="text-sm font-medium leading-none">{title}</p>
-          {description ? (
-            <p className="text-xs text-muted-foreground">{description}</p>
-          ) : null}
-        </div>
+    <div className="flex items-center justify-between gap-6 border-b border-border py-3 last:border-b-0">
+      <div className="max-w-[60ch] space-y-0.5">
+        <p className="text-[13.5px] font-medium">{title}</p>
+        {description ? (
+          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
       </div>
       <Switch
         checked={checked}

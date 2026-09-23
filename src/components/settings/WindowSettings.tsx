@@ -14,12 +14,9 @@ export function WindowSettings({ settings, onChange }: WindowSettingsProps) {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center gap-2 pb-2 border-b border-border/40">
-        <AppWindow className="h-4 w-4 text-primary" />
-        <h3 className="text-sm font-medium">{t("settings.windowBehavior")}</h3>
-      </div>
+      <h3 className="text-sm font-medium">{t("settings.windowBehavior")}</h3>
 
-      <div className="space-y-3">
+      <div className="rounded-lg border border-border bg-card px-4">
         <ToggleRow
           icon={<Power className="h-4 w-4 text-orange-500" />}
           title={t("settings.launchOnStartup")}

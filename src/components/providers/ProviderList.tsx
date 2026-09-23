@@ -316,7 +316,7 @@ export function ProviderList({
         items={filteredProviders.map((provider) => provider.id)}
         strategy={verticalListSortingStrategy}
       >
-        <div className="space-y-3">
+        <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
           {filteredProviders.map((provider) => {
             const isOmo = provider.category === "omo";
             const isOmoSlim = provider.category === "omo-slim";
@@ -377,7 +377,7 @@ export function ProviderList({
   );
 
   return (
-    <div className="mt-4 space-y-4">
+    <div className="mt-1 space-y-4">
       <AnimatePresence>
         {isSearchOpen && (
           <motion.div

@@ -103,7 +103,9 @@
         "oauthHint": "Google 官方通过 OAuth 用你的 Google 账号登录，无需填写 API Key。首次使用时会自动打开浏览器登录。"
       }
     },
-    "duplicateLiveIdsLoadFailed": "无法读取配置中的供应商 ID，请修复配置后重试。"
+    "duplicateLiveIdsLoadFailed": "无法读取配置中的供应商 ID，请修复配置后重试。",
+    "live": "使用中",
+    "inConfig": "已在配置中"
   },
   "notifications": {
     "providerAdded": "供应商已添加",
@@ -197,12 +199,8 @@
         "description": "Switchy 访问外部 API 时使用的代理"
       },
       "data": {
-        "title": "数据管理",
-        "description": "导入和导出本地配置数据"
-      },
-      "backup": {
-        "title": "备份与恢复",
-        "description": "自动备份，以及可恢复的数据库快照"
+        "title": "Switchy 数据",
+        "description": "Switchy 自身数据库的备份，以及把它迁移到另一台机器。"
       },
       "rectifier": {
         "title": "整流器",
@@ -262,8 +260,6 @@
     "themeLight": "浅色",
     "themeDark": "深色",
     "themeSystem": "跟随系统",
-    "importExport": "SQL 导入导出",
-    "importExportHint": "导出或导入数据库的 SQL 备份，用于迁移或恢复（只能导入 Switchy 导出的备份）。",
     "exportConfig": "导出 SQL 备份",
     "selectConfigFile": "选择 SQL 文件",
     "import": "导入",
@@ -409,14 +405,22 @@
     },
     "saveFailedGeneric": "保存失败，请重试",
     "authCenter": {
-      "title": "OAuth 认证中心",
-      "description": "集中管理可在多个应用间复用的 OAuth 账号。供应商绑定这些认证来源后无需重复登录。",
-      "copilotDescription": "管理 GitHub Copilot 账号、默认账号以及供 Claude / Codex / Gemini 绑定的托管凭据。",
-      "heading": "认证中心",
-      "headingDescription": "统一管理可跨应用复用的 OAuth 账号和默认认证来源。",
-      "beta": "Beta"
+      "copilotDescription": "用 GitHub 登录后，可以把你的 Copilot 订阅作为 Claude Code 背后的模型：登录后在 Claude 下添加 GitHub Copilot 提供商。"
     },
-    "tabAuth": "认证"
+    "tabAuth": "登录",
+    "page": {
+      "general": "语言、外观、托盘，以及侧边栏显示哪些应用。",
+      "pool": "Switchy 如何转发请求，以及如何在你的账号之间切换。",
+      "auth": "Switchy 为需要登录的提供商（如 GitHub Copilot）所登录的账号。",
+      "advanced": "各工具的配置位置、提供商测试、日志与会话修复。",
+      "usage": "Switchy 转发过的请求，在本机统计，不会发送到任何地方。"
+    },
+    "data": {
+      "backups": "备份",
+      "backupsDescription": "Switchy 会定期把数据库复制到 ~/.switchy/backups。恢复会放回较早的一份副本。",
+      "move": "迁移到另一台机器",
+      "moveDescription": "导出会把整个数据库（包括 API 密钥和 Codex 登录）写入一个文件。导入会用它替换本机的数据库。"
+    }
   },
   "apps": {
     "claude": "Claude",
@@ -1081,12 +1085,14 @@
     "addQueue": "加入切换顺序",
     "removeQueue": "移出切换顺序",
     "priority": {
-      "tooltip": "切换顺序第 {{priority}} 位"
+      "tooltip": "切换顺序第 {{priority}} 位",
+      "label": "顺序第 {{priority}}"
     },
     "tooltip": {
       "enabled": "{{app}} 已开启自动切换\n请求按切换顺序（1、2、3…）依次尝试",
       "disabled": "为 {{app}} 开启自动切换\n立即切到切换顺序的第一位，请求失败时依次往下切换"
-    }
+    },
+    "toggleLabel": "自动切换"
   },
   "proxy": {
     "panel": {
@@ -1143,7 +1149,8 @@
         "active": "{{appLabel}} 已接管 - {{address}}:{{port}}\n切换该应用的供应商会立即生效",
         "broken": "{{appLabel}} 已接管，但代理服务未运行",
         "inactive": "接管 {{appLabel}} 的生效配置，通过本地代理转发其请求"
-      }
+      },
+      "label": "经由代理"
     },
     "failover": {
       "proxyRequired": "需先启动本地代理才能设置切换",
@@ -1428,7 +1435,8 @@
     "signedOutHint": {
       "codex": "启用此卡片后，在 Codex 中以此账号登录",
       "claude": "在 Claude Code 中重新登录此账号，然后保存登录"
-    }
+    },
+    "resetsInShort": "{{time}} 后重置"
   },
   "claudeAccount": {
     "card": {
@@ -1480,5 +1488,8 @@
     "noProviders": "（暂无供应商）",
     "lightweightMode": "轻量模式",
     "quit": "退出"
+  },
+  "rail": {
+    "accounts": "账号"
   }
 }

@@ -16,7 +16,7 @@ export function ThemeSettings() {
           {t("settings.themeHint")}
         </p>
       </header>
-      <div className="inline-flex gap-1 rounded-md border border-border-default bg-background p-1">
+      <div className="inline-flex gap-0.5 rounded-md bg-muted p-0.5">
         <ThemeButton
           active={theme === "light"}
           onClick={(e) => setTheme("light", e)}
@@ -61,11 +61,11 @@ function ThemeButton({
       type="button"
       onClick={onClick}
       size="sm"
-      variant={active ? "default" : "ghost"}
+      variant="ghost"
       className={cn(
         "min-w-[96px] gap-1.5",
         active
-          ? "shadow-sm"
+          ? "bg-card font-medium text-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))] hover:bg-card"
           : "text-muted-foreground hover:text-foreground hover:bg-muted",
       )}
     >

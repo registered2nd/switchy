@@ -5,9 +5,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
-  Settings,
   ArrowLeft,
-  BarChart2,
   FolderOpen,
   KeyRound,
   Shield,
@@ -26,13 +24,15 @@ import { checkAllEnvConflicts, checkEnvConflicts } from "@/lib/api/env";
 import { useProviderActions } from "@/hooks/useProviderActions";
 import { openclawKeys, useOpenClawHealth } from "@/hooks/useOpenClaw";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
-import { useAutoCompact } from "@/hooks/useAutoCompact";
 import { useLastValidValue } from "@/hooks/useLastValidValue";
 import { extractErrorMessage } from "@/utils/errorUtils";
 import { isTextEditableTarget } from "@/utils/domUtils";
-import { cn } from "@/lib/utils";
 import { isWindows, isLinux } from "@/lib/platform";
-import { AppSwitcher } from "@/components/AppSwitcher";
+import {
+  AppRail,
+  APP_NAME,
+  type SettingsSection,
+} from "@/components/layout/AppRail";
 import { ProviderList } from "@/components/providers/ProviderList";
 import { AddProviderDialog } from "@/components/providers/AddProviderDialog";
 import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
@@ -64,8 +64,6 @@ type View =
   | "openclawAgents";
 
 const DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28; // px
-const HEADER_HEIGHT = 64; // px
-const CONTENT_TOP_OFFSET = DRAG_BAR_HEIGHT + HEADER_HEIGHT;
 
 const STORAGE_KEY = "switchy-last-app";
 const VALID_APPS: AppId[] = [
@@ -110,7 +108,8 @@ function App() {
 
   const [activeApp, setActiveApp] = useState<AppId>(getInitialApp);
   const [currentView, setCurrentView] = useState<View>(getInitialView);
-  const [settingsDefaultTab, setSettingsDefaultTab] = useState("general");
+  const [settingsDefaultTab, setSettingsDefaultTab] =
+    useState<SettingsSection>("general");
   const [isAddOpen, setIsAddOpen] = useState(false);
 
   useEffect(() => {
@@ -156,12 +155,6 @@ function App() {
 
   const effectiveEditingProvider = useLastValidValue(editingProvider);
   const effectiveUsageProvider = useLastValidValue(usageProvider);
-
-  const toolbarRef = useRef<HTMLDivElement>(null);
-  const isToolbarCompact = useAutoCompact(toolbarRef);
-
-  const addActionButtonClass =
-    "bg-orange-500 hover:bg-orange-600 dark:bg-orange-500 dark:hover:bg-orange-600 text-white shadow-lg shadow-orange-500/30 dark:shadow-orange-500/40 rounded-full w-8 h-8";
 
   const {
     isRunning: isProxyRunning,
@@ -649,7 +642,7 @@ function App() {
               open={true}
               onOpenChange={() => setCurrentView("providers")}
               onImportSuccess={handleImportSuccess}
-              defaultTab={settingsDefaultTab}
+              activeTab={settingsDefaultTab}
             />
           );
         case "universal":
@@ -746,240 +739,177 @@ function App() {
     );
   };
 
+  const otherViewTitle =
+    currentView === "universal"
+      ? t("universalProvider.title", { defaultValue: "Universal Provider" })
+      : currentView === "workspace"
+        ? t("workspace.title")
+        : currentView === "openclawEnv"
+          ? t("openclaw.env.title")
+          : currentView === "openclawTools"
+            ? t("openclaw.tools.title")
+            : currentView === "openclawAgents"
+              ? t("openclaw.agents.title")
+              : "";
+
+  const pageHeader =
+    currentView === "settings" ? null : currentView !== "providers" ? (
+      <div className="flex items-center gap-3">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setCurrentView("providers")}
+          style={{ WebkitAppRegion: "no-drag" } as any}
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <h1 className="font-display text-[22px] font-semibold tracking-tight">
+          {otherViewTitle}
+        </h1>
+      </div>
+    ) : (
+      <>
+        <h1 className="font-display text-[22px] font-semibold tracking-tight">
+          {APP_NAME[activeApp]}
+        </h1>
+        <div
+          className="ml-auto flex items-center gap-2"
+          style={{ WebkitAppRegion: "no-drag" } as any}
+        >
+          {activeApp !== "opencode" && activeApp !== "openclaw" && (
+            <>
+              {settingsData?.enableLocalProxy && (
+                <ProxyToggle activeApp={activeApp} />
+              )}
+              {settingsData?.enableFailoverToggle && (
+                <FailoverToggle activeApp={activeApp} />
+              )}
+            </>
+          )}
+          {activeApp === "openclaw" && (
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCurrentView("workspace")}
+                title={t("workspace.manage")}
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCurrentView("openclawEnv")}
+                title={t("openclaw.env.title")}
+              >
+                <KeyRound className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCurrentView("openclawTools")}
+                title={t("openclaw.tools.title")}
+              >
+                <Shield className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCurrentView("openclawAgents")}
+                title={t("openclaw.agents.title")}
+              >
+                <Cpu className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+          <Button
+            size="sm"
+            onClick={() => setIsAddOpen(true)}
+            className="gap-1.5"
+          >
+            <Plus className="h-4 w-4" />
+            {t("provider.addProvider", { defaultValue: "Add" })}
+          </Button>
+        </div>
+      </>
+    );
+
   return (
     <div
-      className="flex flex-col h-screen overflow-hidden bg-background text-foreground selection:bg-primary/30"
-      style={{ overflowX: "hidden", paddingTop: CONTENT_TOP_OFFSET }}
+      className="flex h-screen overflow-hidden bg-background text-foreground selection:bg-primary/30"
+      style={{ overflowX: "hidden", paddingTop: DRAG_BAR_HEIGHT }}
     >
       <div
         className="fixed top-0 left-0 right-0 z-[60]"
         data-tauri-drag-region
         style={{ WebkitAppRegion: "drag", height: DRAG_BAR_HEIGHT } as any}
       />
-      {showEnvBanner && envConflicts.length > 0 && (
-        <EnvWarningBanner
-          conflicts={envConflicts}
-          onDismiss={() => {
-            setShowEnvBanner(false);
-            sessionStorage.setItem("env_banner_dismissed", "true");
-          }}
-          onDeleted={async () => {
-            try {
-              const allConflicts = await checkAllEnvConflicts();
-              const flatConflicts = Object.values(allConflicts).flat();
-              setEnvConflicts(flatConflicts);
-              if (flatConflicts.length === 0) {
-                setShowEnvBanner(false);
-              }
-            } catch (error) {
-              console.error(
-                "[App] Failed to re-check conflicts after deletion:",
-                error,
-              );
-            }
-          }}
-        />
-      )}
 
-      <header
-        className="fixed z-50 w-full transition-all duration-300 bg-background/80 backdrop-blur-md"
-        data-tauri-drag-region
-        style={
-          {
-            WebkitAppRegion: "drag",
-            top: DRAG_BAR_HEIGHT,
-            height: HEADER_HEIGHT,
-          } as any
+      <AppRail
+        view={
+          currentView === "providers"
+            ? "providers"
+            : currentView === "settings"
+              ? "settings"
+              : "other"
         }
-      >
-        <div
-          className="flex h-full items-center justify-between gap-2 px-6"
-          data-tauri-drag-region
-          style={{ WebkitAppRegion: "drag" } as any}
-        >
-          <div
-            className="flex items-center gap-1"
-            style={{ WebkitAppRegion: "no-drag" } as any}
-          >
-            {currentView !== "providers" ? (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setCurrentView("providers")}
-                  className="mr-2 rounded-lg"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                </Button>
-                <h1 className="text-lg font-semibold">
-                  {currentView === "settings" && t("settings.title")}
-                  {currentView === "universal" &&
-                    t("universalProvider.title", {
-                      defaultValue: "Universal Provider",
-                    })}
-                  {currentView === "workspace" && t("workspace.title")}
-                  {currentView === "openclawEnv" && t("openclaw.env.title")}
-                  {currentView === "openclawTools" && t("openclaw.tools.title")}
-                  {currentView === "openclawAgents" &&
-                    t("openclaw.agents.title")}
-                </h1>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <div className="relative inline-flex items-center">
-                  <span
-                    className={cn(
-                      "text-xl font-semibold transition-colors",
-                      isProxyRunning && isCurrentAppTakeoverActive
-                        ? "text-emerald-500 dark:text-emerald-400"
-                        : "text-blue-500 dark:text-blue-400",
-                    )}
-                  >
-                    Switchy
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    setSettingsDefaultTab("general");
-                    setCurrentView("settings");
-                  }}
-                  title={t("common.settings")}
-                  className="hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  <Settings className="w-4 h-4" />
-                </Button>
-                {isCurrentAppTakeoverActive && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      setSettingsDefaultTab("usage");
-                      setCurrentView("settings");
-                    }}
-                    title={t("usage.title", {
-                      defaultValue: "Usage Statistics",
-                    })}
-                    className="hover:bg-black/5 dark:hover:bg-white/5"
-                  >
-                    <BarChart2 className="w-4 h-4" />
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
+        activeApp={activeApp}
+        visibleApps={visibleApps}
+        onSelectApp={(app) => {
+          setActiveApp(app);
+          setCurrentView("providers");
+        }}
+        settingsSection={settingsDefaultTab}
+        onOpenSettings={(section) => {
+          setSettingsDefaultTab(section);
+          setCurrentView("settings");
+        }}
+        onBack={() => setCurrentView("providers")}
+      />
 
-          <div className="flex flex-1 min-w-0 items-center justify-end gap-1.5">
-            {currentView === "providers" &&
-              activeApp !== "opencode" &&
-              activeApp !== "openclaw" && (
-                <div
-                  className="flex shrink-0 items-center gap-1.5"
-                  style={{ WebkitAppRegion: "no-drag" } as any}
-                >
-                  {settingsData?.enableLocalProxy && (
-                    <ProxyToggle activeApp={activeApp} />
-                  )}
-                  {settingsData?.enableFailoverToggle && (
-                    <FailoverToggle activeApp={activeApp} />
-                  )}
-                </div>
-              )}
-            <div
-              ref={toolbarRef}
-              className="flex flex-1 min-w-0 overflow-x-hidden items-center"
-            >
-              <div
-                className="flex shrink-0 items-center gap-1.5 ml-auto"
-                style={{ WebkitAppRegion: "no-drag" } as any}
-              >
-                {currentView === "providers" && (
-                  <>
-                    <AppSwitcher
-                      activeApp={activeApp}
-                      onSwitch={setActiveApp}
-                      visibleApps={visibleApps}
-                      compact={isToolbarCompact}
-                    />
-
-                    <div className="flex items-center gap-1 p-1 bg-muted rounded-xl">
-                      <AnimatePresence mode="wait">
-                        <motion.div
-                          key={
-                            activeApp === "openclaw" ? "openclaw" : "default"
-                          }
-                          className="flex items-center gap-1"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          transition={{ duration: 0.15 }}
-                        >
-                          {activeApp === "openclaw" ? (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("workspace")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-                                title={t("workspace.manage")}
-                              >
-                                <FolderOpen className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("openclawEnv")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-                                title={t("openclaw.env.title")}
-                              >
-                                <KeyRound className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("openclawTools")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-                                title={t("openclaw.tools.title")}
-                              >
-                                <Shield className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setCurrentView("openclawAgents")}
-                                className="text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-                                title={t("openclaw.agents.title")}
-                              >
-                                <Cpu className="w-4 h-4" />
-                              </Button>
-                            </>
-                          ) : null}
-                        </motion.div>
-                      </AnimatePresence>
-                    </div>
-
-                    <Button
-                      onClick={() => setIsAddOpen(true)}
-                      size="icon"
-                      className={`ml-2 ${addActionButtonClass}`}
-                    >
-                      <Plus className="w-5 h-5" />
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="flex-1 min-h-0 flex flex-col overflow-y-auto animate-fade-in">
-        {isOpenClawView && openclawHealthWarnings.length > 0 && (
-          <OpenClawHealthBanner warnings={openclawHealthWarnings} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {showEnvBanner && envConflicts.length > 0 && (
+          <EnvWarningBanner
+            conflicts={envConflicts}
+            onDismiss={() => {
+              setShowEnvBanner(false);
+              sessionStorage.setItem("env_banner_dismissed", "true");
+            }}
+            onDeleted={async () => {
+              try {
+                const allConflicts = await checkAllEnvConflicts();
+                const flatConflicts = Object.values(allConflicts).flat();
+                setEnvConflicts(flatConflicts);
+                if (flatConflicts.length === 0) {
+                  setShowEnvBanner(false);
+                }
+              } catch (error) {
+                console.error(
+                  "[App] Failed to re-check conflicts after deletion:",
+                  error,
+                );
+              }
+            }}
+          />
         )}
-        {renderContent()}
-      </main>
+
+        {pageHeader && (
+          <header
+            className="flex h-14 shrink-0 items-center gap-3 px-6"
+            data-tauri-drag-region
+            style={{ WebkitAppRegion: "drag" } as any}
+          >
+            {pageHeader}
+          </header>
+        )}
+
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {isOpenClawView && openclawHealthWarnings.length > 0 && (
+            <OpenClawHealthBanner warnings={openclawHealthWarnings} />
+          )}
+          {renderContent()}
+        </main>
+      </div>
 
       <AddProviderDialog
         open={isAddOpen}

@@ -118,13 +118,14 @@ vi.mock("@/components/ConfirmDialog", () => ({
     ) : null,
 }));
 
-vi.mock("@/components/AppSwitcher", () => ({
-  AppSwitcher: ({ activeApp, onSwitch }: any) => (
-    <div data-testid="app-switcher">
+vi.mock("@/components/layout/AppRail", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/layout/AppRail")>()),
+  AppRail: ({ activeApp, onSelectApp }: any) => (
+    <div data-testid="app-rail">
       <span>{activeApp}</span>
-      <button onClick={() => onSwitch("claude")}>switch-claude</button>
-      <button onClick={() => onSwitch("codex")}>switch-codex</button>
-      <button onClick={() => onSwitch("openclaw")}>switch-openclaw</button>
+      <button onClick={() => onSelectApp("claude")}>switch-claude</button>
+      <button onClick={() => onSelectApp("codex")}>switch-codex</button>
+      <button onClick={() => onSelectApp("openclaw")}>switch-openclaw</button>
     </div>
   ),
 }));

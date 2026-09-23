@@ -1,4 +1,3 @@
-import { Power, Route, Shuffle } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { Switch } from "@/components/ui/switch";
@@ -57,14 +56,13 @@ export function PoolControls({
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Power className="h-4 w-4 text-green-500" />
           <div className="space-y-0.5">
             <p className="text-sm font-medium">{t("pool.proxy")}</p>
             <p className="text-xs text-muted-foreground">
               {isRunning
                 ? t("settings.advanced.proxy.running")
                 : t("settings.advanced.proxy.stopped")}
-              {" · "}
+              {". "}
               {t("pool.proxyDescription")}
             </p>
           </div>
@@ -78,7 +76,6 @@ export function PoolControls({
 
       <div className="space-y-3">
         <div className="flex items-center gap-3">
-          <Route className="h-4 w-4 text-primary" />
           <div className="space-y-0.5">
             <p className="text-sm font-medium">{t("pool.route")}</p>
             <p className="text-xs text-muted-foreground">
@@ -86,7 +83,7 @@ export function PoolControls({
             </p>
           </div>
         </div>
-        <div className="grid gap-2 sm:grid-cols-3 pl-7">
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
           {(["claude", "codex", "gemini"] as const).map((appType) => (
             <AppSwitch key={appType} label={APP_LABELS[appType]}>
               <Switch
@@ -103,7 +100,6 @@ export function PoolControls({
 
       <div className="space-y-3">
         <div className="flex items-center gap-3">
-          <Shuffle className="h-4 w-4 text-orange-500" />
           <div className="space-y-0.5">
             <p className="text-sm font-medium">{t("pool.failover")}</p>
             <p className="text-xs text-muted-foreground">
@@ -111,7 +107,7 @@ export function PoolControls({
             </p>
           </div>
         </div>
-        <div className="grid gap-2 sm:grid-cols-3 pl-7">
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
           {(["claude", "codex", "gemini"] as const).map((appType) => (
             <FailoverSwitch
               key={appType}
@@ -122,7 +118,7 @@ export function PoolControls({
         </div>
       </div>
 
-      <div className="border-t border-border/50 pt-6">
+      <div className="border-t border-border pt-6">
         <AccountPoolPanel />
       </div>
     </div>
@@ -137,10 +133,10 @@ function AppSwitch({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-md border border-border bg-background/60 px-3 py-2">
-      <span className="text-sm font-medium">{label}</span>
+    <label className="flex cursor-pointer items-center gap-2.5 text-[13px]">
       {children}
-    </div>
+      <span>{label}</span>
+    </label>
   );
 }
 

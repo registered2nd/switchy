@@ -120,17 +120,31 @@ vi.mock("@/components/settings/AboutSection", () => ({
   AboutSection: ({ isPortable }: any) => <div>about:{String(isPortable)}</div>,
 }));
 
+let showSection: (
+  section: NonNullable<React.ComponentProps<typeof SettingsPage>["activeTab"]>,
+) => void;
+
 const renderDialog = (
   props?: Partial<React.ComponentProps<typeof SettingsPage>>,
 ) => {
   const client = new QueryClient();
-  return render(
+  const page = (
+    section: React.ComponentProps<typeof SettingsPage>["activeTab"],
+  ) => (
     <QueryClientProvider client={client}>
       <Suspense fallback={<div data-testid="loading">loading</div>}>
-        <SettingsPage open onOpenChange={() => {}} {...props} />
+        <SettingsPage
+          open
+          onOpenChange={() => {}}
+          {...props}
+          activeTab={section}
+        />
       </Suspense>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const result = render(page(props?.activeTab));
+  showSection = (section) => result.rerender(page(section));
+  return result;
 };
 
 beforeEach(() => {
@@ -150,8 +164,7 @@ describe("SettingsPage integration", () => {
     await waitFor(() =>
       expect(screen.getByText("language:zh")).toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByText("settings.tabAdvanced"));
-    fireEvent.click(screen.getByText("settings.advanced.configDir.title"));
+    showSection("advanced");
     const appInput = await screen.findByPlaceholderText(
       "settings.browsePlaceholderApp",
     );
@@ -166,8 +179,7 @@ describe("SettingsPage integration", () => {
       expect(screen.getByText("language:zh")).toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByText("settings.tabAdvanced"));
-    fireEvent.click(screen.getByText("settings.advanced.data.title"));
+    showSection("data");
     fireEvent.click(screen.getByText("settings.selectConfigFile"));
     await waitFor(() =>
       expect(screen.getByTestId("selected-file").textContent).toContain(
@@ -190,8 +202,7 @@ describe("SettingsPage integration", () => {
       expect(screen.getByText("language:zh")).toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByText("settings.tabAdvanced"));
-    fireEvent.click(screen.getByText("settings.advanced.configDir.title"));
+    showSection("advanced");
     const appInput = await screen.findByPlaceholderText(
       "settings.browsePlaceholderApp",
     );
@@ -217,8 +228,7 @@ describe("SettingsPage integration", () => {
       expect(screen.getByText("language:zh")).toBeInTheDocument(),
     );
 
-    fireEvent.click(screen.getByText("settings.tabAdvanced"));
-    fireEvent.click(screen.getByText("settings.advanced.configDir.title"));
+    showSection("advanced");
 
     const browseButtons = screen.getAllByTitle("settings.browseDirectory");
     const resetButtons = screen.getAllByTitle("settings.resetDefault");
@@ -258,8 +268,7 @@ describe("SettingsPage integration", () => {
     await waitFor(() =>
       expect(screen.getByText("language:zh")).toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByText("settings.tabAdvanced"));
-    fireEvent.click(screen.getByText("settings.advanced.data.title"));
+    showSection("data");
 
     server.use(
       http.post("http://tauri.local/save_file_dialog", () =>

@@ -230,37 +230,29 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
 
   // ── Inline mode: compact two lines ──
   if (inline) {
+    const updated = quota.queriedAt
+      ? formatRelativeTime(quota.queriedAt, now, t)
+      : t("usage.never", { defaultValue: "Never" });
     return (
-      <div className="flex flex-col items-end gap-1 text-xs whitespace-nowrap flex-shrink-0">
-        {/* Line 1: query time + refresh */}
-        <div className="flex items-center gap-2 justify-end">
-          <span className="text-[10px] text-muted-foreground/70 flex items-center gap-1">
-            <Clock size={10} />
-            {quota.queriedAt
-              ? formatRelativeTime(quota.queriedAt, now, t)
-              : t("usage.never", { defaultValue: "Never" })}
-          </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              refetch();
-            }}
-            disabled={loading}
-            className="p-1 rounded hover:bg-muted transition-colors disabled:opacity-50 flex-shrink-0 text-muted-foreground"
-            title={t("subscription.refresh")}
-          >
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-          </button>
-        </div>
-
-        {/* Line 2: usage percentage per tier */}
-        <div className="flex items-center gap-2">
-          {tiers
-            .filter((tier) => !HIDDEN_INLINE_TIERS.has(tier.name))
-            .map((tier) => (
-              <TierBadge key={tier.name} tier={tier} t={t} />
-            ))}
-        </div>
+      <div className="flex flex-shrink-0 items-center gap-5 text-xs">
+        {tiers
+          .filter((tier) => !HIDDEN_INLINE_TIERS.has(tier.name))
+          // A model's own limit shows once that model has been used.
+          .filter((tier) => !isModelTier(tier.name) || tier.utilization >= 1)
+          .map((tier) => (
+            <TierMeter key={tier.name} tier={tier} t={t} />
+          ))}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            refetch();
+          }}
+          disabled={loading}
+          className="self-center rounded p-1 text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          title={`${t("subscription.refresh")} (${updated})`}
+        >
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+        </button>
       </div>
     );
   }
@@ -341,6 +333,74 @@ export const TierBadge: React.FC<{
           {countdown}
         </span>
       )}
+    </div>
+  );
+};
+
+/** A limit that applies to one model rather than the whole account. */
+function isModelTier(name: string): boolean {
+  return /^(five_hour|seven_day)_/.test(name) && !TIER_I18N_KEYS[name];
+}
+
+/** A tier's label as people read it: "7-day nimbus quill" for a model tier. */
+function tierLabel(
+  name: string,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (TIER_I18N_KEYS[name]) return t(TIER_I18N_KEYS[name]);
+  const model = name.match(/^(five_hour|seven_day)_(.+)$/);
+  if (model) {
+    return `${t(TIER_I18N_KEYS[model[1]])} ${model[2].replace(/_/g, " ")}`;
+  }
+  return name.replace(/_/g, " ");
+}
+
+/** Fill color of a usage meter: quiet until the limit gets close. */
+function meterColor(utilization: number): string {
+  if (utilization >= 90) return "bg-destructive";
+  if (utilization >= 70) return "bg-amber-500";
+  return "bg-foreground/55";
+}
+
+/** One tier in inline mode: label, a thin meter, used percent and reset. */
+export const TierMeter: React.FC<{
+  tier: QuotaTier;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}> = ({ tier, t }) => {
+  const used = Math.min(Math.max(tier.utilization, 0), 100);
+  const countdown = countdownStr(tier.resetsAt);
+  return (
+    <div className="w-[118px]" title={formatResetTime(tier.resetsAt, t) ?? undefined}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="truncate text-[11.5px] text-muted-foreground">
+          {tierLabel(tier.name, t)}
+        </span>
+        <span
+          className={`text-[12px] font-medium tabular-nums ${
+            used >= 90
+              ? "text-destructive"
+              : used >= 70
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-foreground"
+          }`}
+        >
+          {Math.round(used)}%
+        </span>
+      </div>
+      <div className="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-foreground/10">
+        <div
+          className={`h-full rounded-full ${meterColor(used)}`}
+          style={{ width: `${Math.max(used, used > 0 ? 3 : 0)}%` }}
+        />
+      </div>
+      <div className="mt-1 h-[14px] text-[11px] tabular-nums text-muted-foreground/80">
+        {countdown
+          ? t("subscription.resetsInShort", {
+              time: countdown,
+              defaultValue: "resets in {{time}}",
+            })
+          : ""}
+      </div>
     </div>
   );
 };

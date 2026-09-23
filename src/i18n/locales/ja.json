@@ -103,7 +103,9 @@
         "oauthHint": "Google 公式は OAuth 個人認証を使用するため API Key は不要です。初回利用時にブラウザが開きます。"
       }
     },
-    "duplicateLiveIdsLoadFailed": "設定からプロバイダー識別子の読み込みに失敗しました。設定を修正してから再度お試しください。"
+    "duplicateLiveIdsLoadFailed": "設定からプロバイダー識別子の読み込みに失敗しました。設定を修正してから再度お試しください。",
+    "live": "使用中",
+    "inConfig": "設定に含まれています"
   },
   "notifications": {
     "providerAdded": "プロバイダーを追加しました",
@@ -197,12 +199,8 @@
         "description": "Switchy が外部 API にアクセスする際のプロキシを設定"
       },
       "data": {
-        "title": "データ管理",
-        "description": "ローカル設定データのインポートとエクスポート"
-      },
-      "backup": {
-        "title": "バックアップと復元",
-        "description": "自動バックアップの管理、データベーススナップショットの表示と復元"
+        "title": "Switchy のデータ",
+        "description": "Switchy 自身のデータベースのバックアップと、別のマシンへの移行。"
       },
       "rectifier": {
         "title": "整流器",
@@ -262,8 +260,6 @@
     "themeLight": "ライト",
     "themeDark": "ダーク",
     "themeSystem": "システム",
-    "importExport": "SQL インポート/エクスポート",
-    "importExportHint": "移行や復元用にデータベースの SQL バックアップをインポート/エクスポートします（インポートは Switchy がエクスポートしたバックアップのみ対応）。",
     "exportConfig": "SQL バックアップをエクスポート",
     "selectConfigFile": "SQL ファイルを選択",
     "import": "インポート",
@@ -409,14 +405,22 @@
     },
     "saveFailedGeneric": "保存に失敗しました。もう一度お試しください",
     "authCenter": {
-      "title": "OAuth 認証センター",
-      "description": "アプリ間で再利用する OAuth アカウントを一元管理します。プロバイダーはこれらの認証ソースにバインドされ、再ログインは不要です。",
-      "copilotDescription": "GitHub Copilot アカウント、デフォルトアカウント、および Claude / Codex / Gemini にバインドされる管理資格情報を管理します。",
-      "heading": "認証センター",
-      "headingDescription": "アプリ間で再利用可能な OAuth アカウントとデフォルトの認証ソースを一元管理します。",
-      "beta": "Beta"
+      "copilotDescription": "GitHub でサインインすると、Copilot のサブスクリプションを Claude Code の背後のモデルとして使えます。サインイン後、Claude の下に GitHub Copilot プロバイダーを追加してください。"
     },
-    "tabAuth": "認証"
+    "tabAuth": "サインイン",
+    "page": {
+      "general": "言語、外観、トレイ、サイドバーに表示するアプリ。",
+      "pool": "Switchy がリクエストをどう中継し、アカウント間をどう切り替えるか。",
+      "auth": "GitHub Copilot など、サインインが必要なプロバイダーのために Switchy がサインインするアカウント。",
+      "advanced": "各ツールの設定の場所、プロバイダーのテスト、ログ、セッション修復。",
+      "usage": "Switchy が中継したリクエストをこのマシン上で集計します。どこにも送信されません。"
+    },
+    "data": {
+      "backups": "バックアップ",
+      "backupsDescription": "Switchy は定期的にデータベースを ~/.switchy/backups にコピーします。復元すると以前のコピーに戻します。",
+      "move": "別のマシンへ移行",
+      "moveDescription": "エクスポートは API キーと Codex のログインを含むデータベース全体を 1 つのファイルに書き出します。インポートするとこのマシンのデータベースが置き換わります。"
+    }
   },
   "apps": {
     "claude": "Claude",
@@ -1081,12 +1085,14 @@
     "addQueue": "切り替え順に追加",
     "removeQueue": "切り替え順から外す",
     "priority": {
-      "tooltip": "切り替え順の {{priority}} 番目"
+      "tooltip": "切り替え順の {{priority}} 番目",
+      "label": "順番 {{priority}}"
     },
     "tooltip": {
       "enabled": "{{app}} の自動切り替えがオン\nリクエストは切り替え順（1、2、3…）に送られます",
       "disabled": "{{app}} の自動切り替えをオンにする\nすぐに切り替え順の先頭に移り、リクエストが失敗すると順に次へ移ります"
-    }
+    },
+    "toggleLabel": "自動切り替え"
   },
   "proxy": {
     "panel": {
@@ -1143,7 +1149,8 @@
         "active": "{{appLabel}} をテイクオーバー中 - {{address}}:{{port}}\nプロバイダーの切り替えはすぐに反映されます",
         "broken": "{{appLabel}} はテイクオーバー中ですが、プロキシサービスが実行されていません",
         "inactive": "{{appLabel}} のライブ設定をテイクオーバーし、リクエストをローカルプロキシ経由で送信"
-      }
+      },
+      "label": "プロキシ経由"
     },
     "failover": {
       "proxyRequired": "切り替えを設定するには、先にローカルプロキシを起動してください",
@@ -1428,7 +1435,8 @@
     "signedOutHint": {
       "codex": "このカードを有効にしてから、Codex でこのアカウントにサインイン",
       "claude": "Claude Code でこのアカウントに再ログインし、ログインを保存"
-    }
+    },
+    "resetsInShort": "{{time}} 後にリセット"
   },
   "claudeAccount": {
     "card": {
@@ -1480,5 +1488,8 @@
     "noProviders": "（プロバイダーなし）",
     "lightweightMode": "軽量モード",
     "quit": "終了"
+  },
+  "rail": {
+    "accounts": "アカウント"
   }
 }

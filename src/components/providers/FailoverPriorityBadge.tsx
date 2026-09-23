@@ -19,8 +19,7 @@ export function FailoverPriorityBadge({
   return (
     <div
       className={cn(
-        "inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold",
-        "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+        "inline-flex items-center text-[12px] tabular-nums text-muted-foreground",
         className,
       )}
       title={t("failover.priority.tooltip", {
@@ -28,7 +27,10 @@ export function FailoverPriorityBadge({
         defaultValue: "Position {{priority}} in the switching order",
       })}
     >
-      P{priority}
+      {t("failover.priority.label", {
+        priority,
+        defaultValue: "{{priority}} in order",
+      })}
     </div>
   );
 }

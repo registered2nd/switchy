@@ -5,7 +5,7 @@
  * On: takes over the live config. Off: restores the original config
  */
 
-import { Radio, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
 import { cn } from "@/lib/utils";
@@ -59,30 +59,23 @@ export function ProxyToggle({ className, activeApp }: ProxyToggleProps) {
       });
 
   return (
-    <div
+    <label
       className={cn(
-        "flex items-center gap-1 px-1.5 h-8 rounded-lg bg-muted/50 transition-all",
+        "flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] transition-colors hover:bg-muted/60",
+        takeoverEnabled ? "text-foreground" : "text-muted-foreground",
         className,
       )}
       title={tooltipText}
     >
-      {isPending ? (
-        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-      ) : (
-        <Radio
-          className={cn(
-            "h-4 w-4 transition-colors",
-            takeoverEnabled
-              ? "text-emerald-500 animate-pulse"
-              : "text-muted-foreground",
-          )}
-        />
+      {isPending && (
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
       )}
+      {t("proxy.takeover.label", { defaultValue: "Route through proxy" })}
       <Switch
         checked={takeoverEnabled}
         onCheckedChange={handleToggle}
         disabled={isPending}
       />
-    </div>
+    </label>
   );
 }

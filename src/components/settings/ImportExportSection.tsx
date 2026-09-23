@@ -44,23 +44,15 @@ export function ImportExportSection({
 
   return (
     <section className="space-y-4">
-      <header className="space-y-2">
-        <h3 className="text-base font-semibold text-foreground">
-          {t("settings.importExport")}
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          {t("settings.importExportHint")}
-        </p>
-      </header>
-
-      <div className="space-y-4 rounded-lg border border-border bg-muted/40 p-6">
+      <div className="space-y-4">
         {/* Import and Export Buttons Side by Side */}
         <div className="grid grid-cols-2 gap-4 items-stretch">
           {/* Import Button */}
           <div className="relative">
             <Button
               type="button"
-              className={`w-full h-auto py-3 px-4 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white ${selectedFile && !isImporting ? "flex-col items-start" : "items-center"}`}
+              variant="outline"
+              className={`w-full h-auto py-2.5 px-4 ${selectedFile && !isImporting ? "flex-col items-start" : "items-center"}`}
               onClick={!selectedFile ? onSelectFile : onImport}
               disabled={isImporting}
             >
@@ -104,7 +96,8 @@ export function ImportExportSection({
           <div>
             <Button
               type="button"
-              className="w-full h-full py-3 px-4 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-white items-center"
+              variant="outline"
+              className="w-full h-full py-2.5 px-4 items-center"
               onClick={onExport}
             >
               <Save className="mr-2 h-4 w-4" />

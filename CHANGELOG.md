@@ -12,6 +12,15 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ### Added
 
+- **A new look.** Switchy no longer looks like cc-switch. A sidebar lists the
+  apps, Usage Statistics and Settings, and inside Settings it lists the
+  settings pages. Each account is one line with its email, whether it is in
+  use, and its 5-hour and 7-day limits as small bars with the time to reset;
+  a model's own limit shows once that model has been used. Settings pages are
+  plain sections instead of accordion cards. Backups and import/export are one
+  page, *Switchy data*, and the Auth page is *Sign-in*. The type is IBM Plex,
+  the accent is brass, and light and dark modes both follow it.
+
 - **Usage Statistics is built around accounts.** A per-account table shows
   requests, tokens, success rate, rate-limit refusals and when each account
   was last used, over the range you pick. A Switches tab lists every account

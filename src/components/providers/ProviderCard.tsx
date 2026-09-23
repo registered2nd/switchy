@@ -19,7 +19,6 @@ import {
   extractKimiBaseUrl,
   isKimiOfficialConfig,
 } from "@/utils/providerConfigUtils";
-import { truncateEmail } from "@/utils/truncateEmail";
 import { useCodexAccountIdentity } from "@/lib/query/codexAccount";
 import { useProviderHealth } from "@/lib/query/failover";
 import { useUsageQuery } from "@/lib/query/queries";
@@ -250,50 +249,37 @@ export function ProviderCard({
           ? activeProviderId === provider.id
           : isCurrent;
 
-  const shouldUseGreen = !isAnyOmo && isProxyTakeover && isActiveProvider;
-  const hasPersistentConfigHighlight = isAdditiveMode && isInConfig;
-  const shouldUseBlue =
-    (isAnyOmo && isActiveProvider) ||
-    (!isAnyOmo &&
-      !isProxyTakeover &&
-      (isActiveProvider || hasPersistentConfigHighlight));
+  const isLive = isActiveProvider || (isAdditiveMode && isInConfig);
+  const hasFailures = Boolean(health && health.consecutive_failures > 0);
+  const accountEmail =
+    appId === "claude" && isOfficial && provider.meta?.capturedClaudeAccount
+      ? provider.meta.capturedClaudeAccount.emailAddress
+      : appId === "codex" && codexAccount
+        ? (codexAccount.email ?? codexAccount.accountId ?? "")
+        : "";
 
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-xl border border-border p-4 transition-all duration-300",
-        "bg-card text-card-foreground group",
-        isAutoFailoverEnabled || isProxyTakeover
-          ? "hover:border-emerald-500/50"
-          : "hover:border-border-active",
-        shouldUseGreen &&
-          "border-emerald-500/60 shadow-sm shadow-emerald-500/10",
-        shouldUseBlue && "border-blue-500/60 shadow-sm shadow-blue-500/10",
-        !(isActiveProvider || hasPersistentConfigHighlight) &&
-          "hover:shadow-sm",
+        "group relative bg-card px-4 py-3 text-card-foreground transition-colors",
+        isLive ? "bg-primary/[0.05]" : "hover:bg-muted/40",
         dragHandleProps?.isDragging &&
-          "cursor-grabbing border-primary shadow-lg scale-105 z-10",
+          "z-10 cursor-grabbing rounded-md shadow-lg ring-1 ring-primary/50",
       )}
     >
-      <div
-        className={cn(
-          "absolute inset-0 bg-gradient-to-r to-transparent transition-opacity duration-500 pointer-events-none",
-          shouldUseGreen && "from-emerald-500/10",
-          shouldUseBlue && "from-blue-500/10",
-          !shouldUseGreen && !shouldUseBlue && "from-primary/10",
-          isActiveProvider || hasPersistentConfigHighlight
-            ? "opacity-100"
-            : "opacity-0",
-        )}
-      />
-      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 items-center gap-2">
+      {isLive && (
+        <span
+          aria-hidden
+          className="absolute bottom-2 left-0 top-2 w-[3px] rounded-r-full bg-primary"
+        />
+      )}
+      <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <button
             type="button"
             className={cn(
-              "-ml-1.5 flex-shrink-0 cursor-grab active:cursor-grabbing p-1.5",
-              "text-muted-foreground/50 hover:text-muted-foreground transition-colors",
-              dragHandleProps?.isDragging && "cursor-grabbing",
+              "-ml-2 flex-shrink-0 cursor-grab p-1 text-muted-foreground/40 opacity-0 transition-opacity hover:text-muted-foreground group-hover:opacity-100 active:cursor-grabbing",
+              dragHandleProps?.isDragging && "cursor-grabbing opacity-100",
             )}
             aria-label={t("provider.dragHandle")}
             {...(dragHandleProps?.attributes ?? {})}
@@ -302,93 +288,78 @@ export function ProviderCard({
             <GripVertical className="h-4 w-4" />
           </button>
 
-          <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center border border-border group-hover:scale-105 transition-transform duration-300">
-            <ProviderIcon
-              icon={provider.icon}
-              name={provider.name}
-              color={provider.iconColor}
-              size={20}
-            />
-          </div>
+          <ProviderIcon
+            icon={provider.icon}
+            name={provider.name}
+            color={provider.iconColor}
+            size={22}
+          />
 
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2 min-h-7">
-              <h3 className="text-base font-semibold leading-none">
-                {provider.name}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+              <h3
+                className="truncate text-[14.5px] font-medium leading-snug"
+                title={accountEmail || provider.name}
+              >
+                {accountEmail || provider.name}
               </h3>
 
+              {isLive && (
+                <span className="text-[12px] font-medium text-primary">
+                  {isAdditiveMode
+                    ? t("provider.inConfig", { defaultValue: "In config" })
+                    : t("provider.live", { defaultValue: "In use" })}
+                </span>
+              )}
+
               {isOmo && (
-                <span className="inline-flex items-center rounded-md bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                <span className="text-[11px] font-medium text-muted-foreground">
                   OMO
                 </span>
               )}
 
               {isOmoSlim && (
-                <span className="inline-flex items-center rounded-md bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">
+                <span className="text-[11px] font-medium text-muted-foreground">
                   Slim
                 </span>
               )}
 
-              {isProxyRunning && isInFailoverQueue && health && (
+              {isProxyRunning && isInFailoverQueue && health && hasFailures && (
                 <ProviderHealthBadge
                   consecutiveFailures={health.consecutive_failures}
                 />
               )}
-
-              {isAutoFailoverEnabled &&
-                isInFailoverQueue &&
-                failoverPriority && (
-                  <FailoverPriorityBadge priority={failoverPriority} />
-                )}
             </div>
 
-            {appId === "claude" &&
-              isOfficial &&
-              provider.meta?.capturedClaudeAccount && (
-                <span
-                  className="text-xs text-muted-foreground block"
-                  title={provider.meta.capturedClaudeAccount.accountUuid}
-                >
-                  {truncateEmail(
-                    provider.meta.capturedClaudeAccount.emailAddress,
-                  )}
-                </span>
-              )}
-
-            {appId === "codex" && codexAccount && (
-              <span
-                className="text-xs text-muted-foreground block"
-                title={[codexAccount.accountId, codexAccount.planType]
-                  .filter(Boolean)
-                  .join(" · ")}
-              >
-                {truncateEmail(
-                  codexAccount.email ?? codexAccount.accountId ?? "",
-                )}
+            <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+              <span className="truncate">
+                {accountEmail ? provider.name : null}
+                {!accountEmail && displayUrl ? (
+                  <button
+                    type="button"
+                    onClick={handleOpenWebsite}
+                    className={cn(
+                      "max-w-[300px] truncate text-left",
+                      isClickableUrl
+                        ? "hover:text-foreground hover:underline"
+                        : "cursor-default",
+                    )}
+                    title={displayUrl}
+                    disabled={!isClickableUrl}
+                  >
+                    {displayUrl}
+                  </button>
+                ) : null}
               </span>
-            )}
-
-            {displayUrl && (
-              <button
-                type="button"
-                onClick={handleOpenWebsite}
-                className={cn(
-                  "inline-flex items-center text-sm max-w-[280px]",
-                  isClickableUrl
-                    ? "text-blue-500 transition-colors hover:underline dark:text-blue-400 cursor-pointer"
-                    : "text-muted-foreground cursor-default",
-                )}
-                title={displayUrl}
-                disabled={!isClickableUrl}
-              >
-                <span className="truncate">{displayUrl}</span>
-              </button>
-            )}
+              {isAutoFailoverEnabled && isInFailoverQueue && failoverPriority && (
+                <FailoverPriorityBadge priority={failoverPriority} />
+              )}
+            </div>
           </div>
         </div>
 
         <div className="flex items-center ml-auto min-w-0 gap-3">
-          <div className="hidden items-center gap-1.5 rounded-md bg-card/95 px-2 py-1 shadow-sm group-hover:flex group-focus-within:flex">
+          <div className="hidden items-center gap-1 group-hover:flex group-focus-within:flex">
             <ProviderActions
               appId={appId}
               isCurrent={isCurrent}

@@ -65,7 +65,7 @@ export function AppVisibilitySettings({
           {t("settings.appVisibility.description")}
         </p>
       </header>
-      <div className="inline-flex gap-1 rounded-md border border-border-default bg-background p-1">
+      <div className="inline-flex gap-0.5 rounded-md bg-muted p-0.5">
         {APP_CONFIG.map((app) => {
           const isVisible = visibleApps[app.id];
           // Disable button if this is the last visible app
@@ -112,11 +112,11 @@ function AppButton({
       onClick={onClick}
       disabled={disabled}
       size="sm"
-      variant={active ? "default" : "ghost"}
+      variant="ghost"
       className={cn(
         "w-[90px] gap-1.5",
         active
-          ? "shadow-sm"
+          ? "bg-card font-medium text-foreground shadow-[inset_0_-2px_0_hsl(var(--primary))] hover:bg-card"
           : "text-muted-foreground hover:text-foreground hover:bg-muted",
       )}
     >

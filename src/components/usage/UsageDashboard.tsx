@@ -66,10 +66,7 @@ export function UsageDashboard() {
       className="space-y-8 pb-8"
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-2xl font-bold">{t("usage.title")}</h2>
-          <p className="text-sm text-muted-foreground">{t("usage.subtitle")}</p>
-        </div>
+        <p className="text-[13px] text-muted-foreground">{t("usage.subtitle")}</p>
 
         <Tabs
           value={timeRange}
@@ -81,29 +78,29 @@ export function UsageDashboard() {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-10 px-2 text-xs text-muted-foreground"
+              className="h-9 px-2 text-xs text-muted-foreground"
               title={t("common.refresh", "Refresh")}
               onClick={changeRefreshInterval}
             >
               <RefreshCw className="mr-1 h-3.5 w-3.5" />
               {refreshIntervalMs > 0 ? `${refreshIntervalMs / 1000}s` : "--"}
             </Button>
-            <TabsList className="flex w-full sm:w-auto bg-card/60 border border-border/50 backdrop-blur-sm shadow-sm h-10 p-1">
+            <TabsList className="flex h-9 w-full gap-0.5 rounded-md bg-muted p-0.5 sm:w-auto">
               <TabsTrigger
                 value="1d"
-                className="flex-1 sm:flex-none sm:px-6 data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:text-primary transition-colors"
+                className="flex-1 rounded sm:flex-none sm:px-5 text-muted-foreground hover:text-foreground data-[state=active]:bg-card data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
               >
                 {t("usage.today")}
               </TabsTrigger>
               <TabsTrigger
                 value="7d"
-                className="flex-1 sm:flex-none sm:px-6 data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:text-primary transition-colors"
+                className="flex-1 rounded sm:flex-none sm:px-5 text-muted-foreground hover:text-foreground data-[state=active]:bg-card data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
               >
                 {t("usage.last7days")}
               </TabsTrigger>
               <TabsTrigger
                 value="30d"
-                className="flex-1 sm:flex-none sm:px-6 data-[state=active]:bg-primary/10 data-[state=active]:text-primary hover:text-primary transition-colors"
+                className="flex-1 rounded sm:flex-none sm:px-5 text-muted-foreground hover:text-foreground data-[state=active]:bg-card data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
               >
                 {t("usage.last30days")}
               </TabsTrigger>

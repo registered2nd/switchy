@@ -103,7 +103,9 @@
         "oauthHint": "Google Official signs in over OAuth with your Google account, so no API key is needed. A browser opens to sign in on first use."
       }
     },
-    "duplicateLiveIdsLoadFailed": "Failed to read provider IDs from the config. Fix the config and try again."
+    "duplicateLiveIdsLoadFailed": "Failed to read provider IDs from the config. Fix the config and try again.",
+    "live": "In use",
+    "inConfig": "In config"
   },
   "notifications": {
     "providerAdded": "Provider added",
@@ -197,12 +199,8 @@
         "description": "Proxy Switchy uses to reach external APIs"
       },
       "data": {
-        "title": "Data Management",
-        "description": "Import and export local configuration data"
-      },
-      "backup": {
-        "title": "Backup & Restore",
-        "description": "Automatic backups and database snapshots you can restore"
+        "title": "Switchy data",
+        "description": "Backups of Switchy's own database, and moving it to another machine."
       },
       "rectifier": {
         "title": "Rectifier",
@@ -262,8 +260,6 @@
     "themeLight": "Light",
     "themeDark": "Dark",
     "themeSystem": "System",
-    "importExport": "SQL Import/Export",
-    "importExportHint": "Export or import a SQL backup of the database to move or restore it. Import accepts only backups exported by Switchy.",
     "exportConfig": "Export SQL Backup",
     "selectConfigFile": "Select SQL File",
     "import": "Import",
@@ -409,14 +405,22 @@
     },
     "saveFailedGeneric": "Save failed. Try again.",
     "authCenter": {
-      "title": "OAuth Auth Center",
-      "description": "OAuth accounts shared across apps. Providers bind to them, so you sign in once.",
-      "copilotDescription": "GitHub Copilot accounts, the default account, and the credentials Claude / Codex / Gemini bind to.",
-      "heading": "Auth Center",
-      "headingDescription": "OAuth accounts and default auth sources shared across apps.",
-      "beta": "Beta"
+      "copilotDescription": "Sign in with GitHub to use your Copilot subscription as the model behind Claude Code: add the GitHub Copilot provider under Claude after signing in."
     },
-    "tabAuth": "Auth"
+    "tabAuth": "Sign-in",
+    "page": {
+      "general": "Language, appearance, the tray and which apps show in the sidebar.",
+      "pool": "How Switchy routes requests and moves between your accounts.",
+      "auth": "Accounts Switchy signs in to for providers that need one, such as GitHub Copilot.",
+      "advanced": "Where each tool keeps its configuration, provider tests, logging and session repair.",
+      "usage": "Requests Switchy routed, counted on this machine. Nothing is sent anywhere."
+    },
+    "data": {
+      "backups": "Backups",
+      "backupsDescription": "Switchy copies its database to ~/.switchy/backups on a schedule. Restore puts an earlier copy back.",
+      "move": "Move to another machine",
+      "moveDescription": "Export writes the whole database, API keys and Codex logins included, to one file. Import replaces this machine's database with it."
+    }
   },
   "apps": {
     "claude": "Claude",
@@ -1081,12 +1085,14 @@
     "addQueue": "Add to the switching order",
     "removeQueue": "Remove from the switching order",
     "priority": {
-      "tooltip": "Position {{priority}} in the switching order"
+      "tooltip": "Position {{priority}} in the switching order",
+      "label": "{{priority}} in order"
     },
     "tooltip": {
       "enabled": "{{app}}: Switch automatically is on\nRequests go down the switching order (1, 2, 3…)",
       "disabled": "Turn on Switch automatically for {{app}}\nMoves to the top of the switching order now, and down it when a request fails"
-    }
+    },
+    "toggleLabel": "Switch automatically"
   },
   "proxy": {
     "panel": {
@@ -1143,7 +1149,8 @@
         "active": "{{appLabel}} is taken over – {{address}}:{{port}}\nSwitching its provider takes effect immediately",
         "broken": "{{appLabel}} is taken over, but the proxy is not running",
         "inactive": "Take over {{appLabel}}'s live config and route its requests through the local proxy"
-      }
+      },
+      "label": "Route through proxy"
     },
     "failover": {
       "proxyRequired": "Start the local proxy to set up switching",
@@ -1428,7 +1435,8 @@
     "signedOutHint": {
       "codex": "Enable this card, then sign in to Codex as this account",
       "claude": "Sign in to this account in Claude Code again, then capture it"
-    }
+    },
+    "resetsInShort": "resets in {{time}}"
   },
   "claudeAccount": {
     "card": {
@@ -1480,5 +1488,8 @@
     "noProviders": "(no providers)",
     "lightweightMode": "Lightweight mode",
     "quit": "Quit"
+  },
+  "rail": {
+    "accounts": "Accounts"
   }
 }

@@ -1,12 +1,5 @@
 import { useState } from "react";
-import {
-  Server,
-  Activity,
-  Zap,
-  Globe,
-  ShieldAlert,
-  Layers,
-} from "lucide-react";
+import { ShieldAlert } from "lucide-react";
 import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import {
@@ -16,7 +9,6 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
 import { ProxyPanel } from "@/components/proxy";
 import { AutoFailoverConfigPanel } from "@/components/proxy/AutoFailoverConfigPanel";
 import { FailoverQueueManager } from "@/components/proxy/FailoverQueueManager";
@@ -93,15 +85,14 @@ export function PoolTabContent({ settings, onAutoSave }: PoolTabContentProps) {
       transition={{ duration: 0.3 }}
       className="space-y-4"
     >
-      <div className="rounded-xl glass-card px-6 py-5 space-y-5">
-        <div className="flex items-center gap-3">
-          <Layers className="h-5 w-5 text-primary" />
-          <div>
-            <h3 className="text-base font-semibold">{t("pool.title")}</h3>
-            <p className="text-sm text-muted-foreground">
-              {t("pool.description")}
-            </p>
-          </div>
+      <div className="space-y-4">
+        <div className="max-w-[62ch]">
+          <h2 className="font-display text-[17px] font-semibold tracking-tight">
+            {t("pool.title")}
+          </h2>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
+            {t("pool.description")}
+          </p>
         </div>
         <PoolControls
           onToggleProxy={handleToggleProxy}
@@ -109,37 +100,32 @@ export function PoolTabContent({ settings, onAutoSave }: PoolTabContentProps) {
         />
       </div>
 
-      <Accordion type="multiple" defaultValue={[]} className="w-full space-y-4">
+      <Accordion type="multiple" defaultValue={[]} className="w-full border-t border-border">
         {/* Local Proxy */}
         <AccordionItem
           value="proxy"
-          className="rounded-xl glass-card overflow-hidden"
+          className="border-b border-border"
         >
-          <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 data-[state=open]:bg-muted/50">
+          <AccordionTrigger className="py-4 hover:no-underline">
             <div className="flex items-center gap-3">
-              <Server className="h-5 w-5 text-green-500" />
               <div className="text-left">
-                <h3 className="text-base font-semibold">
+                <h3 className="text-[14.5px] font-medium">
                   {t("settings.advanced.proxy.title")}
                 </h3>
-                <p className="text-sm text-muted-foreground font-normal">
+                <p className="text-[12.5px] font-normal text-muted-foreground">
                   {t("settings.advanced.proxy.description")}
                 </p>
               </div>
-              <Badge
-                variant={isRunning ? "default" : "secondary"}
-                className="gap-1.5 h-6 ml-auto mr-2"
+              <span
+                className={`ml-auto mr-3 text-[12.5px] ${isRunning ? "text-success" : "text-muted-foreground"}`}
               >
-                <Activity
-                  className={`h-3 w-3 ${isRunning ? "animate-pulse" : ""}`}
-                />
                 {isRunning
                   ? t("settings.advanced.proxy.running")
                   : t("settings.advanced.proxy.stopped")}
-              </Badge>
+              </span>
             </div>
           </AccordionTrigger>
-          <AccordionContent className="px-6 pb-6 pt-4 border-t border-border/50">
+          <AccordionContent className="pb-6 pt-1">
             <ProxyPanel
               enableLocalProxy={settings?.enableLocalProxy ?? false}
               onEnableLocalProxyChange={(checked) =>
@@ -152,22 +138,21 @@ export function PoolTabContent({ settings, onAutoSave }: PoolTabContentProps) {
         {/* Auto Failover */}
         <AccordionItem
           value="failover"
-          className="rounded-xl glass-card overflow-hidden"
+          className="border-b border-border"
         >
-          <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 data-[state=open]:bg-muted/50">
+          <AccordionTrigger className="py-4 hover:no-underline">
             <div className="flex items-center gap-3">
-              <Activity className="h-5 w-5 text-orange-500" />
               <div className="text-left">
-                <h3 className="text-base font-semibold">
+                <h3 className="text-[14.5px] font-medium">
                   {t("settings.advanced.failover.title")}
                 </h3>
-                <p className="text-sm text-muted-foreground font-normal">
+                <p className="text-[12.5px] font-normal text-muted-foreground">
                   {t("settings.advanced.failover.description")}
                 </p>
               </div>
             </div>
           </AccordionTrigger>
-          <AccordionContent className="px-6 pb-6 pt-4 border-t border-border/50">
+          <AccordionContent className="pb-6 pt-1">
             <div className="space-y-6">
               <ToggleRow
                 icon={<ShieldAlert className="h-4 w-4 text-orange-500" />}
@@ -269,22 +254,21 @@ export function PoolTabContent({ settings, onAutoSave }: PoolTabContentProps) {
         {/* Rectifier */}
         <AccordionItem
           value="rectifier"
-          className="rounded-xl glass-card overflow-hidden"
+          className="border-b border-border"
         >
-          <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 data-[state=open]:bg-muted/50">
+          <AccordionTrigger className="py-4 hover:no-underline">
             <div className="flex items-center gap-3">
-              <Zap className="h-5 w-5 text-purple-500" />
               <div className="text-left">
-                <h3 className="text-base font-semibold">
+                <h3 className="text-[14.5px] font-medium">
                   {t("settings.advanced.rectifier.title")}
                 </h3>
-                <p className="text-sm text-muted-foreground font-normal">
+                <p className="text-[12.5px] font-normal text-muted-foreground">
                   {t("settings.advanced.rectifier.description")}
                 </p>
               </div>
             </div>
           </AccordionTrigger>
-          <AccordionContent className="px-6 pb-6 pt-4 border-t border-border/50">
+          <AccordionContent className="pb-6 pt-1">
             <RectifierConfigPanel />
           </AccordionContent>
         </AccordionItem>
@@ -292,22 +276,21 @@ export function PoolTabContent({ settings, onAutoSave }: PoolTabContentProps) {
         {/* Global Outbound Proxy */}
         <AccordionItem
           value="globalProxy"
-          className="rounded-xl glass-card overflow-hidden"
+          className="border-b border-border"
         >
-          <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 data-[state=open]:bg-muted/50">
+          <AccordionTrigger className="py-4 hover:no-underline">
             <div className="flex items-center gap-3">
-              <Globe className="h-5 w-5 text-cyan-500" />
               <div className="text-left">
-                <h3 className="text-base font-semibold">
+                <h3 className="text-[14.5px] font-medium">
                   {t("settings.advanced.globalProxy.title")}
                 </h3>
-                <p className="text-sm text-muted-foreground font-normal">
+                <p className="text-[12.5px] font-normal text-muted-foreground">
                   {t("settings.advanced.globalProxy.description")}
                 </p>
               </div>
             </div>
           </AccordionTrigger>
-          <AccordionContent className="px-6 pb-6 pt-4 border-t border-border/50">
+          <AccordionContent className="pb-6 pt-1">
             <GlobalProxySettings />
           </AccordionContent>
         </AccordionItem>

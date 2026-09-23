@@ -26,14 +26,8 @@ export function AboutSection() {
 
   return (
     <section className="space-y-4">
-      <header className="space-y-1">
-        <h3 className="text-sm font-medium">{t("common.about")}</h3>
-        <p className="text-xs text-muted-foreground">
-          {t("settings.aboutHint")}
-        </p>
-      </header>
 
-      <div className="rounded-xl border border-border bg-card/60 p-6 space-y-3 shadow-sm">
+      <div className="space-y-3">
         <div className="flex items-center gap-2">
           <img src={appIcon} alt="Switchy" className="h-5 w-5" />
           <h4 className="text-lg font-semibold text-foreground">Switchy</h4>

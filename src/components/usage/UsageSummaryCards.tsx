@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent } from "@/components/ui/card";
 import { useUsageSummary } from "@/lib/query/usage";
-import { Activity, DollarSign, Layers, Database, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { fmtUsd, parseFiniteNumber } from "./format";
 
@@ -37,25 +37,16 @@ export function UsageSummaryCards({
       {
         title: t("usage.totalRequests"),
         value: totalRequests.toLocaleString(),
-        icon: Activity,
-        color: "text-blue-500",
-        bg: "bg-blue-500/10",
         subValue: null,
       },
       {
         title: t("usage.totalCost"),
         value: totalCost == null ? "--" : fmtUsd(totalCost, 4),
-        icon: DollarSign,
-        color: "text-green-500",
-        bg: "bg-green-500/10",
         subValue: null,
       },
       {
         title: t("usage.totalTokens"),
         value: totalTokens.toLocaleString(),
-        icon: Layers,
-        color: "text-purple-500",
-        bg: "bg-purple-500/10",
         subValue: (
           <div className="flex flex-col gap-1 text-xs text-muted-foreground mt-3 pt-3 border-t border-border/50">
             <div className="flex justify-between items-center">
@@ -76,9 +67,6 @@ export function UsageSummaryCards({
       {
         title: t("usage.cacheTokens"),
         value: totalCacheTokens.toLocaleString(),
-        icon: Database,
-        color: "text-orange-500",
-        bg: "bg-orange-500/10",
         subValue: (
           <div className="flex flex-col gap-1 text-xs text-muted-foreground mt-3 pt-3 border-t border-border/50">
             <div className="flex justify-between items-center">
@@ -120,7 +108,7 @@ export function UsageSummaryCards({
         {[...Array(4)].map((_, i) => (
           <Card
             key={i}
-            className="border border-border/50 bg-card/40 backdrop-blur-sm shadow-sm"
+            className="rounded-lg border border-border bg-card shadow-none"
           >
             <CardContent className="p-6 flex items-center justify-center min-h-[160px]">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
@@ -140,19 +128,17 @@ export function UsageSummaryCards({
     >
       {stats.map((stat, i) => (
         <motion.div key={i} variants={item}>
-          <Card className="relative h-full overflow-hidden border border-border/50 bg-gradient-to-br from-card/50 to-background/50 backdrop-blur-xl hover:from-card/60 hover:to-background/60 transition-all shadow-sm">
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between mb-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  {stat.title}
-                </p>
-                <div className={`p-2 rounded-lg ${stat.bg}`}>
-                  <stat.icon className={`h-4 w-4 ${stat.color}`} />
-                </div>
-              </div>
+          <Card className="relative h-full overflow-hidden rounded-lg border border-border bg-card shadow-none">
+            <CardContent className="p-4">
+              <p className="mb-1 text-[12.5px] text-muted-foreground">
+                {stat.title}
+              </p>
 
               <div className="space-y-1">
-                <h3 className="text-2xl font-bold truncate" title={stat.value}>
+                <h3
+                  className="truncate font-display text-[26px] font-semibold tabular-nums tracking-tight"
+                  title={stat.value}
+                >
                   {stat.value}
                 </h3>
               </div>

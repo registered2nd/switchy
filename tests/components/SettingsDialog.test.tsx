@@ -239,6 +239,10 @@ vi.mock("@/components/settings/AboutSection", () => ({
 
 let settingsApi: any;
 
+let showSection: (
+  section: NonNullable<ComponentProps<typeof SettingsPage>["activeTab"]>,
+) => void;
+
 const renderSettingsPage = (
   props?: Partial<ComponentProps<typeof SettingsPage>>,
 ) => {
@@ -247,11 +251,19 @@ const renderSettingsPage = (
       queries: { retry: false },
     },
   });
-  return render(
+  const page = (section: ComponentProps<typeof SettingsPage>["activeTab"]) => (
     <QueryClientProvider client={client}>
-      <SettingsPage open={true} onOpenChange={vi.fn()} {...props} />
-    </QueryClientProvider>,
+      <SettingsPage
+        open={true}
+        onOpenChange={vi.fn()}
+        {...props}
+        activeTab={section}
+      />
+    </QueryClientProvider>
   );
+  const result = render(page(props?.activeTab));
+  showSection = (section) => result.rerender(page(section));
+  return result;
 };
 
 describe("SettingsPage Component", () => {
@@ -332,8 +344,7 @@ describe("SettingsPage Component", () => {
       minimizeToTrayOnClose: false,
     });
 
-    fireEvent.click(screen.getByText("settings.tabAdvanced"));
-    fireEvent.click(screen.getByText("settings.advanced.data.title"));
+    showSection("data");
 
     // With a file selected, clicking import runs importConfig
     fireEvent.click(
@@ -374,7 +385,7 @@ describe("SettingsPage Component", () => {
     renderSettingsPage({ onOpenChange });
 
     // The save button is in the advanced tab
-    fireEvent.click(screen.getByText("settings.tabAdvanced"));
+    showSection("advanced");
     fireEvent.click(screen.getByRole("button", { name: /common\.save/ }));
 
     await waitFor(() => {
@@ -433,8 +444,7 @@ describe("SettingsPage Component", () => {
   it("should trigger directory management callbacks inside advanced tab", () => {
     renderSettingsPage();
 
-    fireEvent.click(screen.getByText("settings.tabAdvanced"));
-    fireEvent.click(screen.getByText("settings.advanced.configDir.title"));
+    showSection("advanced");
 
     fireEvent.click(screen.getByText("browse-directory"));
     expect(settingsMock.browseDirectory).toHaveBeenCalledWith("claude");
