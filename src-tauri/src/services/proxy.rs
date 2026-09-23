@@ -2765,13 +2765,7 @@ fn claude_provider_owned(settings: &Value, provider: &Provider) -> Value {
         .and_then(Value::as_object)
         .map(|env| {
             env.iter()
-                .filter(|(key, _)| {
-                    key.starts_with("ANTHROPIC_")
-                        || matches!(
-                            key.as_str(),
-                            "CLAUDE_CODE_USE_BEDROCK" | "CLAUDE_CODE_USE_VERTEX" | "API_TIMEOUT_MS"
-                        )
-                })
+                .filter(|(key, _)| crate::services::provider::is_claude_connection_env_key(key))
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect()
         })

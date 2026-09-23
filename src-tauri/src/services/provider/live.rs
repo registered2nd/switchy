@@ -32,6 +32,46 @@ pub(crate) fn sanitize_claude_settings_for_live(settings: &Value) -> Value {
     v
 }
 
+/// Whether `key` is a Claude `env` key that chooses the endpoint, credentials
+/// or models, as opposed to the user's own variables.
+pub(crate) fn is_claude_connection_env_key(key: &str) -> bool {
+    key.starts_with("ANTHROPIC_")
+        || matches!(
+            key,
+            "CLAUDE_CODE_USE_BEDROCK" | "CLAUDE_CODE_USE_VERTEX" | "API_TIMEOUT_MS"
+        )
+}
+
+/// `target` with its connection `env` keys replaced by `source`'s and
+/// everything else kept. An Official account is one person's subscription:
+/// what its card stores beyond the login is an old copy of that person's own
+/// settings, so switching to it must not write that copy over the file.
+pub(crate) fn merge_claude_connection_into_target(target: &Value, source: &Value) -> Value {
+    let mut merged = target.clone();
+    let Some(target_obj) = merged.as_object_mut() else {
+        return source.clone();
+    };
+    let env = target_obj
+        .entry("env".to_string())
+        .or_insert_with(|| json!({}));
+    if !env.is_object() {
+        *env = json!({});
+    }
+    let env = env.as_object_mut().expect("env is an object");
+    env.retain(|key, _| !is_claude_connection_env_key(key));
+    if let Some(source_env) = source.get("env").and_then(Value::as_object) {
+        for (key, value) in source_env {
+            if is_claude_connection_env_key(key) {
+                env.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    if env.is_empty() {
+        target_obj.remove("env");
+    }
+    merged
+}
+
 fn build_claude_mirror_env(source: &serde_json::Map<String, Value>) -> Option<Value> {
     let source_env = source.get("env")?.as_object()?;
     let mut merged_env = serde_json::Map::new();
@@ -794,7 +834,19 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
         AppType::Claude => {
             let path = get_claude_settings_path();
             let settings = sanitize_claude_settings_for_live(&provider.settings_config);
-            write_json_file(&path, &settings)?;
+            let official = provider.category.as_deref() == Some("official");
+            let existing_live = if official && path.exists() {
+                read_json_file::<Value>(&path).ok()
+            } else {
+                None
+            };
+            match existing_live.as_ref() {
+                Some(existing) => write_json_file(
+                    &path,
+                    &merge_claude_connection_into_target(existing, &settings),
+                )?,
+                None => write_json_file(&path, &settings)?,
+            }
 
             if let Some(mirror_dir) = crate::settings::get_claude_mirror_override_dir() {
                 let mirror_path = if mirror_dir.join("settings.json").exists() {
@@ -808,6 +860,9 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
                 if mirror_path != path {
                     let mirror_settings = if mirror_path.exists() {
                         match read_json_file::<Value>(&mirror_path) {
+                            Ok(existing) if official => {
+                                merge_claude_connection_into_target(&existing, &settings)
+                            }
                             Ok(existing) => {
                                 merge_claude_provider_fields_into_target(&existing, &settings)
                             }

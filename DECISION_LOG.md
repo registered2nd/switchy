@@ -2,13 +2,13 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
-## 2026-09-23 — Under the proxy, a Claude switch changes only the keys the provider owns, superseding point 4 of the 2026-09-22 three-way merge entry
+## 2026-09-23 — A Claude switch changes only the keys the provider owns; an Official account owns only the connection keys, superseding point 4 of the 2026-09-22 three-way merge entry
 
 - Context: each Official Claude card stores an old copy of the user's whole `settings.json` (hooks, plugins, permissions, model, telemetry `env`), and the three copies differ. A hot switch applied the difference between the outgoing and incoming provider's settings, so switching from the account whose copy held Orca's hooks to one whose copy did not removed Orca's hooks from the live file (07:13 on 2026-09-23).
 - Decision: a Claude switch under the proxy merges only the keys the provider owns. Every provider owns the connection keys in `env` (`ANTHROPIC_*`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `API_TIMEOUT_MS`); an API provider also owns `model`, `permissions` and `effortLevel`, the set the WSL mirror already uses. An Official account owns nothing beyond the connection keys. Everything else in the file stays as it is on disk.
 - Why: Official accounts are one person's subscriptions, so what they store beyond the login is that person's settings at some past moment; applying it on a switch reverts the settings other tools and the user have changed since.
-- Consequence: with the proxy off, a switch still writes the provider's whole settings, including those old copies.
-- Files: `claude_provider_owned` and `sync_claude_live_from_provider_while_proxy_active` in `src-tauri/src/services/proxy.rs`.
+- With the proxy off, writing an Official account to the live file (a switch, or an edit of the current card) likewise replaces only the connection keys, in `settings.json` and in the WSL mirror; an API provider's settings are still written whole.
+- Files: `claude_provider_owned` and `sync_claude_live_from_provider_while_proxy_active` in `src-tauri/src/services/proxy.rs`; `merge_claude_connection_into_target` and the Claude arm of `write_live_snapshot` in `services/provider/live.rs`.
 
 ## 2026-09-23 — Under the proxy, Claude Code's saved login follows the enabled account, superseding "the live login is not swapped" of 2026-09-21
 
@@ -57,7 +57,7 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
   3. **Without a record** (a backup from an earlier build, or no backup), the base is the target with the keys the takeover manages as they are on disk, so only those keys change: Claude's `env` base URL, token and model-override keys; Codex's `openai_base_url` and `base_url`s. A hot switch that replaces a backup with no record first records one from the outgoing backup this way.
   4. *(Superseded 2026-09-23 for Claude: a switch changes only the keys the provider owns.)* **A hot switch or provider edit under the takeover applies only the difference between the two providers.** The base is the outgoing provider's effective settings with the takeover fields, so keys neither provider owns stay, whether they were in the file before the takeover or written during it. A Codex backup is carried across the switch the same way, keeping what it held beyond the outgoing provider's config.
 - Why: putting back only the takeover's keys is not enough, because a hot switch or a common-config edit changes the backup without touching the live file (always for Codex, for common config on Claude), and those changes still have to land when the takeover ends. The record is what separates them from other tools' edits.
-- Consequence: with the proxy off, a switch still writes the provider's whole settings file, so a key its settings (with the common config) lack is removed — Orca's hooks included, unless they are in the Claude common config.
+- Consequence: with the proxy off, a switch still writes the provider's whole settings file, so a key its settings (with the common config) lack is removed — Orca's hooks included, unless they are in the Claude common config. *(Superseded 2026-09-23 for Official accounts, which now write only the connection keys.)*
 - Files: `src-tauri/src/services/live_merge.rs`; `config_to_restore`, `merge_onto_live`, `takeover_base` and the takeover writes in `services/proxy.rs`; `start_live_backup`, `save_live_backup` and `record_live_written` in `database/dao/proxy.rs`.
 
 ## 2026-09-22 — Enable stays under Switch automatically and puts the account first; a Codex login made under the proxy is filed before routing

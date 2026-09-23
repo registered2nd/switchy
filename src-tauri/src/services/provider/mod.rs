@@ -31,7 +31,7 @@ pub(crate) use live::{
     sync_current_provider_for_app_to_live, write_live_with_common_config,
 };
 pub(crate) use live::{
-    codex_mirror_config, merge_claude_provider_fields_into_target,
+    codex_mirror_config, is_claude_connection_env_key, merge_claude_provider_fields_into_target,
     sanitize_claude_settings_for_live,
 };
 
@@ -110,6 +110,50 @@ mod tests {
                 None => env::remove_var("SWITCHY_TEST_HOME"),
             }
         }
+    }
+
+    #[test]
+    #[serial]
+    fn writing_an_official_account_changes_only_the_connection_keys() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let path = crate::config::get_claude_settings_path();
+        fs::create_dir_all(path.parent().expect("parent")).expect("create .claude");
+        let hooks = json!({ "Stop": [{ "hooks": [{ "type": "command", "command": "orca hook" }] }] });
+        fs::write(
+            &path,
+            serde_json::to_string(&json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://relay.example",
+                    "ANTHROPIC_AUTH_TOKEN": "relay-key",
+                    "OTEL_METRICS_EXPORTER": "otlp"
+                },
+                "hooks": hooks,
+                "model": "claude-fable-5-1[1m]"
+            }))
+            .expect("serialize"),
+        )
+        .expect("seed live");
+
+        // The card's stored settings are an old copy of the whole file.
+        let mut official = Provider::with_id(
+            "o".into(),
+            "Official".into(),
+            json!({ "model": "old-model", "hooks": {}, "env": { "CLAUDE_X": "1" } }),
+            None,
+        );
+        official.category = Some("official".into());
+        live::write_live_snapshot(&AppType::Claude, &official).expect("write live");
+
+        let written: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).expect("read live")).expect("parse");
+        assert_eq!(written["hooks"], hooks);
+        assert_eq!(written["model"], json!("claude-fable-5-1[1m]"));
+        assert_eq!(
+            written["env"],
+            json!({ "OTEL_METRICS_EXPORTER": "otlp" }),
+            "the relay's connection keys go; the user's own variables stay"
+        );
     }
 
     fn test_guard() -> std::sync::MutexGuard<'static, ()> {

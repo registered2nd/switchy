@@ -10,7 +10,7 @@ Each tool has its own list of provider cards. Add a provider from a preset or wr
 
 *Enable* on a card, or picking the provider from the tray, writes it into the tool's config. Claude Code picks up a switch without a restart. Codex does too while it is routed through the proxy (see [Switching Codex accounts in an open session](#switching-codex-accounts-in-an-open-session)); otherwise exit and run `codex resume --last`, which brings the conversation back under the new account. Gemini CLI and Kimi Code need a restart.
 
-Settings other than the key and endpoint — plugins, hooks, permissions — go in the tool's common config snippet (*Edit common config* in the provider form). It is merged into every provider that has *Write common config* checked, so switching providers does not drop them.
+Settings other than the key and endpoint — plugins, hooks, permissions — go in the tool's common config snippet (*Edit common config* in the provider form). It is merged into every provider that has *Write common config* checked, so switching providers does not drop them. Switching between Claude Official accounts changes only the connection settings in `settings.json` and leaves the rest of the file as it is.
 
 ## Official accounts
 
