@@ -311,6 +311,7 @@ fn announce_sign_in(provider_id: &str) {
             .proxy_service
             .reset_provider_circuit_breaker(&id, "codex")
             .await;
+        super::codex_engine::nudge();
         let payload = json!({ "appType": "codex", "providerId": id });
         if let Err(e) = app.emit("account-signed-in", payload) {
             log::warn!("[codex_pool] could not announce the sign-in: {e}");

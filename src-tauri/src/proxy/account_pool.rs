@@ -40,6 +40,11 @@ pub struct AccountPoolConfig {
     /// already running.
     #[serde(default = "default_keep_warm_interval")]
     pub keep_warm_interval_minutes: u32,
+    /// Sign Codex's shared background server in to the account the proxy
+    /// serves, so `/status` in an open Codex window follows a switch. On by
+    /// default; experimental. See `codex_engine`.
+    #[serde(default = "default_codex_shared_session")]
+    pub codex_shared_session: bool,
 }
 
 fn default_threshold() -> u8 {
@@ -54,6 +59,10 @@ fn default_keep_warm_interval() -> u32 {
     60
 }
 
+fn default_codex_shared_session() -> bool {
+    true
+}
+
 impl Default for AccountPoolConfig {
     fn default() -> Self {
         Self {
@@ -62,6 +71,7 @@ impl Default for AccountPoolConfig {
             blocked_exit_countries: default_blocked_exit_countries(),
             keep_warm_enabled: false,
             keep_warm_interval_minutes: default_keep_warm_interval(),
+            codex_shared_session: default_codex_shared_session(),
         }
     }
 }

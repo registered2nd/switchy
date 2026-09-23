@@ -1437,6 +1437,7 @@ impl ProviderService {
         crate::proxy::manual_hold::hold(app_type.as_str(), id);
         if matches!(app_type, AppType::Codex) {
             Self::check_picked_codex_login(state, id);
+            crate::proxy::codex_engine::nudge();
         }
         if let Err(e) = state.db.record_account_switch(
             app_type.as_str(),

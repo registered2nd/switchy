@@ -63,8 +63,16 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   a login OpenAI refuses, Codex is signed out the way `codex logout` does it,
   right then, so the next Codex you start opens on its own sign-in screen;
   sign in as that account. Turning the proxy off or restarting Switchy leaves
-  Codex on the login it has. Codex sessions already running keep the login
-  they started with and cannot sign in; start a new one.
+  Codex on the login it has.
+
+- **`/status` in an open Codex window shows the account you switched to**
+  (experimental, on by default: Settings → Pool → *Switch Codex's signed-in
+  account*). Switchy keeps Codex's own shared background server signed in to
+  the account in use, and Codex windows attach to it by themselves, so
+  `/status` shows the new account's email and limits as soon as you switch,
+  without sending a message. Windows already open when you update need one
+  restart. It relies on a Codex sign-in request OpenAI marks as unstable, so a
+  Codex update can stop it; switching itself keeps working either way.
 
 - **"Degraded" no longer appears on healthy accounts.** Only failures that
   are about the account count against it: a refused login, a server error, a

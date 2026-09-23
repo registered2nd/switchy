@@ -107,6 +107,7 @@ pub async fn set_account_pool_config(
         .db
         .set_account_pool_config(&config)
         .map_err(|e| e.to_string())?;
+    crate::proxy::codex_engine::nudge();
     Ok(true)
 }
 

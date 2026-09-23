@@ -442,6 +442,7 @@ pub fn run() {
             // race each other to invalidate the shared refresh_token.
             services::credential_mirror::start();
             crate::proxy::codex_pool::set_app_handle(app.handle().clone());
+            crate::proxy::codex_engine::start(app.handle().clone());
             services::credential_mirror::start_codex(app.state::<AppState>().db.clone());
 
             // Linux: disable WebKitGTK hardware acceleration so an EGL init failure cannot cause a white screen

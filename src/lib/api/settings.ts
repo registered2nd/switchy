@@ -161,6 +161,8 @@ export interface AccountPoolConfig {
   keepWarmEnabled: boolean;
   /** How often each account is considered for a keep-warm request. */
   keepWarmIntervalMinutes: number;
+  /** Sign Codex's shared background server in to the account the proxy serves. */
+  codexSharedSession: boolean;
 }
 
 export interface OptimizerConfig {

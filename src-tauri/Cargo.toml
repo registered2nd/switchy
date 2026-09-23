@@ -41,7 +41,7 @@ arboard = "3.6"
 flate2 = "1"
 brotli = "7"
 zstd = "0.13"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync", "process", "io-util"] }
 futures = "0.3"
 async-stream = "0.3"
 bytes = "1.5"
@@ -59,6 +59,7 @@ tokio-rustls = "0.26"
 rustls = { version = "0.23", features = ["ring"] }
 webpki-roots = "0.26"
 rustls-native-certs = "0.8"
+tokio-tungstenite = "0.26"
 regex = "1.10"
 rquickjs = { version = "0.8", features = ["array-buffer", "classes"] }
 thiserror = "2.0"

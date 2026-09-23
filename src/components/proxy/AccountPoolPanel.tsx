@@ -18,6 +18,7 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
     blockedExitCountries: ["CN"],
     keepWarmEnabled: false,
     keepWarmIntervalMinutes: 60,
+    codexSharedSession: true,
   });
   const [thresholdText, setThresholdText] = useState("98");
   const [keepWarmText, setKeepWarmText] = useState("60");
@@ -146,6 +147,22 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
           disabled={disabled || !config.keepWarmEnabled}
           onChange={(e) => setKeepWarmText(e.target.value)}
           onBlur={commitKeepWarmInterval}
+        />
+      </div>
+
+      <div className="flex items-center justify-between gap-4 border-t border-border/50 pt-4">
+        <div className="space-y-0.5">
+          <Label>{t("proxy.accountPool.codexSharedSession")}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t("proxy.accountPool.codexSharedSessionDescription")}
+          </p>
+        </div>
+        <Switch
+          checked={config.codexSharedSession}
+          disabled={disabled}
+          onCheckedChange={(checked) =>
+            void save({ codexSharedSession: checked })
+          }
         />
       </div>
     </div>

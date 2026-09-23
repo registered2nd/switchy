@@ -132,6 +132,9 @@ impl FailoverSwitchManager {
                 if !switched {
                     return Ok(false);
                 }
+                if app_type == "codex" {
+                    super::codex_engine::nudge();
+                }
 
                 // Claude Code's saved login follows the account the pool moved
                 // to; Codex's follows once the account has answered (see

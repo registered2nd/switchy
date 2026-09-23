@@ -7,6 +7,7 @@ pub mod body_filter;
 pub mod cache_injector;
 pub mod circuit_breaker;
 pub mod claude_pool;
+pub mod codex_engine;
 pub mod codex_pool;
 pub mod copilot_optimizer;
 pub mod error;
