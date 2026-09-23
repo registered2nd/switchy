@@ -2,6 +2,13 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-23 — Under the proxy, Claude Code's saved login follows the enabled account, superseding "the live login is not swapped" of 2026-09-21
+
+- Context: with the proxy serving Claude, a switch changed only the account the proxy presented; Claude Code's saved login stayed on whatever account it was signed in to, so `/status` never changed and the user could not see whether a switch had worked. The reason for keeping it (swapping the saved login moves every open session at once, which had corrupted terminals) does not apply in Orca.
+- Decision: every Claude switch under the proxy (Enable, rotation, failover, recovery) also runs the switch-with-proxy-off login swap: the outgoing live login is saved to its account, the new account's captured login and identity are written, and the live-owner marker names it. The proxy keeps presenting the enabled account's captured login on inference calls; Claude Code's identity calls now carry the same account.
+- Why: the user — `/status` is how he checks that switching works, and two identities per session are hard to monitor.
+- Files: `swap_claude_login` in `src-tauri/src/services/provider/mod.rs`, called from the hot-switch branch there and from `proxy/failover_switch.rs`.
+
 ## 2026-09-23 — Only failures about the account count against it; every account switch is recorded with its reason
 
 - Context: every failed request counted toward the account's health and circuit breaker, including Anthropic's 400 "prompt is too long" and the 429s that hit all three Claude accounts in the same second when one oversized request went round them. Healthy accounts showed "Degraded", and five such requests take an account out of rotation. The usage view could not say which account served a request or why the pool moved.
@@ -105,7 +112,7 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
 - Why: The mechanism is the one already built for Codex, so the Claude side is the login-handling module plus the takeover change. The 2026-04-20 reasons were policy and Cloudflare enforcement; the user-agent Claude Code's own refresh sends passes the edge (verified by TeamClaude's use), and the policy question was put to the user with the current wording of Anthropic's page, who chose to build it with the toggle off by default.
 - Consequence:
   - The 2026-04-20 abandonment stands for the captured-card quota path and for any renewal outside this toggle. Under this toggle alone a captured login is renewed only when the proxy is about to present it; the periodic loop of its BACKLOG #6 arrived later the same day as keep-warm, behind a switch of its own (see the entry above).
-  - Under rotation the live login is not swapped, so the session's own identity calls run as the account Claude Code is signed into while inference runs as the pooled one.
+  - Under rotation the live login is not swapped, so the session's own identity calls run as the account Claude Code is signed into while inference runs as the pooled one. *(Superseded 2026-09-23: the saved login now follows the enabled account.)*
   - Verified live on 2026-09-21: one `claude -p` through a test proxy serving a copy of the current account (refresh token blanked) returned its reply, and the proxy recorded the 5-hour and 7-day windows from the response.
 - Files: `src-tauri/src/proxy/claude_pool.rs`; `account_pool.rs` (settings, quota store, exit check shared with Codex); the `ClaudeOAuth` arms of `proxy/providers/claude.rs`, `proxy/forwarder.rs` and `handle_claude_passthrough` in `proxy/handlers.rs`; `apply_claude_takeover_fields` in `services/proxy.rs`.
 

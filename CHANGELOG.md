@@ -42,10 +42,13 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   that every account hits at once, no longer marks accounts as failing or
   takes them out of rotation.
 
-- **The current card shows its own account's usage with the proxy on.** It
-  showed the usage of the login Claude Code has saved, which the proxy does
-  not use. Claude Code's `/status` also shows that saved login; with the proxy
-  on, requests go out as the account you enabled.
+- **With the proxy on, `/status` in Claude Code shows the account you
+  enabled.** Enabling a Claude account, or rotation moving to one, now also
+  switches Claude Code's saved login to it, as switching does with the proxy
+  off. Before, `/status` kept showing the account Claude Code was signed in
+  to while requests went out as the enabled one.
+
+- **The current card shows its own account's usage with the proxy on.**
 
 - **Usage badges stop showing "Query failed" when you switch often.** Each
   account's usage is fetched at most once a minute, and when the usage service

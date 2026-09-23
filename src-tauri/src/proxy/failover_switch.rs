@@ -124,6 +124,20 @@ impl FailoverSwitchManager {
                     return Ok(false);
                 }
 
+                // Claude Code's saved login follows the account the pool moved to.
+                if app_type == "claude" {
+                    if let Ok(Some(provider)) =
+                        app_state.db.get_provider_by_id(provider_id, app_type)
+                    {
+                        for warning in crate::services::provider::ProviderService::swap_claude_login(
+                            app_state.inner(),
+                            &provider,
+                        ) {
+                            log::warn!("[Failover] Claude login swap: {warning}");
+                        }
+                    }
+                }
+
                 let (reason, detail) =
                     passed_over.unwrap_or((SwitchReason::Failover, String::new()));
                 if let Err(e) = self.db.record_account_switch(

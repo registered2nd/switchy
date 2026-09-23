@@ -1457,13 +1457,34 @@ impl ProviderService {
             )
             .map_err(|e| AppError::Message(format!("Hot switch failed: {e}")))?;
 
-            // Note: No Live config write, no MCP sync
-            // The proxy server will route requests to the new provider via is_current
-            return Ok(SwitchResult::default());
+            // The proxy routes requests to the new provider via is_current; the
+            // live config stays taken over. Claude Code's saved login follows
+            // the account, so /status and its account calls match what serves
+            // the requests.
+            let mut result = SwitchResult::default();
+            if matches!(app_type, AppType::Claude) {
+                result.warnings = Self::swap_claude_login(state, _provider);
+            }
+            return Ok(result);
         }
 
         // Normal mode: full switch with Live config write
         Self::switch_normal(state, app_type, id, &providers)
+    }
+
+    /// Puts `provider`'s captured Claude login into Claude Code's saved login,
+    /// as a switch with the proxy off does. Failures come back as the tagged
+    /// warnings the switch result carries.
+    pub(crate) fn swap_claude_login(state: &AppState, provider: &Provider) -> Vec<String> {
+        use crate::services::claude_account::{self, SwapOutcome};
+        match claude_account::swap_if_captured(state, provider) {
+            Ok(SwapOutcome::PartialMirror(warnings)) => warnings,
+            Ok(_) => Vec::new(),
+            Err(e) => {
+                log::warn!("Claude account swap failed for '{}': {e}", provider.id);
+                vec![format!("credential_swap_failed:{}", provider.id)]
+            }
+        }
     }
 
     /// With Switch automatically on, the proxy serves the app's switching order,
