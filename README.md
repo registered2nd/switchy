@@ -78,7 +78,7 @@ Routing an app through the proxy edits its config — Claude Code's `settings.js
 - **Health check**: the test button on a provider card sends it one request to see that it answers. The models used are set under Settings → Advanced → Model Test Config.
 - **Environment variable conflicts**: a banner lists environment variables whose names contain `ANTHROPIC`, `OPENAI` or `GEMINI`, since they can override the config Switchy writes, and can delete them after backing them up.
 - **Tray**: switch providers without opening the window.
-- **Backups and moving to another machine**: the database is backed up on a schedule (Settings → Advanced → Backup & Restore), and Settings → Advanced → Data Management exports and imports it as SQL. That export is how providers move to another machine. Sign each machine in to each account itself rather than copying a login across: one login on two machines races on renewal (see [One login, two installs](#one-login-two-installs)).
+- **Backups and moving to another machine**: the database is backed up on a schedule, and exported and imported as SQL, both under Settings → Switchy data. That export is how providers move to another machine. Sign each machine in to each account itself rather than copying a login across: one login on two machines races on renewal (see [One login, two installs](#one-login-two-installs)).
 
 ## Setup
 
