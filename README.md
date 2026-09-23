@@ -422,7 +422,7 @@ A subscription's session window — Anthropic's five hours, ChatGPT's equivalent
 
 Presenting the login renews it, so a warmed account is also a signed-in one — but only as far as its refresh token reaches. That deadline is set by the last sign-in in the browser and renewing does not push it back, so keep-warm cannot hold an account open indefinitely; when the refresh token expires the account needs `claude /login` or `codex login` while it is the current provider. Everything else is as it is for a real request: the exit check runs first, a rejected refresh token is not retried, and the quota the answer reports is recorded for rotation to use — which is the other thing keep-warm buys, since an account nobody has used reports nothing at all.
 
-The model each request uses is the test model for that tool under Settings → Advanced → Model Test Config, which defaults to the cheapest one.
+The model each request uses is the test model for that tool under Settings → Advanced → Model Test Config, which defaults to the cheapest one. A Codex account signed in with ChatGPT is refused API models, so it gets the test model only when Codex lists that model for ChatGPT logins, and otherwise the model Codex lists last, at its lightest effort.
 
 ### What a Gemini or Kimi card can show
 

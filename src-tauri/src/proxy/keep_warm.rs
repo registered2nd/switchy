@@ -26,7 +26,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::app_config::AppType;
 use crate::database::Database;
@@ -214,7 +214,7 @@ async fn warm_codex(
     let credentials = codex_pool::credentials_for(db, provider, false).await?;
 
     use crate::services::stream_check::StreamCheckService;
-    let (model, effort) = StreamCheckService::parse_model_with_effort(model);
+    let (model, effort) = chatgpt_warm_model(model, &read_codex_models_cache());
     let mut body = json!({
         "model": model,
         "input": [{ "role": "user", "content": PROMPT }],
@@ -257,6 +257,64 @@ async fn warm_codex(
     let body = response.text().await.ok();
     codex_pool::record_limit_refusal(&provider.id, status.as_u16(), body.as_deref());
     fail_on_error_status(status.as_u16(), body)
+}
+
+/// Codex's own cache of the models a ChatGPT login is offered, written by the
+/// CLI from the ChatGPT backend; `Null` when Codex has not written one.
+fn read_codex_models_cache() -> Value {
+    let path = crate::codex_config::get_codex_config_dir().join("models_cache.json");
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or(Value::Null)
+}
+
+/// The model and effort a ChatGPT login is warmed with. The test model is an
+/// API model by default, which a ChatGPT login refuses, so it is used only
+/// when Codex's own list for ChatGPT logins has it; otherwise the model Codex
+/// lists last, at its lightest effort. Reading the list rather than naming a
+/// model keeps this current as OpenAI retires models.
+fn chatgpt_warm_model(configured: &str, models_cache: &Value) -> (String, Option<String>) {
+    use crate::services::stream_check::StreamCheckService;
+    let (configured_model, configured_effort) =
+        StreamCheckService::parse_model_with_effort(configured);
+
+    let listed: Vec<&Value> = models_cache
+        .get("models")
+        .and_then(Value::as_array)
+        .map(|models| {
+            models
+                .iter()
+                .filter(|m| m.get("visibility").and_then(Value::as_str) == Some("list"))
+                .collect()
+        })
+        .unwrap_or_default();
+    let slug = |m: &Value| m.get("slug").and_then(Value::as_str).map(str::to_string);
+
+    if listed
+        .iter()
+        .any(|m| slug(m).as_deref() == Some(configured_model.as_str()))
+    {
+        return (configured_model, configured_effort);
+    }
+    let last = listed
+        .iter()
+        .max_by_key(|m| m.get("priority").and_then(Value::as_i64).unwrap_or(0));
+    match last.and_then(|m| slug(m).map(|s| (s, m))) {
+        Some((model, entry)) => {
+            let lightest = entry
+                .get("supported_reasoning_levels")
+                .and_then(Value::as_array)
+                .and_then(|levels| levels.first())
+                .and_then(|level| level.get("effort"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            (model, lightest)
+        }
+        // No list to go by: send the test model, and a refusal names it in
+        // the log.
+        None => (configured_model, configured_effort),
+    }
 }
 
 /// The window opens on any answer upstream gives, including a refusal, and
@@ -366,6 +424,38 @@ mod tests {
     fn the_interval_is_the_floor_between_two_attempts() {
         assert!(!is_due(Some(NOW - 1800), None, false, HOUR, NOW));
         assert!(is_due(Some(NOW - 3600), None, false, HOUR, NOW));
+    }
+
+    fn models_cache() -> Value {
+        json!({ "models": [
+            { "slug": "gpt-6-astra", "visibility": "list", "priority": 1,
+              "supported_reasoning_levels": [{ "effort": "medium" }, { "effort": "high" }] },
+            { "slug": "gpt-5.5", "visibility": "list", "priority": 12,
+              "supported_reasoning_levels": [{ "effort": "low" }, { "effort": "medium" }] },
+            { "slug": "codex-auto-review", "visibility": "hide", "priority": 43,
+              "supported_reasoning_levels": [{ "effort": "low" }] },
+        ]})
+    }
+
+    #[test]
+    fn a_chatgpt_login_is_warmed_with_a_model_codex_lists_for_it() {
+        // The API test model is not offered to a ChatGPT login: the model
+        // Codex lists last is used, at its lightest effort. Hidden models
+        // are not candidates.
+        assert_eq!(
+            chatgpt_warm_model("gpt-5.1-codex@low", &models_cache()),
+            ("gpt-5.5".to_string(), Some("low".to_string()))
+        );
+        // A test model that is on the list is kept, effort and all.
+        assert_eq!(
+            chatgpt_warm_model("gpt-6-astra@high", &models_cache()),
+            ("gpt-6-astra".to_string(), Some("high".to_string()))
+        );
+        // No list: the test model goes out as configured.
+        assert_eq!(
+            chatgpt_warm_model("gpt-5.1-codex@low", &Value::Null),
+            ("gpt-5.1-codex".to_string(), Some("low".to_string()))
+        );
     }
 
     #[test]

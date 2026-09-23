@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [Unreleased]
+
+### Fixed
+
+- **Keeping Codex accounts warm works for ChatGPT logins.** It sent the Codex
+  test model, an API model that a ChatGPT login refuses, so every warm-up of
+  a ChatGPT-signed-in account failed. It now uses a model Codex itself offers
+  to ChatGPT logins.
+
 ## [1.0.16] — 2026-09-22 — Settings has a Pool tab, and rotation counts the requested model's own limit
 
 ### Changed
