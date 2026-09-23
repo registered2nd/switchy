@@ -27,10 +27,25 @@ pub fn get_home_dir() -> PathBuf {
         }
     }
 
+    // A unit test that sets no test home gets a throwaway one, never the real
+    // home: tests run in parallel, and one that ran while another's test home
+    // was unset has written the user's real settings and CLI configs.
+    #[cfg(test)]
+    {
+        std::env::temp_dir().join(format!("switchy-unit-test-home-{}", std::process::id()))
+    }
+
+    #[cfg(not(test))]
     dirs::home_dir().unwrap_or_else(|| {
         log::warn!("Could not get the user home directory; falling back to the current directory");
         PathBuf::from(".")
     })
+}
+
+/// True in tests: machine-wide defaults (such as the auto-detected WSL
+/// mirror) must not be used there.
+pub fn is_test_sandbox() -> bool {
+    cfg!(test) || std::env::var_os(crate::paths::ENV_TEST_HOME).is_some()
 }
 
 /// Get the Claude Code config directory path

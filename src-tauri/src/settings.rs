@@ -453,7 +453,7 @@ pub fn get_claude_mirror_override_dir() -> Option<PathBuf> {
     // happens to have WSL, every "no mirror configured" test would quietly
     // become a mirror test and stop checking what it was written to check.
     // Tests that want a mirror set one explicitly.
-    if std::env::var_os(crate::paths::ENV_TEST_HOME).is_some() {
+    if crate::config::is_test_sandbox() {
         return None;
     }
     static DEFAULT_MIRROR: OnceLock<Option<String>> = OnceLock::new();
@@ -471,7 +471,7 @@ pub fn get_codex_mirror_override_dir() -> Option<PathBuf> {
         return Some(resolve_override_path(p));
     }
     drop(settings);
-    if std::env::var_os(crate::paths::ENV_TEST_HOME).is_some() {
+    if crate::config::is_test_sandbox() {
         return None;
     }
     static DEFAULT_MIRROR: OnceLock<Option<String>> = OnceLock::new();
