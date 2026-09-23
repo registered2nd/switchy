@@ -16,9 +16,9 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   apps, Usage Statistics and Settings, and inside Settings it lists the
   settings pages. Each account is one line with its email, whether it is in
   use, and its 5-hour and 7-day limits as small bars with the time to reset;
-  a narrower limit, such as one model's, shows once it has been used. Pointing
-  at a line shows Enable and a menu with edit, duplicate, the switching order
-  and delete. The window opens larger, so full email addresses fit. Settings
+  a narrower limit, such as one model's, shows once it has been used. Enable
+  sits at the end of every line not in use, and pointing at a line shows a
+  menu with edit, duplicate, the switching order and delete. The window opens larger, so full email addresses fit. Settings
   pages are plain sections instead of accordion cards. Backups and
   import/export are one page, *Switchy data*. The GitHub Copilot provider signs
   in from its own form, so Settings has no sign-in page. The type is IBM Plex,

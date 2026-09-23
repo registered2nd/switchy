@@ -177,14 +177,7 @@ export function ProviderActions({
   const showMainButton = isOmo || isAdditiveMode || !isCurrent;
 
   return (
-    <div
-      className={cn(
-        "flex min-w-[6.75rem] items-center justify-end gap-1 transition-opacity",
-        menuOpen
-          ? "opacity-100"
-          : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-      )}
-    >
+    <div className="flex min-w-[6.75rem] items-center justify-end gap-1">
       {appId === "openclaw" && isInConfig && onSetAsDefault && (
         <Button
           size="sm"
@@ -222,7 +215,12 @@ export function ProviderActions({
           <Button
             size="icon"
             variant="ghost"
-            className="h-8 w-8"
+            className={cn(
+              "h-8 w-8 transition-opacity",
+              menuOpen
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+            )}
             title={t("provider.moreActions", { defaultValue: "More actions" })}
             aria-label={t("provider.moreActions", {
               defaultValue: "More actions",
