@@ -42,6 +42,11 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   that every account hits at once, no longer marks accounts as failing or
   takes them out of rotation.
 
+- **Switching Claude accounts with the proxy on keeps your settings.** A
+  switch changes only the connection settings. Hooks (Orca's among them),
+  plugins, permissions and the model stay as they are, even when the account
+  you switch away from stored an older copy of them.
+
 - **With the proxy on, `/status` in Claude Code shows the account you
   enabled.** Enabling a Claude account, or rotation moving to one, now also
   switches Claude Code's saved login to it, as switching does with the proxy

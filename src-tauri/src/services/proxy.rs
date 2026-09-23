@@ -186,10 +186,12 @@ impl ProxyService {
     }
 
     /// Rewrites Claude's live settings for `provider` while the proxy has them.
-    /// Only what differs between `previous` (the provider the file was
-    /// written for) and `provider` changes, so keys other tools put in the
-    /// file stay. Without `previous`, the record of what the takeover wrote
-    /// is the base, and without that the provider's settings are written as
+    /// Only the keys a provider owns change (see `claude_provider_owned`), and
+    /// only where they differ between `previous` (the provider the file was
+    /// written for) and `provider`. Everything else in the file (hooks,
+    /// plugins, the status line) belongs to the user and other tools and
+    /// stays. Without `previous`, the record of what the takeover wrote is
+    /// the base; without a live file the provider's settings are written as
     /// they are.
     pub async fn sync_claude_live_from_provider_while_proxy_active(
         &self,
@@ -199,14 +201,23 @@ impl ProxyService {
         let (proxy_url, _) = self.build_proxy_urls().await?;
         let effective_settings = self.claude_settings_under_takeover(provider, &proxy_url)?;
         let base = match previous {
-            Some(previous) => Some(self.claude_settings_under_takeover(previous, &proxy_url)?),
-            None => self.live_written(&AppType::Claude).await,
+            Some(previous) => Some(claude_provider_owned(
+                &self.claude_settings_under_takeover(previous, &proxy_url)?,
+                previous,
+            )),
+            None => self
+                .live_written(&AppType::Claude)
+                .await
+                .map(|written| claude_provider_owned(&written, provider)),
         };
-        let mut merged = match (base, self.read_claude_live().ok()) {
-            (Some(base), Some(live)) => {
-                Self::merge_live(&AppType::Claude, &base, effective_settings.clone(), &live)
-            }
-            _ => effective_settings.clone(),
+        let mut merged = match self.read_claude_live().ok() {
+            Some(live) => Self::merge_live(
+                &AppType::Claude,
+                &base.unwrap_or_else(|| json!({})),
+                claude_provider_owned(&effective_settings, provider),
+                &live,
+            ),
+            None => effective_settings.clone(),
         };
         let keep_login = self.claude_takeover_keeps_login(Some(provider));
         Self::apply_claude_takeover_fields(&mut merged, &proxy_url, keep_login);
@@ -2740,6 +2751,43 @@ impl ProxyService {
     }
 }
 
+/// The part of Claude settings a provider switch owns while the proxy has the
+/// file. Every provider owns the `env` keys that choose the endpoint,
+/// credentials and models (`ANTHROPIC_*`, the Bedrock and Vertex switches,
+/// the API timeout). An API provider also owns `model`, `permissions` and
+/// `effortLevel`, as a switch into the WSL mirror counts them. An Official
+/// account owns nothing more: Official accounts are one person's
+/// subscriptions, and what they store beyond the login is an old copy of
+/// that person's own settings.
+fn claude_provider_owned(settings: &Value, provider: &Provider) -> Value {
+    let env: serde_json::Map<String, Value> = settings
+        .get("env")
+        .and_then(Value::as_object)
+        .map(|env| {
+            env.iter()
+                .filter(|(key, _)| {
+                    key.starts_with("ANTHROPIC_")
+                        || matches!(
+                            key.as_str(),
+                            "CLAUDE_CODE_USE_BEDROCK" | "CLAUDE_CODE_USE_VERTEX" | "API_TIMEOUT_MS"
+                        )
+                })
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut owned = serde_json::Map::new();
+    owned.insert("env".to_string(), Value::Object(env));
+    if provider.category.as_deref() != Some("official") {
+        for key in ["model", "permissions", "effortLevel"] {
+            if let Some(value) = settings.get(key) {
+                owned.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    Value::Object(owned)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3935,6 +3983,61 @@ command = "latest-command"
         let mut expected = provider_b.settings_config.clone();
         expected["hooks"] = orca_hooks();
         assert_eq!(service.read_claude_live().expect("read live"), expected);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn switching_away_from_an_account_that_stored_the_hooks_keeps_them() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        // Two Official accounts. The outgoing one's stored settings are an old
+        // copy of the whole file, hooks and model included; the incoming one
+        // stored neither.
+        let official = |id: &str, settings: Value| {
+            let mut provider = Provider::with_id(id.to_string(), id.to_uppercase(), settings, None);
+            provider.category = Some("official".to_string());
+            provider.meta = Some(crate::provider::ProviderMeta {
+                captured_claude_account: Some(crate::provider::CapturedClaudeAccountMeta {
+                    account_uuid: format!("uuid-{id}"),
+                    email_address: format!("{id}@example.com"),
+                    captured_at: 1,
+                }),
+                ..Default::default()
+            });
+            provider
+        };
+        let provider_a = official(
+            "a",
+            json!({
+                "model": "claude-fable-5-1[1m]",
+                "permissions": { "allow": ["Bash"] },
+                "hooks": orca_hooks(),
+            }),
+        );
+        let provider_b = official("b", json!({ "env": {} }));
+        db.save_provider("claude", &provider_a).expect("save a");
+        db.save_provider("claude", &provider_b).expect("save b");
+        db.set_current_provider("claude", "a").expect("set current");
+        crate::settings::set_current_provider(&AppType::Claude, Some("a"))
+            .expect("set local current");
+        service
+            .write_claude_live(&provider_a.settings_config)
+            .expect("seed live");
+        take_over_claude(&service).await;
+
+        service
+            .hot_switch_provider("claude", "b")
+            .await
+            .expect("hot switch");
+
+        let live = service.read_claude_live().expect("read live");
+        assert_eq!(live["hooks"], orca_hooks());
+        assert_eq!(live["model"], json!("claude-fable-5-1[1m]"));
+        assert_eq!(live["permissions"], json!({ "allow": ["Bash"] }));
+        assert!(ProxyService::is_claude_live_taken_over(&live));
     }
 
     #[tokio::test]
