@@ -200,8 +200,8 @@
       "confirm": "I understand, enable"
     },
     "failover": {
-      "title": "Enable Failover",
-      "message": "Failover is an advanced feature. Please make sure you understand how it works before enabling.\n\nWe recommend configuring provider priorities in the failover queue first.",
+      "title": "Turn on Switch automatically",
+      "message": "With Switch automatically on, an app is served from its switching order instead of the one provider you picked, and moves down the list when a request fails.\n\nSet up the switching order first.",
       "confirm": "I understand, enable"
     },
     "usage": {
@@ -235,9 +235,9 @@
         "title": "Local Proxy",
         "description": "Control proxy service toggle, view status and port info",
         "enableFeature": "Show Proxy Toggle on Main Page",
-        "enableFeatureDescription": "When enabled, the proxy and failover toggles will appear at the top of the main page",
-        "enableFailoverToggle": "Show Failover Toggle on Main Page",
-        "enableFailoverToggleDescription": "When enabled, the failover toggle will appear independently at the top of the main page",
+        "enableFeatureDescription": "When enabled, the proxy and Switch automatically toggles appear at the top of the main page",
+        "enableFailoverToggle": "Show Switch automatically on the main page",
+        "enableFailoverToggleDescription": "When enabled, the Switch automatically toggle appears on its own at the top of the main page",
         "running": "Running",
         "stopped": "Stopped"
       },
@@ -246,8 +246,8 @@
         "description": "Configure default models and prompts for model testing"
       },
       "failover": {
-        "title": "Auto Failover",
-        "description": "Configure failover queue and circuit breaker strategy"
+        "title": "Switching order and retries",
+        "description": "The order providers are tried in, retries and timeouts, and when a failing provider is skipped for a while"
       },
       "pricing": {
         "title": "Cost Pricing",
@@ -1842,17 +1842,17 @@
     "consecutiveFailures": "{{count}} consecutive failures"
   },
   "failover": {
-    "enabled": "{{app}} failover enabled",
-    "disabled": "{{app}} failover disabled",
+    "enabled": "{{app}}: Switch automatically on",
+    "disabled": "{{app}}: Switch automatically off",
     "toggleFailed": "Operation failed: {{detail}}",
     "inQueue": "In queue",
     "addQueue": "Add",
     "priority": {
-      "tooltip": "Failover priority {{priority}}"
+      "tooltip": "Position {{priority}} in the switching order"
     },
     "tooltip": {
-      "enabled": "{{app}} failover enabled\nRequests follow queue priority (P1→P2→...)",
-      "disabled": "Enable {{app}} failover\nSwitches to queue P1 immediately, then falls back on failures"
+      "enabled": "{{app}}: Switch automatically is on\nRequests go down the switching order (1, 2, 3…)",
+      "disabled": "Turn on Switch automatically for {{app}}\nMoves to the top of the switching order now, and down it when a request fails"
     }
   },
   "proxy": {
@@ -1965,31 +1965,31 @@
       }
     },
     "failover": {
-      "proxyRequired": "Proxy service must be started to configure failover",
-      "autoSwitch": "Auto Failover",
-      "autoSwitchDescription": "When enabled, switches to queue P1 immediately and automatically tries the next provider in the queue on failures"
+      "proxyRequired": "Start the local proxy to set up switching",
+      "autoSwitch": "Switch automatically",
+      "autoSwitchDescription": "When on, moves to the top of the switching order straight away, and to the next provider when a request fails"
     },
     "failoverQueue": {
-      "title": "Failover Queue",
-      "description": "Manage failover order for each app's providers",
-      "info": "When auto failover is enabled, requests follow the queue priority order (P1 first). On failures, the system will try the next provider in the queue.",
+      "title": "Switching order",
+      "description": "The providers this app switches between, in the order they are tried",
+      "info": "With Switch automatically on, requests go to the first provider in the list, and to the next one when a request fails.",
       "selectProvider": "Select a provider to add to queue",
       "noAvailableProviders": "No providers available to add",
-      "empty": "Failover queue is empty. Add providers to enable automatic failover.",
+      "empty": "No providers in the switching order yet. Add some to switch between them.",
       "orderHint": "Queue order matches the provider list order on the Home page. Reorder providers on the Home page to change priority.",
-      "dragHint": "Drag providers to adjust failover order. Lower numbers have higher priority.",
+      "dragHint": "Drag to change the order. Lower numbers are tried first.",
       "toggleEnabled": "Enable/Disable",
-      "addSuccess": "Added to failover queue",
+      "addSuccess": "Added to the switching order",
       "addFailed": "Failed to add",
-      "removeSuccess": "Removed from failover queue",
+      "removeSuccess": "Removed from the switching order",
       "removeFailed": "Failed to remove",
-      "reorderSuccess": "Queue order updated",
+      "reorderSuccess": "Switching order updated",
       "reorderFailed": "Failed to update order",
       "toggleFailed": "Failed to update status"
     },
     "accountPool": {
       "enabled": "Rotate accounts before the limit",
-      "enabledDescription": "With automatic failover on, an Official account whose usage reaches the threshold is moved to the back of the queue until its limit resets, so the session carries on with the next account. Applies to Claude and Codex.",
+      "enabledDescription": "With Switch automatically on, an Official account whose usage reaches the threshold is moved to the back of the switching order until its limit resets, so the session carries on with the next account. Applies to Claude and Codex.",
       "threshold": "Usage threshold (%)",
       "thresholdDescription": "Pass an account over once its account-wide usage reaches this level. 50–100.",
       "keepWarm": "Keep accounts warm",
@@ -1998,8 +1998,8 @@
       "keepWarmIntervalDescription": "How often each account is considered. A request goes out only when that account's window has lapsed and the account is not at its limit, so the cost stays near one request per account per window. 15–1440."
     },
     "autoFailover": {
-      "info": "When the failover queue has multiple providers, the system will try them in priority order when requests fail. When a provider reaches the consecutive failure threshold, the circuit breaker will open and skip it temporarily.",
-      "configSaved": "Auto failover config saved",
+      "info": "Providers in the switching order are tried in turn when a request fails. A provider that fails too many times in a row is skipped for a while.",
+      "configSaved": "Switching settings saved",
       "configSaveFailed": "Failed to save",
       "validationFailed": "The following fields are out of valid range: {{fields}}",
       "retrySettings": "Retry & Timeout Settings",
@@ -2392,10 +2392,10 @@
     "title": "Account Pool",
     "description": "Run several subscription accounts as one. Route an app through the local proxy, and the session moves to the next account before the current one reaches its limit.",
     "proxy": "Local proxy",
-    "proxyDescription": "Routing, failover and rotation all need it running.",
+    "proxyDescription": "Routing, switching and rotation all need it running.",
     "route": "Route through the proxy",
     "routeDescription": "The apps whose requests go through the proxy.",
-    "failover": "Automatic failover",
-    "failoverDescription": "When a request fails or an account nears its limit, move on to the next provider in that app's queue."
+    "failover": "Switch automatically",
+    "failoverDescription": "Serve the app from its switching order instead of the one provider you picked: start at the top, and move to the next when a request fails."
   }
 }

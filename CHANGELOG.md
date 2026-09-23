@@ -12,11 +12,15 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 - **The Proxy tab is now the Pool tab.** Its top card holds everything the
   account pool runs on, in the order each builds on the last: the local proxy,
-  which apps are routed through it, automatic failover per app, rotating
+  which apps are routed through it, *Switch automatically* per app, rotating
   accounts before the limit, and keeping accounts warm. Rotation and keep-warm
   are set once there instead of under each app's failover settings. The proxy
   server's address and statistics, the failover queues and circuit breaker,
   the rectifier and the outbound proxy are in collapsed sections below it.
+- **Failover is now called Switch automatically**, and the failover queue is
+  the **switching order**: an app with it on is served from that ordered list
+  of providers rather than the one selected, moving down it when a request
+  fails.
 
 ## [1.0.15] — 2026-09-21 — Pooled accounts can be kept warm, and the proxy speaks English
 

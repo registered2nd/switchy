@@ -246,7 +246,7 @@
         "description": "配置模型测试使用的默认模型和提示词"
       },
       "failover": {
-        "title": "自动故障转移",
+        "title": "切换顺序与重试",
         "description": "配置故障转移队列和熔断策略"
       },
       "pricing": {
@@ -1970,7 +1970,7 @@
       "autoSwitchDescription": "开启后将立即切换到队列 P1，并在请求失败时自动切换到队列中的下一个供应商"
     },
     "failoverQueue": {
-      "title": "故障转移队列",
+      "title": "切换顺序",
       "description": "管理各应用的供应商故障转移顺序",
       "info": "启用自动故障转移后，将按队列优先级选择供应商（P1 优先）。当请求失败时，系统会按队列顺序依次尝试下一个供应商。",
       "selectProvider": "选择供应商添加到队列",
@@ -2392,10 +2392,10 @@
     "title": "账号池",
     "description": "把多个订阅账号当作一个使用：让应用经本地代理转发，当前账号接近上限前会话就切换到下一个账号。",
     "proxy": "本地代理",
-    "proxyDescription": "转发、故障转移和轮换都需要它在运行。",
+    "proxyDescription": "转发、切换和轮换都需要它在运行。",
     "route": "经代理转发",
     "routeDescription": "请求经由代理转发的应用。",
-    "failover": "自动故障转移",
-    "failoverDescription": "请求失败或账号接近上限时，切换到该应用队列中的下一个供应商。"
+    "failover": "自动切换",
+    "failoverDescription": "按切换顺序为应用提供服务，而不是只用你选中的那一个：从第一个开始，请求失败时换到下一个。"
   }
 }
