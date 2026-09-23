@@ -101,6 +101,15 @@ export const providersApi = {
     });
   },
 
+  /** A new login was filed with an account's card. */
+  async onAccountSignedIn(
+    handler: (event: { appType: string; providerId: string }) => void,
+  ): Promise<UnlistenFn> {
+    return await listen("account-signed-in", (event) => {
+      handler(event.payload as { appType: string; providerId: string });
+    });
+  },
+
   async onSwitched(
     handler: (event: ProviderSwitchEvent) => void,
   ): Promise<UnlistenFn> {

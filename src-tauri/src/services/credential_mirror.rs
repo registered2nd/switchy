@@ -59,15 +59,19 @@ pub fn start() {
 }
 
 /// Same reconciler for Codex's ChatGPT login (`tokens` in `~/.codex/auth.json`),
-/// which rotates its refresh token the same way. No-op while no Codex mirror
-/// dir is configured.
-pub fn start_codex() {
+/// which rotates its refresh token the same way. After each pass a sign-in
+/// made on either side is filed with its card straight away.
+pub fn start_codex(db: std::sync::Arc<crate::database::Database>) {
     let _ = std::thread::Builder::new()
         .name("codex-cred-mirror".to_string())
-        .spawn(|| {
+        .spawn(move || {
+            let reconcile_and_file = move || {
+                reconcile_codex();
+                crate::proxy::codex_pool::file_live_login(&db);
+            };
             if let Err(e) = run_watch(
                 crate::codex_config::get_codex_auth_path(),
-                reconcile_codex,
+                reconcile_and_file,
                 "credential_mirror/codex",
             ) {
                 log::warn!("[credential_mirror/codex] watcher exited: {e}");
@@ -85,7 +89,7 @@ fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 fn run_watch(
     live: std::path::PathBuf,
-    reconcile: fn(),
+    reconcile: impl Fn(),
     tag: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let watch_dir = match live.parent() {

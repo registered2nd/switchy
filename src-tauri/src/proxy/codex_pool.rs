@@ -282,6 +282,42 @@ fn is_new_sign_in_of(auth: &Value, refused: &Value) -> bool {
     key(auth).is_some() && key(auth) == key(refused) && refresh(auth) != refresh(refused)
 }
 
+static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+/// Lets a sign-in filed with a card reach the window and the proxy.
+pub fn set_app_handle(app: tauri::AppHandle) {
+    let _ = APP.set(app);
+}
+
+/// A new sign-in filed with a card clears what the refused login left behind,
+/// its failure count and circuit breaker, and tells the window, so the card
+/// shows the account signed in without waiting for a request.
+fn announce_sign_in(provider_id: &str) {
+    let Some(app) = APP.get().cloned() else {
+        return;
+    };
+    let id = provider_id.to_string();
+    tauri::async_runtime::spawn(async move {
+        use tauri::{Emitter, Manager};
+        let state = app.state::<crate::store::AppState>();
+        if let Err(e) = state
+            .db
+            .update_provider_health(&id, "codex", true, None)
+            .await
+        {
+            log::warn!("[codex_pool] could not clear the failures of provider={id}: {e}");
+        }
+        let _ = state
+            .proxy_service
+            .reset_provider_circuit_breaker(&id, "codex")
+            .await;
+        let payload = json!({ "appType": "codex", "providerId": id });
+        if let Err(e) = app.emit("account-signed-in", payload) {
+            log::warn!("[codex_pool] could not announce the sign-in: {e}");
+        }
+    });
+}
+
 fn read_live_auth() -> Value {
     let path = crate::codex_config::get_codex_auth_path();
     match std::fs::read(&path) {
@@ -319,15 +355,21 @@ fn adopt_newer_live_login(db: &Database, provider: &mut Provider) {
     if codex_account::judge_backfill(&stored, &live) != BackfillVerdict::Accept {
         return;
     }
+    let was_refused = needs_sign_in(provider);
     let merged = codex_account::transplant_login(&stored, &live);
     if let Some(obj) = provider.settings_config.as_object_mut() {
         obj.insert("auth".to_string(), merged);
     }
     match db.save_provider("codex", provider) {
-        Ok(()) => log::info!(
-            "[codex_pool] provider={} took the newer login from auth.json",
-            provider.id
-        ),
+        Ok(()) => {
+            log::info!(
+                "[codex_pool] provider={} took the newer login from auth.json",
+                provider.id
+            );
+            if was_refused {
+                announce_sign_in(&provider.id);
+            }
+        }
         Err(e) => log::warn!(
             "[codex_pool] could not store the newer live login for provider={}: {e}",
             provider.id
@@ -375,10 +417,13 @@ pub fn file_live_login(db: &Database) {
                 obj.insert("auth".to_string(), merged);
             }
             match db.save_provider("codex", &current) {
-                Ok(()) => log::info!(
-                    "[codex_pool] provider={} took the new login from auth.json",
-                    current.id
-                ),
+                Ok(()) => {
+                    log::info!(
+                        "[codex_pool] provider={} took the new login from auth.json",
+                        current.id
+                    );
+                    announce_sign_in(&current.id);
+                }
                 Err(e) => log::warn!(
                     "[codex_pool] could not store the new login under provider={}: {e}",
                     current.id

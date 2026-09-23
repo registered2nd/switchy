@@ -441,7 +441,8 @@ pub fn run() {
             // of the rotating live refresh-token chain so the two sides don't
             // race each other to invalidate the shared refresh_token.
             services::credential_mirror::start();
-            services::credential_mirror::start_codex();
+            crate::proxy::codex_pool::set_app_handle(app.handle().clone());
+            services::credential_mirror::start_codex(app.state::<AppState>().db.clone());
 
             // Linux: disable WebKitGTK hardware acceleration so an EGL init failure cannot cause a white screen
             #[cfg(target_os = "linux")]

@@ -88,9 +88,12 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   started before this need a restart to pick it up.
 
 - **Signing in to a Codex account works with the proxy on.** Enable the
-  account's card and run `codex login`: the new login is stored with that
-  card. Before, a login made while the proxy served Codex was never picked
-  up unless the account already had one.
+  account's card and sign in, on Codex's sign-in screen or with
+  `codex login`, on Windows or in WSL: the new login is stored with that
+  card as soon as it appears, and the card shows the account signed in, with
+  the failures the refused login left cleared. Before, a login made while
+  the proxy served Codex was never picked up unless the account already had
+  one.
 
 - **Keeping Codex accounts warm works for ChatGPT logins.** It sent the Codex
   test model, an API model that a ChatGPT login refuses, so every warm-up of

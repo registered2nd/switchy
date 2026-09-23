@@ -256,6 +256,28 @@ function App() {
     };
   }, [activeApp, refetch]);
 
+  // A sign-in filed with a card: show it signed in and clear the failures
+  // the refused login left, without waiting for the next poll.
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    providersApi
+      .onAccountSignedIn((event) => {
+        queryClient.invalidateQueries({ queryKey: ["subscription", "quota"] });
+        queryClient.invalidateQueries({
+          queryKey: ["providerHealth", event.providerId],
+        });
+      })
+      .then((fn) => {
+        unsubscribe = fn;
+      })
+      .catch((error) =>
+        console.error("[App] Failed to subscribe to sign-in events", error),
+      );
+    return () => {
+      unsubscribe?.();
+    };
+  }, [queryClient]);
+
   // Name the account when a request finds its login refused for good. The
   // proxy moves on to another account; this says which one needs signing in.
   const signedOutNoticeAt = useRef<Record<string, number>>({});
