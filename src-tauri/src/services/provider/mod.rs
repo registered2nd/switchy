@@ -1435,6 +1435,9 @@ impl ProviderService {
             crate::settings::get_effective_current_provider(&state.db, &app_type).unwrap_or(None);
         let result = Self::switch_inner(state, app_type.clone(), id)?;
         crate::proxy::manual_hold::hold(app_type.as_str(), id);
+        if matches!(app_type, AppType::Codex) {
+            Self::check_picked_codex_login(state, id);
+        }
         if let Err(e) = state.db.record_account_switch(
             app_type.as_str(),
             previous.as_deref(),
@@ -1445,6 +1448,37 @@ impl ProviderService {
             log::warn!("Could not record the switch to {id}: {e}");
         }
         Ok(result)
+    }
+
+    /// Codex behaves as signed in to the account picked by hand. One whose
+    /// login OpenAI refuses signs Codex out at once, so the next Codex started
+    /// opens on its sign-in screen. Otherwise the login is checked the way the
+    /// account's card does, in the background: a refusal signs Codex out the
+    /// same way, a working login becomes Codex's saved login.
+    fn check_picked_codex_login(state: &AppState, id: &str) {
+        let Ok(Some(provider)) = state.db.get_provider_by_id(id, "codex") else {
+            return;
+        };
+        if !crate::proxy::codex_pool::is_chatgpt_provider(&provider) {
+            return;
+        }
+        crate::proxy::codex_pool::sign_codex_out_for(&provider);
+        #[cfg(not(test))]
+        {
+            let db = state.db.clone();
+            let id = id.to_string();
+            tauri::async_runtime::spawn(async move {
+                let working = crate::services::subscription::get_codex_quota_for_provider(&db, &id)
+                    .await
+                    .is_ok_and(|quota| quota.success);
+                if !working || crate::proxy::manual_hold::held("codex").as_deref() != Some(&id) {
+                    return;
+                }
+                if let Ok(Some(provider)) = db.get_provider_by_id(&id, "codex") {
+                    crate::proxy::codex_pool::save_login_of_serving_account(&db, &provider);
+                }
+            });
+        }
     }
 
     fn switch_inner(

@@ -23,7 +23,7 @@ pub async fn get_subscription_quota_for_provider(
 ) -> Result<SubscriptionQuota, String> {
     match tool.as_deref().unwrap_or("claude") {
         "codex" => {
-            crate::services::subscription::get_codex_quota_for_provider(state.inner(), &provider_id)
+            crate::services::subscription::get_codex_quota_for_provider(&state.db, &provider_id)
                 .await
         }
         "claude" => {

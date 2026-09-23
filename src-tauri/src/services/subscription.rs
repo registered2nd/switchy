@@ -1425,11 +1425,10 @@ async fn codex_quota_from_credentials(creds: CodexCredentials) -> SubscriptionQu
 /// live file — which belongs to whichever provider is current and would
 /// otherwise show the same number on every card.
 async fn get_codex_quota_for_provider_uncached(
-    state: &crate::store::AppState,
+    db: &std::sync::Arc<crate::database::Database>,
     provider_id: &str,
 ) -> Result<SubscriptionQuota, String> {
-    let provider = state
-        .db
+    let provider = db
         .get_provider_by_id(provider_id, "codex")
         .map_err(|e| e.to_string())?;
     let Some(provider) = provider else {
@@ -1452,7 +1451,7 @@ async fn get_codex_quota_for_provider_uncached(
     // Renew the login the way the proxy does after a refusal (the access
     // token can be revoked before it expires): a login OpenAI refuses to
     // renew shows as signed out, a renewed one shows its usage.
-    let renewed = crate::proxy::codex_pool::credentials_for(&state.db, &provider, true).await;
+    let renewed = crate::proxy::codex_pool::credentials_for(db, &provider, true).await;
     if crate::proxy::codex_pool::needs_sign_in(&provider) {
         return Ok(SubscriptionQuota::signed_out("codex"));
     }
@@ -1604,12 +1603,12 @@ pub async fn get_subscription_quota(tool: &str) -> Result<SubscriptionQuota, Str
 }
 
 pub async fn get_codex_quota_for_provider(
-    state: &crate::store::AppState,
+    db: &std::sync::Arc<crate::database::Database>,
     provider_id: &str,
 ) -> Result<SubscriptionQuota, String> {
     with_last_good(
         format!("codex:{provider_id}"),
-        get_codex_quota_for_provider_uncached(state, provider_id),
+        get_codex_quota_for_provider_uncached(db, provider_id),
     )
     .await
 }

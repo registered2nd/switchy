@@ -164,8 +164,8 @@ fn refresh_lock(provider_id: &str) -> Arc<tokio::sync::Mutex<()>> {
 /// mirror's) after that account has answered a request, so new sessions and
 /// `/status` show the account the proxy serves. Only a login that just worked
 /// is written: Codex reads the saved login at startup, straight from OpenAI,
-/// and cannot start (or reach `/login`) on a refused one. A login Codex
-/// renewed on its own is filed with its account first.
+/// and exits on a refused one. A login Codex renewed on its own is filed with
+/// its account first.
 pub fn save_login_of_serving_account(db: &Database, provider: &Provider) {
     let live = read_live_auth();
     let Some(login) = db
@@ -192,7 +192,12 @@ pub fn save_login_of_serving_account(db: &Database, provider: &Provider) {
         if let Some(dir) = crate::settings::get_codex_mirror_override_dir() {
             paths.push(dir.join("auth.json"));
         }
-        for path in paths.into_iter().filter(|p| p.exists()) {
+        // A signed-out Codex has no auth.json; the login goes back wherever
+        // the install's folder is.
+        for path in paths
+            .into_iter()
+            .filter(|p| p.parent().is_some_and(std::path::Path::exists))
+        {
             let current: Value = crate::config::read_json_file(&path).unwrap_or(Value::Null);
             let next = codex_account::transplant_login(&current, &login);
             if let Err(e) = crate::config::write_json_file(&path, &next) {
@@ -211,33 +216,37 @@ pub fn save_login_of_serving_account(db: &Database, provider: &Provider) {
 }
 
 /// Signs Codex out when `provider` is the account picked by hand (held) and
-/// OpenAI has refused its login: the login is removed from Codex's
-/// `auth.json` (Windows and the WSL mirror), so Codex opens on its own
-/// sign-in screen, as a signed-out Codex does, instead of running on another
-/// account's login while every request is sent as the refused one. The
-/// logins stay stored with their providers; a working account's login is put
-/// back once it answers (`save_login_of_serving_account`).
+/// OpenAI has refused its login, the way `codex logout` does: Codex's
+/// `auth.json` (Windows and the WSL mirror) is deleted, so the next Codex
+/// started opens on its own sign-in screen. Codex treats any `auth.json`,
+/// even an empty one, as a ChatGPT login and exits at startup when it is
+/// unusable. It runs at the pick when the refusal is already known, and when
+/// a refusal is learned while the pick holds; a running Codex session has no
+/// sign-in of its own. A file holding an API key, or a new sign-in of this
+/// account not yet filed with it, is kept. The logins stay stored with their
+/// providers; a working account's login is put back once it answers
+/// (`save_login_of_serving_account`).
 pub fn sign_codex_out_for(provider: &Provider) {
     if super::manual_hold::held("codex").as_deref() != Some(provider.id.as_str())
         || !needs_sign_in(provider)
     {
         return;
     }
-    let mut paths = vec![crate::codex_config::get_codex_auth_path()];
-    if let Some(dir) = crate::settings::get_codex_mirror_override_dir() {
-        paths.push(dir.join("auth.json"));
-    }
+    let refused = stored_auth(provider);
+    // WSL's first: the mirror's reconcile, woken by the Windows file going,
+    // would otherwise copy WSL's login back.
+    let mut paths: Vec<_> = crate::settings::get_codex_mirror_override_dir()
+        .map(|dir| dir.join("auth.json"))
+        .into_iter()
+        .collect();
+    paths.push(crate::codex_config::get_codex_auth_path());
     let mut signed_out = false;
     for path in paths.into_iter().filter(|p| p.exists()) {
-        let mut auth: Value = crate::config::read_json_file(&path).unwrap_or(Value::Null);
-        let Some(obj) = auth.as_object_mut() else {
-            continue;
-        };
-        if obj.remove("tokens").is_none() {
+        let auth: Value = crate::config::read_json_file(&path).unwrap_or(Value::Null);
+        if holds_api_key(&auth) || is_new_sign_in_of(&auth, &refused) {
             continue;
         }
-        obj.remove("last_refresh");
-        match crate::config::write_json_file(&path, &auth) {
+        match std::fs::remove_file(&path) {
             Ok(()) => signed_out = true,
             Err(e) => log::warn!(
                 "[codex_pool] could not sign Codex out at {}: {e}",
@@ -251,6 +260,26 @@ pub fn sign_codex_out_for(provider: &Provider) {
             provider.id
         );
     }
+}
+
+fn holds_api_key(auth: &Value) -> bool {
+    auth.get("OPENAI_API_KEY")
+        .and_then(Value::as_str)
+        .is_some_and(|k| !k.trim().is_empty())
+}
+
+/// True when `auth` is a login of the same account as `refused` with another
+/// refresh token: the account was signed in again.
+fn is_new_sign_in_of(auth: &Value, refused: &Value) -> bool {
+    let refresh = |a: &Value| {
+        a.get("tokens")
+            .and_then(|t| t.get("refresh_token"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    };
+    let key =
+        |a: &Value| codex_account::inspect(a).and_then(|l| l.account_key().map(str::to_string));
+    key(auth).is_some() && key(auth) == key(refused) && refresh(auth) != refresh(refused)
 }
 
 fn read_live_auth() -> Value {
@@ -312,9 +341,15 @@ fn adopt_newer_live_login(db: &Database, provider: &mut Provider) {
 /// that backfill applies. The provider holding that account takes a newer
 /// login of it; a login of an account no provider holds goes to the current
 /// Official provider when that holds no usable login of its own — the one
-/// enabled so it could be signed in.
+/// enabled so it could be signed in. While Codex on Windows has no login, a
+/// sign-in made in WSL is carried over first, so the request it sent is
+/// served on it.
 pub fn file_live_login(db: &Database) {
-    let live = read_live_auth();
+    let mut live = read_live_auth();
+    if !codex_account::inspect(&live).is_some_and(|l| l.alive) {
+        crate::services::credential_mirror::reconcile_codex();
+        live = read_live_auth();
+    }
     let Ok(providers) = db.get_all_providers("codex") else {
         return;
     };
@@ -519,11 +554,13 @@ async fn refresh_login(db: &Arc<Database>, provider: &mut Provider) -> Result<()
         // Only a rejection of the token itself retires it; a 5xx or a network
         // failure says nothing about whether the token is still good.
         if matches!(status.as_u16(), 400 | 401 | 403) {
-            let mut state = REFRESH_STATE.lock().unwrap_or_else(|e| e.into_inner());
-            state
+            REFRESH_STATE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
                 .entry(provider.id.clone())
                 .or_default()
                 .dead_refresh_token = Some(refresh_token);
+            sign_codex_out_for(provider);
         }
         return Err(ProxyError::AuthError(format!(
             "Codex token refresh for {} was refused ({status}): {}",
@@ -929,10 +966,60 @@ mod tests {
 
         super::super::manual_hold::hold("codex", &picked.id);
         sign_codex_out_for(&picked);
-        let live: Value = crate::config::read_json_file(&path).expect("read");
+        let signed_out = !path.exists();
         super::super::manual_hold::release("codex");
         std::env::remove_var(crate::paths::ENV_TEST_HOME);
-        assert!(live.get("tokens").is_none(), "Codex is signed out");
+        assert!(
+            signed_out,
+            "Codex is signed out as `codex logout` leaves it"
+        );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_new_sign_in_of_the_refused_account_is_kept() {
+        let home = tempfile::TempDir::new().expect("temp home");
+        std::env::set_var(crate::paths::ENV_TEST_HOME, home.path());
+        let picked = official("picked-resigned", login_for("p@x.io", "acct-p"));
+        let path = crate::codex_config::get_codex_auth_path();
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        let mut fresh = login_for("p@x.io", "acct-p");
+        fresh["tokens"]["refresh_token"] = json!("NEW");
+        crate::config::write_json_file(&path, &fresh).expect("seed");
+        REFRESH_STATE
+            .lock()
+            .unwrap()
+            .entry(picked.id.clone())
+            .or_default()
+            .dead_refresh_token = Some("RRR".into());
+
+        super::super::manual_hold::hold("codex", &picked.id);
+        sign_codex_out_for(&picked);
+        let kept = path.exists();
+        super::super::manual_hold::release("codex");
+        std::env::remove_var(crate::paths::ENV_TEST_HOME);
+        assert!(kept, "the new sign-in stays");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_signed_out_codex_gets_the_login_of_the_account_that_answered() {
+        let home = tempfile::TempDir::new().expect("temp home");
+        std::env::set_var(crate::paths::ENV_TEST_HOME, home.path());
+        let db = Database::memory().expect("db");
+        let serving = official("b-after-signout", login_for("b@x.io", "acct-b"));
+        db.save_provider("codex", &serving).expect("save");
+        let path = crate::codex_config::get_codex_auth_path();
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+
+        save_login_of_serving_account(&db, &serving);
+
+        let live: Value = crate::config::read_json_file(&path).unwrap_or(Value::Null);
+        std::env::remove_var(crate::paths::ENV_TEST_HOME);
+        assert_eq!(
+            codex_account::inspect(&live).and_then(|l| l.account_key().map(str::to_string)),
+            Some("acct-b".to_string())
+        );
     }
 
     #[test]

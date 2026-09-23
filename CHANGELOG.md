@@ -56,13 +56,15 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 - **With the proxy on, `/status` shows the account you enabled.** Enabling a
   Claude account, or rotation moving to one, also switches Claude Code's
   saved login to it, as switching does with the proxy off. Codex's saved
-  login, on Windows and in WSL, moves to an account once it has answered a
-  request through the proxy, so new Codex sessions show it; a login OpenAI
-  refuses is never given to Codex, which could not start on it. If the
-  account you picked is signed out, Codex is signed out too and opens on its
-  own sign-in screen; sign in as that account. Turning the proxy off or
-  restarting Switchy leaves Codex on the login it has. Codex sessions already
-  running keep the login they started with.
+  login, on Windows and in WSL, moves to an account you enable as soon as its
+  login checks out, and to an account rotation moves to once it has answered
+  a request, so new Codex sessions show it; a login OpenAI refuses is never
+  given to Codex, which could not start on it. If the account you enable has
+  a login OpenAI refuses, Codex is signed out the way `codex logout` does it,
+  right then, so the next Codex you start opens on its own sign-in screen;
+  sign in as that account. Turning the proxy off or restarting Switchy leaves
+  Codex on the login it has. Codex sessions already running keep the login
+  they started with and cannot sign in; start a new one.
 
 - **"Degraded" no longer appears on healthy accounts.** Only failures that
   are about the account count against it: a refused login, a server error, a

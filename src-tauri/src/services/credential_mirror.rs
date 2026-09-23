@@ -285,7 +285,7 @@ fn codex_side_from_root(root: Value) -> CodexSide {
     }
 }
 
-fn reconcile_codex() {
+pub(crate) fn reconcile_codex() {
     let Some(mirror_dir) = crate::settings::get_codex_mirror_override_dir() else {
         return;
     };
