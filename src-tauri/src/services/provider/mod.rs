@@ -1215,18 +1215,21 @@ impl ProviderService {
             let should_sync_via_proxy = is_proxy_running && (has_live_backup || live_taken_over);
 
             if should_sync_via_proxy {
-                futures::executor::block_on(
-                    state
-                        .proxy_service
-                        .update_live_backup_from_provider(app_type.as_str(), &provider),
-                )
+                futures::executor::block_on(state.proxy_service.update_live_backup_from_provider(
+                    app_type.as_str(),
+                    &provider,
+                    existing_provider.as_ref(),
+                ))
                 .map_err(|e| AppError::Message(format!("更新 Live 备份失败: {e}")))?;
 
                 if matches!(app_type, AppType::Claude) {
                     futures::executor::block_on(
                         state
                             .proxy_service
-                            .sync_claude_live_from_provider_while_proxy_active(&provider),
+                            .sync_claude_live_from_provider_while_proxy_active(
+                                &provider,
+                                existing_provider.as_ref(),
+                            ),
                     )
                     .map_err(|e| AppError::Message(format!("同步 Claude Live 配置失败: {e}")))?;
                 }
@@ -1660,11 +1663,11 @@ impl ProviderService {
             .detect_takeover_in_live_config_for_app(&app_type);
 
         if takeover_enabled && (has_live_backup || live_taken_over) {
-            futures::executor::block_on(
-                state
-                    .proxy_service
-                    .update_live_backup_from_provider(app_type.as_str(), provider),
-            )
+            futures::executor::block_on(state.proxy_service.update_live_backup_from_provider(
+                app_type.as_str(),
+                provider,
+                None,
+            ))
             .map_err(|e| AppError::Message(format!("更新 Live 备份失败: {e}")))?;
             return Ok(());
         }

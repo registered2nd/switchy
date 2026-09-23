@@ -185,36 +185,52 @@ impl ProxyService {
         }
     }
 
+    /// Rewrites Claude's live settings for `provider` while the proxy has them.
+    /// Only what differs between `previous` (the provider the file was
+    /// written for) and `provider` changes, so keys other tools put in the
+    /// file stay. Without `previous`, the record of what the takeover wrote
+    /// is the base, and without that the provider's settings are written as
+    /// they are.
     pub async fn sync_claude_live_from_provider_while_proxy_active(
         &self,
         provider: &Provider,
+        previous: Option<&Provider>,
     ) -> Result<(), String> {
-        let mut effective_settings = build_effective_settings_with_common_config(
+        let (proxy_url, _) = self.build_proxy_urls().await?;
+        let effective_settings = self.claude_settings_under_takeover(provider, &proxy_url)?;
+        let base = match previous {
+            Some(previous) => Some(self.claude_settings_under_takeover(previous, &proxy_url)?),
+            None => self.live_written(&AppType::Claude).await,
+        };
+        let mut merged = match (base, self.read_claude_live().ok()) {
+            (Some(base), Some(live)) => {
+                Self::merge_live(&AppType::Claude, &base, effective_settings.clone(), &live)
+            }
+            _ => effective_settings.clone(),
+        };
+        let keep_login = self.claude_takeover_keeps_login(Some(provider));
+        Self::apply_claude_takeover_fields(&mut merged, &proxy_url, keep_login);
+        self.write_claude_live(&merged)?;
+        self.record_live_written(&AppType::Claude, &effective_settings)
+            .await;
+        Ok(())
+    }
+
+    /// `provider`'s effective Claude settings as the takeover writes them.
+    fn claude_settings_under_takeover(
+        &self,
+        provider: &Provider,
+        proxy_url: &str,
+    ) -> Result<Value, String> {
+        let mut settings = build_effective_settings_with_common_config(
             self.db.as_ref(),
             &AppType::Claude,
             provider,
         )
         .map_err(|e| format!("Could not build the effective Claude config: {e}"))?;
-        let (proxy_url, _) = self.build_proxy_urls().await?;
-
         let keep_login = self.claude_takeover_keeps_login(Some(provider));
-        Self::apply_claude_takeover_fields(&mut effective_settings, &proxy_url, keep_login);
-        // Keys other tools wrote to the file while it was taken over stay.
-        // With no record of what the takeover wrote (no backup was ever
-        // taken), they cannot be told apart and the provider's settings are
-        // written as they are.
-        let mut merged = if self.live_written(&AppType::Claude).await.is_some() {
-            self.merge_onto_live(&AppType::Claude, effective_settings.clone())
-                .await
-        } else {
-            effective_settings.clone()
-        };
-        Self::apply_claude_takeover_fields(&mut merged, &proxy_url, keep_login);
-        self.write_claude_live(&merged)?;
-        let intended =
-            crate::services::provider::sanitize_claude_settings_for_live(&effective_settings);
-        self.record_live_written(&AppType::Claude, &intended).await;
-        Ok(())
+        Self::apply_claude_takeover_fields(&mut settings, proxy_url, keep_login);
+        Ok(crate::services::provider::sanitize_claude_settings_for_live(&settings))
     }
 
     /// 设置 AppHandle（在应用初始化时调用）
@@ -1645,17 +1661,22 @@ impl ProxyService {
         &self,
         app_type: &str,
         provider: &Provider,
+        previous: Option<&Provider>,
     ) -> Result<(), String> {
         let _guard = self.switch_locks.lock_for_app(app_type).await;
-        self.update_live_backup_from_provider_inner(app_type, provider)
+        self.update_live_backup_from_provider_inner(app_type, provider, previous)
             .await
     }
 
     /// 仅供已持有 per-app 切换锁的调用方使用。
+    /// With `previous` (the provider the backup was written for), a Codex
+    /// backup keeps what it held beyond that provider's config, the way the
+    /// live file keeps it through the switch.
     async fn update_live_backup_from_provider_inner(
         &self,
         app_type: &str,
         provider: &Provider,
+        previous: Option<&Provider>,
     ) -> Result<(), String> {
         let app_type_enum =
             AppType::from_str(app_type).map_err(|_| format!("Unknown app type: {app_type}"))?;
@@ -1673,6 +1694,28 @@ impl ProxyService {
             if let Some(existing_backup) = existing_backup {
                 let existing_value: Value = serde_json::from_str(&existing_backup.original_config)
                     .map_err(|e| format!("Could not parse the existing {app_type} backup: {e}"))?;
+                if let Some(previous) = previous {
+                    let previous_settings = build_effective_settings_with_common_config(
+                        self.db.as_ref(),
+                        &app_type_enum,
+                        previous,
+                    )
+                    .map_err(|e| format!("Could not build the effective {app_type} config: {e}"))?;
+                    let text =
+                        |v: &Value| v.get("config").and_then(Value::as_str).map(str::to_string);
+                    if let (Some(base), Some(old), Some(new)) = (
+                        text(&previous_settings),
+                        text(&existing_value),
+                        text(&effective_settings),
+                    ) {
+                        // The backup's own keys carried onto the new
+                        // provider's config; the provider wins where both
+                        // changed a value.
+                        if let Some(merged) = live_merge::merge_toml(&base, &old, &new) {
+                            effective_settings["config"] = json!(merged);
+                        }
+                    }
+                }
                 Self::preserve_codex_mcp_servers_in_backup(
                     &mut effective_settings,
                     &existing_value,
@@ -1727,11 +1770,11 @@ impl ProxyService {
             .map_err(|e| format!("Could not read the provider: {e}"))?
             .ok_or_else(|| format!("No such provider: {provider_id}"))?;
 
-        let logical_target_changed =
-            crate::settings::get_effective_current_provider(&self.db, &app_type_enum)
-                .map_err(|e| format!("Could not read the current provider: {e}"))?
-                .as_deref()
-                != Some(provider_id);
+        let previous_id = crate::settings::get_effective_current_provider(&self.db, &app_type_enum)
+            .map_err(|e| format!("Could not read the current provider: {e}"))?;
+        let logical_target_changed = previous_id.as_deref() != Some(provider_id);
+        let previous =
+            previous_id.and_then(|id| self.db.get_provider_by_id(&id, app_type).ok().flatten());
 
         let has_backup = self
             .db
@@ -1749,12 +1792,15 @@ impl ProxyService {
             .map_err(|e| format!("Could not update the local current provider: {e}"))?;
 
         if should_sync_backup {
-            self.update_live_backup_from_provider_inner(app_type, &provider)
+            self.update_live_backup_from_provider_inner(app_type, &provider, previous.as_ref())
                 .await?;
 
             if matches!(app_type_enum, AppType::Claude) {
-                self.sync_claude_live_from_provider_while_proxy_active(&provider)
-                    .await?;
+                self.sync_claude_live_from_provider_while_proxy_active(
+                    &provider,
+                    previous.as_ref(),
+                )
+                .await?;
                 if let Err(e) = self.cleanup_claude_model_overrides_in_live() {
                     log::warn!("清理 Claude Live 模型字段失败（不影响热切换结果）: {e}");
                 }
@@ -3413,7 +3459,7 @@ model = "gpt-5.1-codex"
         });
 
         service
-            .update_live_backup_from_provider("claude", &provider)
+            .update_live_backup_from_provider("claude", &provider, None)
             .await
             .expect("update live backup");
 
@@ -3469,7 +3515,7 @@ base_url = "https://codex.example/v1"
         });
 
         service
-            .update_live_backup_from_provider("codex", &provider)
+            .update_live_backup_from_provider("codex", &provider, None)
             .await
             .expect("update live backup");
 
@@ -3540,7 +3586,7 @@ base_url = "https://new.example/v1"
         );
 
         service
-            .update_live_backup_from_provider("codex", &provider)
+            .update_live_backup_from_provider("codex", &provider, None)
             .await
             .expect("update live backup");
 
@@ -3611,7 +3657,7 @@ command = "latest-command"
         );
 
         service
-            .update_live_backup_from_provider("codex", &provider)
+            .update_live_backup_from_provider("codex", &provider, None)
             .await
             .expect("update live backup");
 
@@ -4194,5 +4240,117 @@ command = "latest-command"
         assert!(ProxyService::mirror_reaches_proxy(std::path::Path::new(
             r"D:\other\.codex"
         )));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn hooks_in_the_file_before_the_takeover_survive_an_account_switch_and_the_restore() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        let provider_a = Provider::with_id(
+            "a".to_string(),
+            "A".to_string(),
+            json!({ "env": { "ANTHROPIC_API_KEY": "a-key" }, "model": "opus" }),
+            None,
+        );
+        let provider_b = Provider::with_id(
+            "b".to_string(),
+            "B".to_string(),
+            json!({ "env": { "ANTHROPIC_API_KEY": "b-key" }, "model": "sonnet" }),
+            None,
+        );
+        db.save_provider("claude", &provider_a).expect("save a");
+        db.save_provider("claude", &provider_b).expect("save b");
+        db.set_current_provider("claude", "a").expect("set current");
+        crate::settings::set_current_provider(&AppType::Claude, Some("a"))
+            .expect("set local current");
+
+        let mut original = provider_a.settings_config.clone();
+        original["hooks"] = orca_hooks();
+        service.write_claude_live(&original).expect("seed live");
+
+        take_over_claude(&service).await;
+        service
+            .hot_switch_provider("claude", "b")
+            .await
+            .expect("hot switch");
+
+        let live = service.read_claude_live().expect("read live");
+        assert_eq!(live["hooks"], orca_hooks(), "the switch keeps the hooks");
+        assert_eq!(live["model"], "sonnet");
+        assert!(ProxyService::is_claude_live_taken_over(&live));
+
+        service
+            .stop_with_restore()
+            .await
+            .expect("stop with restore");
+
+        let mut expected = provider_b.settings_config.clone();
+        expected["hooks"] = orca_hooks();
+        assert_eq!(service.read_claude_live().expect("read live"), expected);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn codex_config_present_before_the_takeover_survives_an_account_switch() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        let relay = |name: &str| {
+            json!({
+                "auth": { "OPENAI_API_KEY": format!("{name}-key") },
+                "config": format!(
+                    "model_provider = \"{name}\"\n\n[model_providers.{name}]\nbase_url = \"https://{name}.example/v1\"\n"
+                )
+            })
+        };
+        let provider_a = Provider::with_id("a".into(), "A".into(), relay("a"), None);
+        let provider_b = Provider::with_id("b".into(), "B".into(), relay("b"), None);
+        db.save_provider("codex", &provider_a).expect("save a");
+        db.save_provider("codex", &provider_b).expect("save b");
+        db.set_current_provider("codex", "a").expect("set current");
+        crate::settings::set_current_provider(&AppType::Codex, Some("a"))
+            .expect("set local current");
+
+        let mut original = provider_a.settings_config.clone();
+        original["config"] = json!(format!(
+            "{}\n[projects.'C:\\Projects']\ntrust_level = \"trusted\"\n",
+            provider_a.settings_config["config"].as_str().unwrap()
+        ));
+        service.write_codex_live(&original).expect("seed live");
+
+        service
+            .backup_live_config_strict(&AppType::Codex)
+            .await
+            .expect("back up");
+        service
+            .takeover_live_config_strict(&AppType::Codex)
+            .await
+            .expect("take over");
+        service
+            .hot_switch_provider("codex", "b")
+            .await
+            .expect("hot switch");
+        service
+            .stop_with_restore()
+            .await
+            .expect("stop with restore");
+
+        let table: toml::Table =
+            std::fs::read_to_string(crate::codex_config::get_codex_config_path())
+                .expect("read config")
+                .parse()
+                .expect("valid toml");
+        assert_eq!(table["model_provider"].as_str(), Some("b"));
+        assert!(table["model_providers"].get("a").is_none());
+        assert_eq!(
+            table["projects"]["C:\\Projects"]["trust_level"].as_str(),
+            Some("trusted")
+        );
     }
 }
