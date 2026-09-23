@@ -82,7 +82,7 @@ Routing an app through the proxy edits its config — Claude Code's `settings.js
 
 ## Setup
 
-**Windows.** Run `installers/Switchy_<version>_x64-setup.exe` or `installers/Switchy_<version>_x64_en-US.msi`, or build from source (below).
+**Windows.** Download the installer from the [latest release](https://github.com/registered2nd/switchy/releases/latest) and run it; it is not code-signed, so SmartScreen asks you to confirm (More info → Run anyway). A clone has the same installers in `installers/`, or build from source (below).
 
 **macOS.** The workflow in [.github/workflows/build-macos.yml](.github/workflows/build-macos.yml) builds an Apple Silicon `.dmg` when run by hand from the Actions tab. macOS blocks the first launch; right-click the app and choose Open.
 
