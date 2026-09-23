@@ -1510,7 +1510,6 @@ impl ProviderService {
             let mut result = SwitchResult::default();
             match app_type {
                 AppType::Claude => result.warnings = Self::swap_claude_login(state, _provider),
-                AppType::Codex => result.warnings = Self::swap_codex_login(state, id),
                 _ => {}
             }
             return Ok(result);
@@ -1533,39 +1532,6 @@ impl ProviderService {
                 vec![format!("credential_swap_failed:{}", provider.id)]
             }
         }
-    }
-
-    /// Puts the Codex provider `id`'s ChatGPT login into Codex's saved login
-    /// (`auth.json`, and the WSL mirror's), so new sessions and `/status`
-    /// show the account the proxy serves. A login Codex renewed on its own
-    /// is filed with its account first, as a switch with the proxy off does.
-    /// Running sessions keep the login they started with.
-    pub(crate) fn swap_codex_login(state: &AppState, id: &str) -> Vec<String> {
-        crate::proxy::codex_pool::file_live_login(state.db.as_ref());
-        let Some(login) = state
-            .db
-            .get_provider_by_id(id, "codex")
-            .ok()
-            .flatten()
-            .and_then(|p| p.settings_config.get("auth").cloned())
-            .filter(|auth| crate::services::codex_account::inspect(auth).is_some())
-        else {
-            return Vec::new();
-        };
-        let mut paths = vec![crate::codex_config::get_codex_auth_path()];
-        if let Some(dir) = crate::settings::get_codex_mirror_override_dir() {
-            paths.push(dir.join("auth.json"));
-        }
-        let mut warnings = Vec::new();
-        for path in paths.into_iter().filter(|p| p.exists()) {
-            let current: Value = crate::config::read_json_file(&path).unwrap_or(Value::Null);
-            let next = crate::services::codex_account::transplant_login(&current, &login);
-            if let Err(e) = crate::config::write_json_file(&path, &next) {
-                log::warn!("Could not write the Codex login to {}: {e}", path.display());
-                warnings.push(format!("credential_swap_failed:{id}"));
-            }
-        }
-        warnings
     }
 
     /// With Switch automatically on, the proxy serves the app's switching order,

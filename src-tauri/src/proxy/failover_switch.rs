@@ -133,15 +133,9 @@ impl FailoverSwitchManager {
                     return Ok(false);
                 }
 
-                // The app's saved login follows the account the pool moved to.
-                if app_type == "codex" {
-                    for warning in crate::services::provider::ProviderService::swap_codex_login(
-                        app_state.inner(),
-                        provider_id,
-                    ) {
-                        log::warn!("[Failover] Codex login swap: {warning}");
-                    }
-                }
+                // Claude Code's saved login follows the account the pool moved
+                // to; Codex's follows once the account has answered (see
+                // codex_pool::save_login_of_serving_account).
                 if app_type == "claude" {
                     if let Ok(Some(provider)) =
                         app_state.db.get_provider_by_id(provider_id, app_type)

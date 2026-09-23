@@ -830,6 +830,8 @@ impl RequestForwarder {
         }
         if result.is_err() {
             self.announce_if_signed_out(provider, pooled_codex);
+        } else if pooled_codex {
+            super::codex_pool::save_login_of_serving_account(self.router.db(), provider);
         }
         result
     }

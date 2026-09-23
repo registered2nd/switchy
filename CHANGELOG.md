@@ -8,6 +8,8 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.18] — 2026-09-23 — A picked account stays picked, `/status` shows it, and usage is counted per account
+
 ### Added
 
 - **Usage Statistics is built around accounts.** A per-account table shows
@@ -42,10 +44,13 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   error. After 10 minutes automatic switching takes over again. Before, the
   first failed request moved you to another account within seconds.
 
-- **Codex's `/status` shows the account you enabled.** Switching a Codex
-  account with the proxy on now also writes its login to Codex's saved login,
-  in Windows and WSL. Sessions already running keep the login they started
-  with.
+- **With the proxy on, `/status` shows the account you enabled.** Enabling a
+  Claude account, or rotation moving to one, also switches Claude Code's
+  saved login to it, as switching does with the proxy off. Codex's saved
+  login, on Windows and in WSL, moves to an account once it has answered a
+  request through the proxy, so new Codex sessions show it; a login OpenAI
+  refuses is never given to Codex, which could not start on it. Codex
+  sessions already running keep the login they started with.
 
 - **"Degraded" no longer appears on healthy accounts.** Only failures that
   are about the account count against it: a refused login, a server error, a
@@ -53,36 +58,20 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   that every account hits at once, no longer marks accounts as failing or
   takes them out of rotation.
 
-- **Switching Claude accounts keeps your settings.** Switching between
-  subscription accounts, with the proxy on or off, changes only the
-  connection settings. Hooks (Orca's among them), plugins, permissions and
-  the model stay as they are, even when an account card stored an older copy
-  of them.
-
-- **With the proxy on, `/status` in Claude Code shows the account you
-  enabled.** Enabling a Claude account, or rotation moving to one, now also
-  switches Claude Code's saved login to it, as switching does with the proxy
-  off. Before, `/status` kept showing the account Claude Code was signed in
-  to while requests went out as the enabled one.
-
-- **The current card shows its own account's usage with the proxy on.**
+- **The current card shows its own account's usage with the proxy on.** It
+  showed the usage of the login the tool has saved, which the proxy does not
+  use.
 
 - **Usage badges stop showing "Query failed" when you switch often.** Each
   account's usage is fetched at most once a minute, and when the usage service
-  refuses or the network fails, the last reading stays with its time.
+  refuses or the network fails, the last reading stays with its time. A card
+  whose login has run out is renewed before its usage is read.
 
 - **Switching accounts under the proxy reaches Claude Code and Codex in
   WSL.** Routing an app through the proxy now points its WSL install at the
   proxy too, so enabling another account, or rotation moving on, switches the
   sessions running there. Needs WSL's mirrored networking. WSL sessions
   started before this need a restart to pick it up.
-
-- **Turning the proxy off no longer undoes other tools' settings.** When the
-  proxy hands Claude Code's `settings.json` or Codex's `config.toml` back —
-  turned off, Switchy quit, or Switchy restarting after a crash — only what
-  the proxy changed is put back. Hooks, plugins and settings another tool or
-  you added while the proxy was on stay, such as the status hooks Orca
-  writes. Switching the Claude account while the proxy is on keeps them too.
 
 - **Signing in to a Codex account works with the proxy on.** Enable the
   account's card and run `codex login`: the new login is stored with that
@@ -93,6 +82,28 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   test model, an API model that a ChatGPT login refuses, so every warm-up of
   a ChatGPT-signed-in account failed. It now uses a model Codex itself offers
   to ChatGPT logins.
+
+## [1.0.17] — 2026-09-23 — Works alongside Orca
+
+Orca shows each Claude Code and Codex session in its sidebar through status
+hooks it writes into their settings. Switchy writes the same files, and these
+changes keep Orca's hooks, and so its sidebar, intact.
+
+### Fixed
+
+- **Turning the proxy off no longer undoes other tools' settings.** When the
+  proxy hands Claude Code's `settings.json` or Codex's `config.toml` back —
+  turned off, Switchy quit, or Switchy restarting after a crash — only what
+  the proxy changed is put back. Hooks, plugins and settings another tool or
+  you added while the proxy was on stay, Orca's status hooks among them.
+
+- **Switching Claude accounts keeps your settings.** Switching between
+  subscription accounts, with the proxy on or off, changes only the
+  connection settings, in Windows and in WSL. Hooks (Orca's among them),
+  plugins, permissions and the model stay as they are, even when an account
+  card stored an older copy of them. A switch between two such cards used to
+  remove Orca's hooks, and sessions started afterwards were missing from
+  Orca's sidebar until the hooks were put back.
 
 ## [1.0.16] — 2026-09-22 — Settings has a Pool tab, and rotation counts the requested model's own limit
 

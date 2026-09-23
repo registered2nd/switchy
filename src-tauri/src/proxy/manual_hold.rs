@@ -62,6 +62,7 @@ pub fn held(app_type: &str) -> Option<String> {
 }
 
 /// Ends the hold for `app_type`.
+#[cfg(test)]
 pub fn release(app_type: &str) {
     with_holds(|holds| holds.remove(app_type));
 }

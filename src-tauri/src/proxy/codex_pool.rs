@@ -160,6 +160,66 @@ fn refresh_lock(provider_id: &str) -> Arc<tokio::sync::Mutex<()>> {
     locks.entry(provider_id.to_string()).or_default().clone()
 }
 
+/// The provider whose login Codex's saved login last got from here.
+static SAVED_LOGIN_OF: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+
+/// Puts `provider`'s login into Codex's saved login (`auth.json`, and the WSL
+/// mirror's) after that account has answered a request, so new sessions and
+/// `/status` show the account the proxy serves. Only a login that just worked
+/// is written: Codex reads the saved login at startup, straight from OpenAI,
+/// and cannot start (or reach `/login`) on a refused one. A login Codex
+/// renewed on its own is filed with its account first.
+pub fn save_login_of_serving_account(db: &Database, provider: &Provider) {
+    {
+        let saved = SAVED_LOGIN_OF.lock().unwrap_or_else(|e| e.into_inner());
+        if saved.as_deref() == Some(provider.id.as_str()) {
+            return;
+        }
+    }
+    let live = read_live_auth();
+    let Some(login) = db
+        .get_provider_by_id(&provider.id, "codex")
+        .ok()
+        .flatten()
+        .map(|p| stored_auth(&p))
+        .filter(|auth| codex_account::inspect(auth).is_some())
+    else {
+        return;
+    };
+    let key = |auth: &Value| {
+        codex_account::inspect(auth).and_then(|l| l.account_key().map(str::to_string))
+    };
+    if key(&live).is_none() || key(&live) != key(&login) {
+        file_live_login(db);
+        let login = db
+            .get_provider_by_id(&provider.id, "codex")
+            .ok()
+            .flatten()
+            .map(|p| stored_auth(&p))
+            .unwrap_or(login);
+        let mut paths = vec![crate::codex_config::get_codex_auth_path()];
+        if let Some(dir) = crate::settings::get_codex_mirror_override_dir() {
+            paths.push(dir.join("auth.json"));
+        }
+        for path in paths.into_iter().filter(|p| p.exists()) {
+            let current: Value = crate::config::read_json_file(&path).unwrap_or(Value::Null);
+            let next = codex_account::transplant_login(&current, &login);
+            if let Err(e) = crate::config::write_json_file(&path, &next) {
+                log::warn!(
+                    "[codex_pool] could not save the login to {}: {e}",
+                    path.display()
+                );
+                return;
+            }
+        }
+        log::info!(
+            "[codex_pool] Codex's saved login is now provider={} (it answered through the proxy)",
+            provider.id
+        );
+    }
+    *SAVED_LOGIN_OF.lock().unwrap_or_else(|e| e.into_inner()) = Some(provider.id.clone());
+}
+
 fn read_live_auth() -> Value {
     let path = crate::codex_config::get_codex_auth_path();
     match std::fs::read(&path) {
@@ -793,6 +853,28 @@ mod tests {
         );
         p.category = Some("official".into());
         p
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn codex_is_given_the_login_of_the_account_that_answered() {
+        let home = tempfile::TempDir::new().expect("temp home");
+        std::env::set_var(crate::paths::ENV_TEST_HOME, home.path());
+        let db = Database::memory().expect("db");
+        let serving = official("b", login_for("b@x.io", "acct-b"));
+        db.save_provider("codex", &serving).expect("save");
+        let path = crate::codex_config::get_codex_auth_path();
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        crate::config::write_json_file(&path, &login_for("a@x.io", "acct-a")).expect("seed");
+
+        save_login_of_serving_account(&db, &serving);
+
+        let live: Value = crate::config::read_json_file(&path).expect("read");
+        std::env::remove_var(crate::paths::ENV_TEST_HOME);
+        assert_eq!(
+            codex_account::inspect(&live).and_then(|l| l.account_key().map(str::to_string)),
+            Some("acct-b".to_string())
+        );
     }
 
     #[test]
