@@ -42,6 +42,21 @@ pub struct Provider {
 }
 
 impl Provider {
+    /// The account a pooled provider signs in as: a Codex ChatGPT login or a
+    /// captured Claude login.
+    pub fn account_email(&self) -> Option<String> {
+        self.settings_config
+            .get("auth")
+            .and_then(crate::services::codex_account::inspect)
+            .and_then(|login| login.email)
+            .or_else(|| {
+                self.meta
+                    .as_ref()
+                    .and_then(|meta| meta.captured_claude_account.as_ref())
+                    .map(|account| account.email_address.clone())
+            })
+    }
+
     /// Create a provider with an existing ID
     pub fn with_id(
         id: String,

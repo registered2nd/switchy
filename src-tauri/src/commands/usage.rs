@@ -25,16 +25,37 @@ pub fn get_usage_trends(
     state.db.get_daily_trends(start_date, end_date)
 }
 
-/// Get per-provider stats
+/// Per-account stats over a time range
 #[tauri::command]
-pub fn get_provider_stats(state: State<'_, AppState>) -> Result<Vec<ProviderStats>, AppError> {
-    state.db.get_provider_stats()
+pub fn get_provider_stats(
+    state: State<'_, AppState>,
+    start_date: Option<i64>,
+    end_date: Option<i64>,
+) -> Result<Vec<ProviderStats>, AppError> {
+    state.db.get_provider_stats(start_date, end_date)
 }
 
-/// Get per-model stats
+/// Per-model stats over a time range
 #[tauri::command]
-pub fn get_model_stats(state: State<'_, AppState>) -> Result<Vec<ModelStats>, AppError> {
-    state.db.get_model_stats()
+pub fn get_model_stats(
+    state: State<'_, AppState>,
+    start_date: Option<i64>,
+    end_date: Option<i64>,
+) -> Result<Vec<ModelStats>, AppError> {
+    state.db.get_model_stats(start_date, end_date)
+}
+
+/// Account switches, newest first
+#[tauri::command]
+pub fn get_account_switches(
+    state: State<'_, AppState>,
+    app_type: Option<String>,
+    start_date: Option<i64>,
+    limit: Option<u32>,
+) -> Result<Vec<crate::database::AccountSwitch>, AppError> {
+    state
+        .db
+        .get_account_switches(app_type.as_deref(), start_date, limit.unwrap_or(200))
 }
 
 /// Get the request log list

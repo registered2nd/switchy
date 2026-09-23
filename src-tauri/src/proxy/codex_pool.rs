@@ -131,6 +131,26 @@ struct RefreshState {
 
 static REFRESH_STATE: Lazy<Mutex<HashMap<String, RefreshState>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Whether OpenAI has refused `provider`'s stored refresh token, so the
+/// account stays unusable until someone signs it in again. A new login
+/// carries a new refresh token and clears this.
+pub fn needs_sign_in(provider: &Provider) -> bool {
+    let Some(refresh_token) = stored_auth(provider)
+        .get("tokens")
+        .and_then(|t| t.get("refresh_token"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+    else {
+        return false;
+    };
+    let state = REFRESH_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    state
+        .get(&provider.id)
+        .and_then(|s| s.dead_refresh_token.as_deref())
+        == Some(refresh_token.as_str())
+}
+
 /// One refresh at a time per provider; concurrent requests wait for it.
 static REFRESH_LOCKS: Lazy<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -667,6 +687,24 @@ mod tests {
 
     fn provider(settings: Value) -> Provider {
         Provider::with_id("p".into(), "P".into(), settings, None)
+    }
+
+    #[test]
+    fn an_account_needs_sign_in_only_while_its_refused_token_is_stored() {
+        let mut signed_out = provider(json!({ "auth": chatgpt_auth() }));
+        signed_out.id = "needs-sign-in-test".into();
+        assert!(!needs_sign_in(&signed_out));
+
+        REFRESH_STATE
+            .lock()
+            .unwrap()
+            .entry(signed_out.id.clone())
+            .or_default()
+            .dead_refresh_token = Some("RRR".into());
+        assert!(needs_sign_in(&signed_out));
+
+        signed_out.settings_config["auth"]["tokens"]["refresh_token"] = json!("NEW");
+        assert!(!needs_sign_in(&signed_out), "a new login clears it");
     }
 
     #[test]

@@ -9,40 +9,47 @@ use crate::app_config::AppType;
 use crate::error::AppError;
 use crate::store::AppState;
 
-/// Tray menu text (localised)
-#[derive(Clone, Copy)]
+/// Tray menu labels, taken from the UI's own translation files under the
+/// `tray` key so the tray speaks the same language as the window.
 pub struct TrayTexts {
-    pub show_main: &'static str,
-    pub no_providers_label: &'static str,
-    pub lightweight_mode: &'static str,
-    pub quit: &'static str,
-    pub _auto_label: &'static str,
+    pub show_main: String,
+    pub no_providers_label: String,
+    pub lightweight_mode: String,
+    pub quit: String,
+}
+
+const LOCALE_EN: &str = include_str!("../../src/i18n/locales/en.json");
+const LOCALE_ZH: &str = include_str!("../../src/i18n/locales/zh.json");
+const LOCALE_JA: &str = include_str!("../../src/i18n/locales/ja.json");
+
+fn tray_labels(locale_json: &str) -> serde_json::Map<String, serde_json::Value> {
+    serde_json::from_str::<serde_json::Value>(locale_json)
+        .ok()
+        .and_then(|v| v.get("tray").and_then(|t| t.as_object()).cloned())
+        .unwrap_or_default()
 }
 
 impl TrayTexts {
     pub fn from_language(language: &str) -> Self {
-        match language {
-            "en" => Self {
-                show_main: "Open main window",
-                no_providers_label: "(no providers)",
-                lightweight_mode: "Lightweight Mode",
-                quit: "Quit",
-                _auto_label: "Auto (Failover)",
-            },
-            "ja" => Self {
-                show_main: "メインウィンドウを開く",
-                no_providers_label: "(プロバイダーなし)",
-                lightweight_mode: "軽量モード",
-                quit: "終了",
-                _auto_label: "自動 (フェイルオーバー)",
-            },
-            _ => Self {
-                show_main: "Open main window",
-                no_providers_label: "(no providers)",
-                lightweight_mode: "Lightweight Mode",
-                quit: "Quit",
-                _auto_label: "Auto (Failover)",
-            },
+        let local = tray_labels(match language {
+            "zh" => LOCALE_ZH,
+            "ja" => LOCALE_JA,
+            _ => LOCALE_EN,
+        });
+        let english = tray_labels(LOCALE_EN);
+        let pick = |key: &str, fallback: &str| {
+            local
+                .get(key)
+                .or_else(|| english.get(key))
+                .and_then(|v| v.as_str())
+                .unwrap_or(fallback)
+                .to_string()
+        };
+        Self {
+            show_main: pick("showMain", "Open main window"),
+            no_providers_label: pick("noProviders", "(no providers)"),
+            lightweight_mode: pick("lightweightMode", "Lightweight mode"),
+            quit: pick("quit", "Quit"),
         }
     }
 }
@@ -304,7 +311,7 @@ pub fn create_tray_menu(
 
     // Top: open the main window
     let show_main_item =
-        MenuItem::with_id(app, "show_main", tray_texts.show_main, true, None::<&str>).map_err(
+        MenuItem::with_id(app, "show_main", &tray_texts.show_main, true, None::<&str>).map_err(
             |e| {
                 AppError::Message(format!(
                     "Failed to create the open-main-window menu item: {e}"
@@ -382,7 +389,7 @@ pub fn create_tray_menu(
     let lightweight_item = CheckMenuItem::with_id(
         app,
         "lightweight_mode",
-        tray_texts.lightweight_mode,
+        &tray_texts.lightweight_mode,
         true,
         crate::lightweight::is_lightweight_mode(),
         None::<&str>,
@@ -396,7 +403,7 @@ pub fn create_tray_menu(
     menu_builder = menu_builder.item(&lightweight_item).separator();
 
     // Quit item (the separator was added in the section loop above)
-    let quit_item = MenuItem::with_id(app, "quit", tray_texts.quit, true, None::<&str>)
+    let quit_item = MenuItem::with_id(app, "quit", &tray_texts.quit, true, None::<&str>)
         .map_err(|e| AppError::Message(format!("Failed to create the quit menu item: {e}")))?;
 
     menu_builder = menu_builder.item(&quit_item);

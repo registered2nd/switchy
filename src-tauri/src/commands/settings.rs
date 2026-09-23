@@ -2,23 +2,23 @@
 
 use tauri::AppHandle;
 
-/// 获取设置
+/// Get the settings
 #[tauri::command]
 pub async fn get_settings() -> Result<crate::settings::AppSettings, String> {
     Ok(crate::settings::get_settings_for_frontend())
 }
 
-/// 保存设置
+/// Save the settings
 #[tauri::command]
 pub async fn save_settings(settings: crate::settings::AppSettings) -> Result<bool, String> {
     crate::settings::update_settings(settings).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
-/// 重启应用程序（当 app_config_dir 变更后使用）
+/// Restart the app (used after app_config_dir changes)
 #[tauri::command]
 pub async fn restart_app(app: AppHandle) -> Result<bool, String> {
-    // 在后台延迟重启，让函数有时间返回响应
+    // Restart after a short delay in the background so this call can return
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         app.restart();
@@ -26,14 +26,14 @@ pub async fn restart_app(app: AppHandle) -> Result<bool, String> {
     Ok(true)
 }
 
-/// 获取 app_config_dir 覆盖配置 (从 Store)
+/// Get the app_config_dir override (from the Store)
 #[tauri::command]
 pub async fn get_app_config_dir_override(app: AppHandle) -> Result<Option<String>, String> {
     Ok(crate::app_store::refresh_app_config_dir_override(&app)
         .map(|p| p.to_string_lossy().to_string()))
 }
 
-/// 设置 app_config_dir 覆盖配置 (到 Store)
+/// Set the app_config_dir override (in the Store)
 #[tauri::command]
 pub async fn set_app_config_dir_override(
     app: AppHandle,
@@ -43,24 +43,27 @@ pub async fn set_app_config_dir_override(
     Ok(true)
 }
 
-/// 设置开机自启
+/// Turn launch at login on or off
 #[tauri::command]
 pub async fn set_auto_launch(enabled: bool) -> Result<bool, String> {
     if enabled {
-        crate::auto_launch::enable_auto_launch().map_err(|e| format!("启用开机自启失败: {e}"))?;
+        crate::auto_launch::enable_auto_launch()
+            .map_err(|e| format!("Could not turn on launch at login: {e}"))?;
     } else {
-        crate::auto_launch::disable_auto_launch().map_err(|e| format!("禁用开机自启失败: {e}"))?;
+        crate::auto_launch::disable_auto_launch()
+            .map_err(|e| format!("Could not turn off launch at login: {e}"))?;
     }
     Ok(true)
 }
 
-/// 获取开机自启状态
+/// Whether launch at login is on
 #[tauri::command]
 pub async fn get_auto_launch_status() -> Result<bool, String> {
-    crate::auto_launch::is_auto_launch_enabled().map_err(|e| format!("获取开机自启状态失败: {e}"))
+    crate::auto_launch::is_auto_launch_enabled()
+        .map_err(|e| format!("Could not read the launch-at-login setting: {e}"))
 }
 
-/// 获取整流器配置
+/// Get the rectifier config
 #[tauri::command]
 pub async fn get_rectifier_config(
     state: tauri::State<'_, crate::AppState>,
@@ -68,7 +71,7 @@ pub async fn get_rectifier_config(
     state.db.get_rectifier_config().map_err(|e| e.to_string())
 }
 
-/// 设置整流器配置
+/// Set the rectifier config
 #[tauri::command]
 pub async fn set_rectifier_config(
     state: tauri::State<'_, crate::AppState>,
@@ -114,7 +117,7 @@ pub async fn get_account_pool_quota(
     Ok(crate::proxy::account_pool::quota_snapshot())
 }
 
-/// 获取优化器配置
+/// Get the optimizer config
 #[tauri::command]
 pub async fn get_optimizer_config(
     state: tauri::State<'_, crate::AppState>,
@@ -122,7 +125,7 @@ pub async fn get_optimizer_config(
     state.db.get_optimizer_config().map_err(|e| e.to_string())
 }
 
-/// 设置优化器配置
+/// Set the optimizer config
 #[tauri::command]
 pub async fn set_optimizer_config(
     state: tauri::State<'_, crate::AppState>,
@@ -144,7 +147,7 @@ pub async fn set_optimizer_config(
     Ok(true)
 }
 
-/// 获取 Copilot 优化器配置
+/// Get the Copilot optimizer config
 #[tauri::command]
 pub async fn get_copilot_optimizer_config(
     state: tauri::State<'_, crate::AppState>,
@@ -155,7 +158,7 @@ pub async fn get_copilot_optimizer_config(
         .map_err(|e| e.to_string())
 }
 
-/// 设置 Copilot 优化器配置
+/// Set the Copilot optimizer config
 #[tauri::command]
 pub async fn set_copilot_optimizer_config(
     state: tauri::State<'_, crate::AppState>,
@@ -168,7 +171,7 @@ pub async fn set_copilot_optimizer_config(
     Ok(true)
 }
 
-/// 获取日志配置
+/// Get the log config
 #[tauri::command]
 pub async fn get_log_config(
     state: tauri::State<'_, crate::AppState>,
@@ -176,7 +179,7 @@ pub async fn get_log_config(
     state.db.get_log_config().map_err(|e| e.to_string())
 }
 
-/// 设置日志配置
+/// Set the log config
 #[tauri::command]
 pub async fn set_log_config(
     state: tauri::State<'_, crate::AppState>,
@@ -188,7 +191,7 @@ pub async fn set_log_config(
         .map_err(|e| e.to_string())?;
     log::set_max_level(config.to_level_filter());
     log::info!(
-        "日志配置已更新: enabled={}, level={}",
+        "Log config updated: enabled={}, level={}",
         config.enabled,
         config.level
     );

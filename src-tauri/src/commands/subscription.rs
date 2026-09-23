@@ -27,7 +27,11 @@ pub async fn get_subscription_quota_for_provider(
                 .await
         }
         "claude" => {
-            crate::services::subscription::get_claude_quota_for_provider(&provider_id).await
+            crate::services::subscription::get_claude_quota_for_provider(
+                state.inner(),
+                &provider_id,
+            )
+            .await
         }
         other => Ok(SubscriptionQuota::not_found(other)),
     }

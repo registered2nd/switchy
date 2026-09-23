@@ -44,11 +44,18 @@ pub struct DailyStats {
 pub struct ProviderStats {
     pub provider_id: String,
     pub provider_name: String,
+    pub app_type: String,
+    /// The signed-in account behind the provider, when it is a pooled login.
+    pub account_email: Option<String>,
     pub request_count: u64,
     pub total_tokens: u64,
     pub total_cost: String,
     pub success_rate: f32,
+    /// Requests the account refused with 429 (usage limit or rate limit).
+    pub limited_count: u64,
     pub avg_latency_ms: u64,
+    /// Unix seconds of the newest logged request, if any.
+    pub last_used_at: Option<i64>,
 }
 
 /// Per-model stats
@@ -397,83 +404,112 @@ impl Database {
         Ok(stats)
     }
 
-    /// Get per-provider stats
-    pub fn get_provider_stats(&self) -> Result<Vec<ProviderStats>, AppError> {
-        let conn = lock_conn!(self.conn);
+    /// Per-provider (per-account) stats over a time range, busiest first.
+    pub fn get_provider_stats(
+        &self,
+        start_date: Option<i64>,
+        end_date: Option<i64>,
+    ) -> Result<Vec<ProviderStats>, AppError> {
+        let (log_where, rollup_where, params) = range_filters(start_date, end_date);
+        let rows = {
+            let conn = lock_conn!(self.conn);
+            // UNION detail logs + rollup data, then aggregate
+            let sql = format!(
+                "SELECT
+                    provider_id, app_type,
+                    SUM(request_count), SUM(total_tokens), SUM(total_cost),
+                    SUM(success_count), SUM(limited_count), SUM(latency_sum),
+                    MAX(last_used_at)
+                FROM (
+                    SELECT provider_id, app_type,
+                        COUNT(*) as request_count,
+                        COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens,
+                        COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0) as total_cost,
+                        COALESCE(SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
+                        COALESCE(SUM(CASE WHEN status_code = 429 THEN 1 ELSE 0 END), 0) as limited_count,
+                        COALESCE(SUM(latency_ms), 0) as latency_sum,
+                        MAX(created_at) as last_used_at
+                    FROM proxy_request_logs {log_where}
+                    GROUP BY provider_id, app_type
+                    UNION ALL
+                    SELECT provider_id, app_type,
+                        COALESCE(SUM(request_count), 0),
+                        COALESCE(SUM(input_tokens + output_tokens), 0),
+                        COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0),
+                        COALESCE(SUM(success_count), 0),
+                        0,
+                        COALESCE(SUM(avg_latency_ms * request_count), 0),
+                        NULL
+                    FROM usage_daily_rollups {rollup_where}
+                    GROUP BY provider_id, app_type
+                )
+                GROUP BY provider_id, app_type
+                ORDER BY SUM(request_count) DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                Ok(StatsRow {
+                    provider_id: row.get(0)?,
+                    app_type: row.get(1)?,
+                    requests: row.get(2)?,
+                    tokens: row.get(3)?,
+                    cost: row.get(4)?,
+                    successes: row.get(5)?,
+                    limited: row.get(6)?,
+                    latency_sum: row.get(7)?,
+                    last_used_at: row.get(8)?,
+                })
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
 
-        // UNION detail logs + rollup data, then aggregate
-        let sql = "SELECT
-                provider_id, app_type, provider_name,
-                SUM(request_count) as request_count,
-                SUM(total_tokens) as total_tokens,
-                SUM(total_cost) as total_cost,
-                SUM(success_count) as success_count,
-                CASE WHEN SUM(request_count) > 0
-                    THEN SUM(latency_sum) / SUM(request_count)
-                    ELSE 0 END as avg_latency
-            FROM (
-                SELECT l.provider_id, l.app_type,
-                    p.name as provider_name,
-                    COUNT(*) as request_count,
-                    COALESCE(SUM(l.input_tokens + l.output_tokens), 0) as total_tokens,
-                    COALESCE(SUM(CAST(l.total_cost_usd AS REAL)), 0) as total_cost,
-                    COALESCE(SUM(CASE WHEN l.status_code >= 200 AND l.status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
-                    COALESCE(SUM(l.latency_ms), 0) as latency_sum
-                FROM proxy_request_logs l
-                LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
-                GROUP BY l.provider_id, l.app_type
-                UNION ALL
-                SELECT r.provider_id, r.app_type,
-                    p2.name as provider_name,
-                    COALESCE(SUM(r.request_count), 0),
-                    COALESCE(SUM(r.input_tokens + r.output_tokens), 0),
-                    COALESCE(SUM(CAST(r.total_cost_usd AS REAL)), 0),
-                    COALESCE(SUM(r.success_count), 0),
-                    COALESCE(SUM(r.avg_latency_ms * r.request_count), 0)
-                FROM usage_daily_rollups r
-                LEFT JOIN providers p2 ON r.provider_id = p2.id AND r.app_type = p2.app_type
-                GROUP BY r.provider_id, r.app_type
-            )
-            GROUP BY provider_id, app_type
-            ORDER BY total_cost DESC";
-
-        let mut stmt = conn.prepare(sql)?;
-        let rows = stmt.query_map([], |row| {
-            let request_count: i64 = row.get(3)?;
-            let success_count: i64 = row.get(6)?;
-            let success_rate = if request_count > 0 {
-                (success_count as f32 / request_count as f32) * 100.0
-            } else {
-                0.0
-            };
-
-            Ok(ProviderStats {
-                provider_id: row.get(0)?,
-                provider_name: row
-                    .get::<_, Option<String>>(2)?
-                    .unwrap_or_else(|| "Unknown".to_string()),
-                request_count: request_count as u64,
-                total_tokens: row.get::<_, i64>(4)? as u64,
-                total_cost: format!("{:.6}", row.get::<_, f64>(5)?),
-                success_rate,
-                avg_latency_ms: row.get::<_, f64>(7)? as u64,
-            })
-        })?;
-
-        let mut stats = Vec::new();
+        let mut providers_by_app = std::collections::HashMap::new();
+        let mut stats = Vec::with_capacity(rows.len());
         for row in rows {
-            stats.push(row?);
+            let providers = providers_by_app
+                .entry(row.app_type.clone())
+                .or_insert_with(|| self.get_all_providers(&row.app_type).unwrap_or_default());
+            let provider = providers.get(&row.provider_id);
+            let requests = row.requests.max(0);
+            stats.push(ProviderStats {
+                provider_name: provider
+                    .map(|p| p.name.clone())
+                    .unwrap_or_else(|| row.provider_id.clone()),
+                account_email: provider.and_then(|p| p.account_email()),
+                provider_id: row.provider_id,
+                app_type: row.app_type,
+                request_count: requests as u64,
+                total_tokens: row.tokens.max(0) as u64,
+                total_cost: format!("{:.6}", row.cost),
+                success_rate: if requests > 0 {
+                    (row.successes as f32 / requests as f32) * 100.0
+                } else {
+                    0.0
+                },
+                limited_count: row.limited.max(0) as u64,
+                avg_latency_ms: if requests > 0 {
+                    (row.latency_sum / requests as f64) as u64
+                } else {
+                    0
+                },
+                last_used_at: row.last_used_at,
+            });
         }
-
         Ok(stats)
     }
 
     /// Get per-model stats
-    pub fn get_model_stats(&self) -> Result<Vec<ModelStats>, AppError> {
+    pub fn get_model_stats(
+        &self,
+        start_date: Option<i64>,
+        end_date: Option<i64>,
+    ) -> Result<Vec<ModelStats>, AppError> {
+        let (log_where, rollup_where, params) = range_filters(start_date, end_date);
         let conn = lock_conn!(self.conn);
 
         // UNION detail logs + rollup data
-        let sql = "SELECT
+        let sql = format!(
+            "SELECT
                 model,
                 SUM(request_count) as request_count,
                 SUM(total_tokens) as total_tokens,
@@ -483,21 +519,22 @@ impl Database {
                     COUNT(*) as request_count,
                     COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens,
                     COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0) as total_cost
-                FROM proxy_request_logs
+                FROM proxy_request_logs {log_where}
                 GROUP BY model
                 UNION ALL
                 SELECT model,
                     COALESCE(SUM(request_count), 0),
                     COALESCE(SUM(input_tokens + output_tokens), 0),
                     COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0)
-                FROM usage_daily_rollups
+                FROM usage_daily_rollups {rollup_where}
                 GROUP BY model
             )
             GROUP BY model
-            ORDER BY total_cost DESC";
+            ORDER BY request_count DESC"
+        );
 
-        let mut stmt = conn.prepare(sql)?;
-        let rows = stmt.query_map([], |row| {
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
             let request_count: i64 = row.get(1)?;
             let total_cost: f64 = row.get(3)?;
             let avg_cost = if request_count > 0 {
@@ -1013,6 +1050,54 @@ pub(crate) fn find_model_pricing_row(
     Ok(exact)
 }
 
+/// One aggregated row of the per-provider stats query.
+struct StatsRow {
+    provider_id: String,
+    app_type: String,
+    requests: i64,
+    tokens: i64,
+    cost: f64,
+    successes: i64,
+    limited: i64,
+    latency_sum: f64,
+    last_used_at: Option<i64>,
+}
+
+/// WHERE clauses for a time range over the request log (`created_at`, Unix
+/// seconds) and the daily rollups (`date`, local day), with their parameters
+/// in binding order: log first, then rollup.
+fn range_filters(start_date: Option<i64>, end_date: Option<i64>) -> (String, String, Vec<i64>) {
+    let mut log_conditions = Vec::new();
+    let mut rollup_conditions = Vec::new();
+    let mut log_params = Vec::new();
+    let mut rollup_params = Vec::new();
+    if let Some(start) = start_date {
+        log_conditions.push("created_at >= ?");
+        rollup_conditions.push("date >= date(?, 'unixepoch', 'localtime')");
+        log_params.push(start);
+        rollup_params.push(start);
+    }
+    if let Some(end) = end_date {
+        log_conditions.push("created_at <= ?");
+        rollup_conditions.push("date <= date(?, 'unixepoch', 'localtime')");
+        log_params.push(end);
+        rollup_params.push(end);
+    }
+    let clause = |conditions: Vec<&str>| {
+        if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        }
+    };
+    log_params.extend(rollup_params);
+    (
+        clause(log_conditions),
+        clause(rollup_conditions),
+        log_params,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1077,11 +1162,45 @@ mod tests {
             )?;
         }
 
-        let stats = db.get_model_stats()?;
+        let stats = db.get_model_stats(None, None)?;
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].model, "claude-3-sonnet");
         assert_eq!(stats[0].request_count, 1);
 
+        Ok(())
+    }
+
+    #[test]
+    fn account_stats_follow_the_time_range_and_count_limit_refusals() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        {
+            let conn = lock_conn!(db.conn);
+            for (id, status, created_at) in
+                [("r1", 200, 1_000), ("r2", 429, 2_000), ("r3", 200, 50)]
+            {
+                conn.execute(
+                    "INSERT INTO proxy_request_logs (
+                        request_id, provider_id, app_type, model,
+                        input_tokens, output_tokens, total_cost_usd,
+                        latency_ms, status_code, created_at
+                    ) VALUES (?, 'p1', 'codex', 'gpt-5', 10, 5, '0', 100, ?, ?)",
+                    params![id, status, created_at],
+                )?;
+            }
+        }
+
+        let stats = db.get_provider_stats(Some(500), None)?;
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].app_type, "codex");
+        assert_eq!(stats[0].request_count, 2);
+        assert_eq!(stats[0].limited_count, 1);
+        assert_eq!(stats[0].last_used_at, Some(2_000));
+        assert_eq!(
+            stats[0].provider_name, "p1",
+            "an unknown provider shows its id"
+        );
+
+        assert_eq!(db.get_provider_stats(None, None)?[0].request_count, 3);
         Ok(())
     }
 

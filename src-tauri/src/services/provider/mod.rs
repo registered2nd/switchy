@@ -1383,8 +1383,29 @@ impl ProviderService {
     ///    b. Update local settings current_provider_xxx (device-level)
     ///    c. Update database is_current (as default for new devices)
     ///    d. Write target provider config to live files
-    ///    e. Sync MCP configuration
+    ///
+    /// A successful switch is recorded in the account switch history.
     pub fn switch(state: &AppState, app_type: AppType, id: &str) -> Result<SwitchResult, AppError> {
+        let previous =
+            crate::settings::get_effective_current_provider(&state.db, &app_type).unwrap_or(None);
+        let result = Self::switch_inner(state, app_type.clone(), id)?;
+        if let Err(e) = state.db.record_account_switch(
+            app_type.as_str(),
+            previous.as_deref(),
+            id,
+            crate::database::SwitchReason::Manual,
+            None,
+        ) {
+            log::warn!("Could not record the switch to {id}: {e}");
+        }
+        Ok(result)
+    }
+
+    fn switch_inner(
+        state: &AppState,
+        app_type: AppType,
+        id: &str,
+    ) -> Result<SwitchResult, AppError> {
         // Check if provider exists
         let providers = state.db.get_all_providers(app_type.as_str())?;
         let _provider = providers

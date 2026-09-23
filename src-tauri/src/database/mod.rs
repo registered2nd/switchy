@@ -1,10 +1,9 @@
 //! Database module - SQLite persistence
 //!
 //! Core data storage for the app, covering:
-//! - Provider configuration
-//! - MCP server configuration
-//! - Prompts
-//! - Skills
+//! - Providers and universal providers
+//! - Proxy configuration, live-config backups and the switching order
+//! - Request logs, usage rollups and the account switch history
 //! - General settings
 //!
 //! ## Architecture
@@ -14,12 +13,14 @@
 //! ├── mod.rs        - Database struct + initialization
 //! ├── schema.rs     - Table definitions + schema migrations
 //! ├── backup.rs     - SQL import/export + snapshot backups
-//! ├── migration.rs  - JSON -> SQLite data migration
 //! └── dao/          - Data access objects
 //!     ├── providers.rs
-//!     ├── mcp.rs
-//!     ├── prompts.rs
-//!     ├── skills.rs
+//!     ├── universal_providers.rs
+//!     ├── proxy.rs
+//!     ├── failover.rs
+//!     ├── account_switches.rs
+//!     ├── usage_rollup.rs
+//!     ├── stream_check.rs
 //!     └── settings.rs
 //! ```
 
@@ -31,7 +32,7 @@ mod schema;
 mod tests;
 
 // DAO types exported for external use
-pub use dao::FailoverQueueItem;
+pub use dao::{AccountSwitch, FailoverQueueItem, SwitchReason};
 
 use crate::config::get_app_config_dir;
 use crate::error::AppError;

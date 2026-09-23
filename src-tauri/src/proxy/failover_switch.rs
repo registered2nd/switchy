@@ -6,6 +6,7 @@
 //! - frontend event emission
 
 use crate::database::Database;
+use crate::database::SwitchReason;
 use crate::error::AppError;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -33,6 +34,8 @@ impl FailoverSwitchManager {
     /// Attempts a failover switch
     ///
     /// Skips if the same switch is already in progress; otherwise performs it.
+    /// `passed_over` says why the previous provider was skipped; the switch is
+    /// recorded in the account switch history with it.
     ///
     /// # Returns
     /// - `Ok(true)` - the switch was performed
@@ -44,6 +47,7 @@ impl FailoverSwitchManager {
         app_type: &str,
         provider_id: &str,
         provider_name: &str,
+        passed_over: Option<(SwitchReason, String)>,
     ) -> Result<bool, AppError> {
         let switch_key = format!("{app_type}:{provider_id}");
 
@@ -61,7 +65,13 @@ impl FailoverSwitchManager {
 
         // Perform the switch (always clearing the pending marker afterwards)
         let result = self
-            .do_switch(app_handle, app_type, provider_id, provider_name)
+            .do_switch(
+                app_handle,
+                app_type,
+                provider_id,
+                provider_name,
+                passed_over,
+            )
             .await;
 
         // Clear the pending marker
@@ -79,6 +89,7 @@ impl FailoverSwitchManager {
         app_type: &str,
         provider_id: &str,
         provider_name: &str,
+        passed_over: Option<(SwitchReason, String)>,
     ) -> Result<bool, AppError> {
         // Check whether the proxy has taken over this app (enabled=true)
         // Only taken-over apps may perform a failover switch
@@ -101,6 +112,7 @@ impl FailoverSwitchManager {
 
         if let Some(app) = app_handle {
             if let Some(app_state) = app.try_state::<crate::store::AppState>() {
+                let previous = app_state.db.get_current_provider(app_type).ok().flatten();
                 switched = app_state
                     .proxy_service
                     .hot_switch_provider(app_type, provider_id)
@@ -110,6 +122,18 @@ impl FailoverSwitchManager {
 
                 if !switched {
                     return Ok(false);
+                }
+
+                let (reason, detail) =
+                    passed_over.unwrap_or((SwitchReason::Failover, String::new()));
+                if let Err(e) = self.db.record_account_switch(
+                    app_type,
+                    previous.as_deref(),
+                    provider_id,
+                    reason,
+                    Some(detail.as_str()).filter(|d| !d.is_empty()),
+                ) {
+                    log::warn!("[Failover] Could not record the switch: {e}");
                 }
 
                 if let Ok(new_menu) = crate::tray::create_tray_menu(app, app_state.inner()) {

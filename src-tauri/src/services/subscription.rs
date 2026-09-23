@@ -18,6 +18,8 @@ use crate::config;
 pub enum CredentialStatus {
     Valid,
     Expired,
+    /// The provider refused the refresh token: sign the account in again.
+    SignedOut,
     NotFound,
     ParseError,
 }
@@ -71,6 +73,15 @@ impl SubscriptionQuota {
             error: None,
             queried_at: None,
         }
+    }
+
+    /// The account's refresh token was refused; it needs signing in again.
+    fn signed_out(tool: &str) -> Self {
+        Self::error(
+            tool,
+            CredentialStatus::SignedOut,
+            "The login was refused; sign this account in again".to_string(),
+        )
     }
 
     fn error(tool: &str, status: CredentialStatus, message: String) -> Self {
@@ -1299,13 +1310,14 @@ async fn query_gemini_quota(access_token: &str) -> SubscriptionQuota {
 // ── Entry point ───────────────────────────────────────────
 
 /// Query the official subscription quota of a CLI tool
-pub async fn get_subscription_quota(tool: &str) -> Result<SubscriptionQuota, String> {
+async fn get_subscription_quota_uncached(tool: &str) -> Result<SubscriptionQuota, String> {
     match tool {
         "claude" => {
             let (token, status, message) = read_claude_credentials();
 
             match status {
                 CredentialStatus::NotFound => Ok(SubscriptionQuota::not_found("claude")),
+                CredentialStatus::SignedOut => Ok(SubscriptionQuota::signed_out("claude")),
                 CredentialStatus::ParseError => Ok(SubscriptionQuota::error(
                     "claude",
                     CredentialStatus::ParseError,
@@ -1337,6 +1349,7 @@ pub async fn get_subscription_quota(tool: &str) -> Result<SubscriptionQuota, Str
 
             match status {
                 CredentialStatus::NotFound => Ok(SubscriptionQuota::not_found("gemini")),
+                CredentialStatus::SignedOut => Ok(SubscriptionQuota::signed_out("gemini")),
                 CredentialStatus::ParseError => Ok(SubscriptionQuota::error(
                     "gemini",
                     CredentialStatus::ParseError,
@@ -1378,6 +1391,7 @@ async fn codex_quota_from_credentials(creds: CodexCredentials) -> SubscriptionQu
     let (token, account_id, status, message) = creds;
     match status {
         CredentialStatus::NotFound => SubscriptionQuota::not_found("codex"),
+        CredentialStatus::SignedOut => SubscriptionQuota::signed_out("codex"),
         CredentialStatus::ParseError => SubscriptionQuota::error(
             "codex",
             CredentialStatus::ParseError,
@@ -1410,7 +1424,7 @@ async fn codex_quota_from_credentials(creds: CodexCredentials) -> SubscriptionQu
 /// so a non-current Official Codex card can be read from that instead of the
 /// live file — which belongs to whichever provider is current and would
 /// otherwise show the same number on every card.
-pub async fn get_codex_quota_for_provider(
+async fn get_codex_quota_for_provider_uncached(
     state: &crate::store::AppState,
     provider_id: &str,
 ) -> Result<SubscriptionQuota, String> {
@@ -1427,6 +1441,9 @@ pub async fn get_codex_quota_for_provider(
     if auth.get("tokens").is_none() {
         return Ok(SubscriptionQuota::not_found("codex"));
     }
+    if crate::proxy::codex_pool::needs_sign_in(&provider) {
+        return Ok(SubscriptionQuota::signed_out("codex"));
+    }
     let content = serde_json::to_string(auth).map_err(|e| e.to_string())?;
     Ok(codex_quota_from_credentials(parse_codex_credentials_json(&content)).await)
 }
@@ -1439,7 +1456,15 @@ pub async fn get_codex_quota_for_provider(
 /// per-account counterpart to `get_subscription_quota("claude")`, which
 /// always reads live `~/.claude/.credentials.json` and therefore shows the
 /// same number on every Official card.
-pub async fn get_claude_quota_for_provider(provider_id: &str) -> Result<SubscriptionQuota, String> {
+async fn get_claude_quota_for_provider_uncached(
+    state: &crate::store::AppState,
+    provider_id: &str,
+) -> Result<SubscriptionQuota, String> {
+    if let Ok(Some(provider)) = state.db.get_provider_by_id(provider_id, "claude") {
+        if crate::proxy::claude_pool::needs_sign_in(&provider) {
+            return Ok(SubscriptionQuota::signed_out("claude"));
+        }
+    }
     let cred_path = crate::services::claude_account::paths::snapshot_credentials_path(provider_id);
 
     if !cred_path.exists() {
@@ -1461,6 +1486,7 @@ pub async fn get_claude_quota_for_provider(provider_id: &str) -> Result<Subscrip
 
     match status {
         CredentialStatus::NotFound => Ok(SubscriptionQuota::not_found("claude")),
+        CredentialStatus::SignedOut => Ok(SubscriptionQuota::signed_out("claude")),
         CredentialStatus::ParseError => Ok(SubscriptionQuota::error(
             "claude",
             CredentialStatus::ParseError,
@@ -1486,6 +1512,80 @@ pub async fn get_claude_quota_for_provider(provider_id: &str) -> Result<Subscrip
     }
 }
 
+// ── Keeping a reading when the usage API refuses ─────────────────────────
+
+/// An account's usage is asked for at most this often; a card that asks
+/// sooner gets the last reading back.
+const MIN_QUERY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The last successful reading per account (`tool:provider` or `tool:live`).
+static LAST_GOOD: once_cell::sync::Lazy<
+    std::sync::Mutex<HashMap<String, (std::time::Instant, SubscriptionQuota)>>,
+> = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
+
+/// Runs `query` unless the account was read within [`MIN_QUERY_INTERVAL`].
+/// When the query fails for a reason other than the login (the usage API's
+/// own rate limit, a network error), the last good reading is returned
+/// instead, with its original `queried_at`.
+async fn with_last_good<F>(key: String, query: F) -> Result<SubscriptionQuota, String>
+where
+    F: std::future::Future<Output = Result<SubscriptionQuota, String>>,
+{
+    let cached = LAST_GOOD
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&key)
+        .cloned();
+    if let Some((at, quota)) = &cached {
+        if at.elapsed() < MIN_QUERY_INTERVAL {
+            return Ok(quota.clone());
+        }
+    }
+    let result = query.await?;
+    if result.success {
+        LAST_GOOD
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key, (std::time::Instant::now(), result.clone()));
+        return Ok(result);
+    }
+    let login_is_fine = matches!(result.credential_status, CredentialStatus::Valid);
+    match cached {
+        Some((_, quota)) if login_is_fine => Ok(quota),
+        _ => Ok(result),
+    }
+}
+
+pub async fn get_subscription_quota(tool: &str) -> Result<SubscriptionQuota, String> {
+    with_last_good(
+        format!("{tool}:live"),
+        get_subscription_quota_uncached(tool),
+    )
+    .await
+}
+
+pub async fn get_codex_quota_for_provider(
+    state: &crate::store::AppState,
+    provider_id: &str,
+) -> Result<SubscriptionQuota, String> {
+    with_last_good(
+        format!("codex:{provider_id}"),
+        get_codex_quota_for_provider_uncached(state, provider_id),
+    )
+    .await
+}
+
+pub async fn get_claude_quota_for_provider(
+    state: &crate::store::AppState,
+    provider_id: &str,
+) -> Result<SubscriptionQuota, String> {
+    with_last_good(
+        format!("claude:{provider_id}"),
+        get_claude_quota_for_provider_uncached(state, provider_id),
+    )
+    .await
+}
+
 // ── Helpers ───────────────────────────────────────────────
 
 fn now_millis() -> i64 {
@@ -1493,4 +1593,68 @@ fn now_millis() -> i64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64
+}
+
+#[cfg(test)]
+mod last_good_tests {
+    use super::*;
+
+    fn reading(tool: &str) -> SubscriptionQuota {
+        SubscriptionQuota {
+            tool: tool.to_string(),
+            credential_status: CredentialStatus::Valid,
+            credential_message: None,
+            success: true,
+            tiers: vec![],
+            extra_usage: None,
+            error: None,
+            queried_at: Some(1),
+        }
+    }
+
+    fn seed(key: &str, age_secs: u64) {
+        let at = std::time::Instant::now() - std::time::Duration::from_secs(age_secs);
+        LAST_GOOD
+            .lock()
+            .unwrap()
+            .insert(key.to_string(), (at, reading("claude")));
+    }
+
+    #[tokio::test]
+    async fn a_rate_limited_query_keeps_the_last_reading() {
+        seed("claude:rate-limited", 120);
+        let refused = SubscriptionQuota::error(
+            "claude",
+            CredentialStatus::Valid,
+            "API error (HTTP 429 Too Many Requests)".to_string(),
+        );
+        let got = with_last_good("claude:rate-limited".into(), async { Ok(refused) })
+            .await
+            .unwrap();
+        assert!(got.success);
+        assert_eq!(got.queried_at, Some(1));
+    }
+
+    #[tokio::test]
+    async fn a_refused_login_is_shown_even_with_an_old_reading() {
+        seed("claude:signed-out", 120);
+        let got = with_last_good("claude:signed-out".into(), async {
+            Ok(SubscriptionQuota::signed_out("claude"))
+        })
+        .await
+        .unwrap();
+        assert!(!got.success);
+        assert!(matches!(got.credential_status, CredentialStatus::SignedOut));
+    }
+
+    #[tokio::test]
+    async fn a_recent_reading_is_reused_without_asking_again() {
+        seed("claude:recent", 5);
+        let got = with_last_good("claude:recent".into(), async {
+            panic!("the usage API must not be asked again within the interval")
+        })
+        .await
+        .unwrap();
+        assert!(got.success);
+    }
 }

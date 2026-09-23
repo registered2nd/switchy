@@ -18,6 +18,7 @@ use super::{
     ProxyError,
 };
 use crate::commands::CopilotAuthState;
+use crate::database::SwitchReason;
 use crate::proxy::providers::copilot_auth::CopilotAuthManager;
 use crate::{app_config::AppType, provider::Provider};
 use http::Extensions;
@@ -119,6 +120,23 @@ impl RequestForwarder {
         let mut last_error = None;
         let mut last_provider = None;
         let mut attempted_providers = 0usize;
+        // Why the provider the app had selected was passed over, for the
+        // switch history.
+        let mut passed_over: Option<(SwitchReason, String)> = None;
+        if !self.current_provider_id_at_start.is_empty()
+            && providers.first().map(|p| p.id.as_str())
+                != Some(self.current_provider_id_at_start.as_str())
+        {
+            let detail = if providers
+                .iter()
+                .any(|p| p.id == self.current_provider_id_at_start)
+            {
+                "Near its usage limit"
+            } else {
+                "Taken out of rotation after repeated failures"
+            };
+            passed_over = Some((SwitchReason::Rotation, detail.to_string()));
+        }
 
         // Rectifier retry flags: rectification fires at most once
         let mut rectifier_retried = false;
@@ -142,6 +160,12 @@ impl RequestForwarder {
             };
 
             if !allowed {
+                if provider.id == self.current_provider_id_at_start && passed_over.is_none() {
+                    passed_over = Some((
+                        SwitchReason::Rotation,
+                        "Circuit breaker open after repeated failures".to_string(),
+                    ));
+                }
                 continue;
             }
 
@@ -222,9 +246,10 @@ impl RequestForwarder {
                             let pid = provider.id.clone();
                             let pname = provider.name.clone();
                             let at = app_type_str.to_string();
+                            let reason = passed_over.clone();
 
                             tokio::spawn(async move {
-                                let _ = fm.try_switch(ah.as_ref(), &at, &pid, &pname).await;
+                                let _ = fm.try_switch(ah.as_ref(), &at, &pid, &pname, reason).await;
                             });
                         }
                         // Recompute the success rate
@@ -357,10 +382,17 @@ impl RequestForwarder {
                                                 let pid = provider.id.clone();
                                                 let pname = provider.name.clone();
                                                 let at = app_type_str.to_string();
+                                                let reason = passed_over.clone();
 
                                                 tokio::spawn(async move {
                                                     let _ = fm
-                                                        .try_switch(ah.as_ref(), &at, &pid, &pname)
+                                                        .try_switch(
+                                                            ah.as_ref(),
+                                                            &at,
+                                                            &pid,
+                                                            &pname,
+                                                            reason,
+                                                        )
                                                         .await;
                                                 });
                                             }
@@ -385,14 +417,7 @@ impl RequestForwarder {
                                         );
 
                                         // By error type: provider problems are recorded as failures; client problems only release the permit
-                                        let is_provider_error = match &retry_err {
-                                            ProxyError::Timeout(_)
-                                            | ProxyError::ForwardFailed(_) => true,
-                                            ProxyError::UpstreamError { status, .. } => {
-                                                *status >= 500
-                                            }
-                                            _ => false,
-                                        };
+                                        let is_provider_error = counts_against_provider(&retry_err);
 
                                         if is_provider_error {
                                             // Provider problem: record the failure in the circuit breaker
@@ -551,9 +576,16 @@ impl RequestForwarder {
                                             let pid = provider.id.clone();
                                             let pname = provider.name.clone();
                                             let at = app_type_str.to_string();
+                                            let reason = passed_over.clone();
                                             tokio::spawn(async move {
                                                 let _ = fm
-                                                    .try_switch(ah.as_ref(), &at, &pid, &pname)
+                                                    .try_switch(
+                                                        ah.as_ref(),
+                                                        &at,
+                                                        &pid,
+                                                        &pname,
+                                                        reason,
+                                                    )
                                                     .await;
                                             });
                                         }
@@ -575,13 +607,7 @@ impl RequestForwarder {
                                         "[{app_type_str}] [RECT-012] budget rectified retry still failed: {retry_err}"
                                     );
 
-                                    let is_provider_error = match &retry_err {
-                                        ProxyError::Timeout(_) | ProxyError::ForwardFailed(_) => {
-                                            true
-                                        }
-                                        ProxyError::UpstreamError { status, .. } => *status >= 500,
-                                        _ => false,
-                                    };
+                                    let is_provider_error = counts_against_provider(&retry_err);
 
                                     if is_provider_error {
                                         let _ = self
@@ -643,17 +669,28 @@ impl RequestForwarder {
                         });
                     }
 
-                    // Failure: record it and update the circuit breaker
-                    let _ = self
-                        .router
-                        .record_result(
-                            &provider.id,
-                            app_type_str,
-                            used_half_open_permit,
-                            false,
-                            Some(e.to_string()),
-                        )
-                        .await;
+                    // Failure: count it against the provider only when it says
+                    // something about the provider; otherwise just free the permit.
+                    if counts_against_provider(&e) {
+                        let _ = self
+                            .router
+                            .record_result(
+                                &provider.id,
+                                app_type_str,
+                                used_half_open_permit,
+                                false,
+                                Some(e.to_string()),
+                            )
+                            .await;
+                    } else {
+                        self.router
+                            .release_permit_neutral(
+                                &provider.id,
+                                app_type_str,
+                                used_half_open_permit,
+                            )
+                            .await;
+                    }
 
                     // Classify the error
                     let category = self.categorize_proxy_error(&e);
@@ -675,6 +712,11 @@ impl RequestForwarder {
                             );
                             log::warn!("[{app_type_str}] [{log_code}] {log_message}");
 
+                            if provider.id == self.current_provider_id_at_start
+                                && passed_over.is_none()
+                            {
+                                passed_over = Some(switch_reason_for(provider, &e));
+                            }
                             last_error = Some(e);
                             last_provider = Some(provider.clone());
                             // Try the next provider
@@ -786,7 +828,36 @@ impl RequestForwarder {
                 super::codex_pool::record_limit_refusal(&provider.id, *status, body.as_deref());
             }
         }
+        if result.is_err() {
+            self.announce_if_signed_out(provider, pooled_codex);
+        }
         result
+    }
+
+    /// Tells the window when a pooled account has been refused for good
+    /// (its refresh token was rejected), naming the account, so the user
+    /// learns why the pool moved off it and that it needs signing in again.
+    fn announce_if_signed_out(&self, provider: &Provider, codex: bool) {
+        let signed_out = if codex {
+            super::codex_pool::needs_sign_in(provider)
+        } else {
+            super::claude_pool::needs_sign_in(provider)
+        };
+        if !signed_out {
+            return;
+        }
+        let account = provider.account_email();
+        if let Some(app) = self.app_handle.as_ref() {
+            let payload = serde_json::json!({
+                "appType": if codex { "codex" } else { "claude" },
+                "providerId": provider.id,
+                "providerName": provider.name,
+                "account": account,
+            });
+            if let Err(e) = tauri::Emitter::emit(app, "account-needs-sign-in", payload) {
+                log::warn!("Could not announce a signed-out account: {e}");
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1521,6 +1592,41 @@ fn is_bedrock_provider(provider: &Provider) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether a failed request says something about the provider itself, so it
+/// counts toward its health and circuit breaker: a refused login, a server
+/// error, a timeout or a dropped connection. Errors the request caused (400,
+/// 404, 413, ...) and rate limits (429, which also hit every account at once
+/// when the request itself is too large) still move on to the next provider
+/// but leave this one's health alone.
+fn counts_against_provider(error: &ProxyError) -> bool {
+    match error {
+        ProxyError::Timeout(_)
+        | ProxyError::ForwardFailed(_)
+        | ProxyError::StreamIdleTimeout(_)
+        | ProxyError::ProviderUnhealthy(_)
+        | ProxyError::AuthError(_) => true,
+        ProxyError::UpstreamError { status, .. } => {
+            *status >= 500 || *status == 401 || *status == 403
+        }
+        _ => false,
+    }
+}
+
+/// Why a failed request moved the pool off `provider`, for the switch history.
+fn switch_reason_for(provider: &Provider, error: &ProxyError) -> (SwitchReason, String) {
+    let summary = summarize_proxy_error(error);
+    let signed_out =
+        super::codex_pool::needs_sign_in(provider) || super::claude_pool::needs_sign_in(provider);
+    let reason = if signed_out {
+        SwitchReason::SignedOut
+    } else if matches!(error, ProxyError::UpstreamError { status: 429, .. }) {
+        SwitchReason::Limit
+    } else {
+        SwitchReason::Failover
+    };
+    (reason, summary)
+}
+
 fn build_retryable_failure_log(
     provider_name: &str,
     attempted_providers: usize,
@@ -1752,6 +1858,24 @@ fn summarize_text_for_log(text: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_failures_about_the_account_count_against_it() {
+        let upstream = |status| ProxyError::UpstreamError { status, body: None };
+        assert!(counts_against_provider(&upstream(401)));
+        assert!(counts_against_provider(&upstream(403)));
+        assert!(counts_against_provider(&upstream(503)));
+        assert!(counts_against_provider(&ProxyError::Timeout("t".into())));
+        assert!(
+            !counts_against_provider(&upstream(400)),
+            "a request that is too long"
+        );
+        assert!(!counts_against_provider(&upstream(413)));
+        assert!(
+            !counts_against_provider(&upstream(429)),
+            "rate limits hit every account"
+        );
+    }
     use axum::http::header::{HeaderValue, ACCEPT};
     use axum::http::HeaderMap;
     use serde_json::json;

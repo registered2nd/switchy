@@ -253,6 +253,22 @@ impl Database {
         // against it so other tools' edits made meanwhile survive.
         Self::add_column_if_missing(conn, "proxy_live_backup", "written_config", "TEXT")?;
 
+        // Every change of the account serving an app, with why it happened.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS account_switches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, app_type TEXT NOT NULL,
+            from_provider_id TEXT, to_provider_id TEXT NOT NULL,
+            reason TEXT NOT NULL, detail TEXT, created_at INTEGER NOT NULL
+        )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_account_switches_created_at ON account_switches(created_at)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
         // 17. Usage Daily Rollups table (daily aggregates)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS usage_daily_rollups (

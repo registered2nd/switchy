@@ -141,6 +141,23 @@ struct RefreshState {
 
 static REFRESH_STATE: Lazy<Mutex<HashMap<String, RefreshState>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Whether Anthropic has refused `provider`'s captured refresh token, so the
+/// account stays unusable until it is signed in and captured again.
+pub fn needs_sign_in(provider: &Provider) -> bool {
+    let Some(refresh_token) = read_stored(&provider.id)
+        .map(|stored| adopt_newer_live_login(provider, stored))
+        .and_then(|current| refresh_token(&current))
+    else {
+        return false;
+    };
+    let state = REFRESH_STATE.lock().unwrap_or_else(|e| e.into_inner());
+    state
+        .get(&provider.id)
+        .and_then(|s| s.dead_refresh_token.as_deref())
+        == Some(refresh_token.as_str())
+}
+
 static REFRESH_LOCKS: Lazy<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
