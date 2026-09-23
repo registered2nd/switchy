@@ -249,6 +249,9 @@ impl Database {
             [],
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
+        // What the takeover last wrote to the live file; a restore merges
+        // against it so other tools' edits made meanwhile survive.
+        Self::add_column_if_missing(conn, "proxy_live_backup", "written_config", "TEXT")?;
 
         // 17. Usage Daily Rollups 表 (日聚合统计)
         conn.execute(

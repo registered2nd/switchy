@@ -2,6 +2,18 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-22 — Handing a live config back is a three-way merge against a record of what the takeover wrote
+
+- Context: every restore (clean stop, recovery after an unclean exit, a takeover switched off) wrote the takeover backup over Claude's `settings.json` and Codex's `config.toml` whole. The backup is as old as the takeover, and a takeover lasts as long as Switchy runs, so everything other tools wrote to those files meanwhile was lost. Orca keeps its status hooks in `settings.json`; the recoveries at 22:45 and 22:58 on 2026-09-22 restored a backup taken before Orca put them back, and every Claude session started afterwards was missing from Orca's sidebar.
+- Decision:
+  1. **A restore is a three-way merge.** The base is what the takeover last wrote, recorded in the backup row (`written_config`); ours is the backup, or the current provider's settings when there is no backup; theirs is the file on disk. Switchy's changes (base → ours) are applied, everyone else's (base → theirs) are kept, and where both changed one value the file on disk wins. `settings.json` is merged as JSON, `config.toml` as TOML keeping the file's formatting and comments. Codex's `auth.json` keeps its login rule; Gemini's `.env` is written from the backup as before.
+  2. **The record is Switchy's own content**: the takeover's write, or the provider settings a hot switch or provider edit asked for — not the merged file. A record of the merged file would make the next restore count other tools' keys as Switchy's and remove them.
+  3. **Without a record** (a backup from an earlier build, or no backup), the base is the target with the keys the takeover manages as they are on disk, so only those keys change: Claude's `env` base URL, token and model-override keys; Codex's `openai_base_url` and `base_url`s. A hot switch that replaces a backup with no record first records one from the outgoing backup this way.
+  4. **A hot switch or provider edit under the takeover merges the same way**, so rotation or failover moving the Claude account keeps keys other tools added during the takeover.
+- Why: putting back only the takeover's keys is not enough, because a hot switch or a common-config edit changes the backup without touching the live file (always for Codex, for common config on Claude), and those changes still have to land when the takeover ends. The record is what separates them from other tools' edits.
+- Consequence: keys that were in the file before the takeover are still the provider's to replace. A switch to a provider whose settings, with the common config, lack a key removes it, with or without the proxy — Orca's hooks included, unless they are in the Claude common config.
+- Files: `src-tauri/src/services/live_merge.rs`; `config_to_restore`, `merge_onto_live`, `takeover_base` and the takeover writes in `services/proxy.rs`; `start_live_backup`, `save_live_backup` and `record_live_written` in `database/dao/proxy.rs`.
+
 ## 2026-09-22 — Enable stays under Switch automatically and puts the account first; a Codex login made under the proxy is filed before routing
 
 - Context: upstream replaces a card's Enable with a queue toggle while an app switches automatically, so no account could be picked by hand and none made current. Signing in depends on the account being current, and under the proxy a switch is a hot switch with no switch-away backfill, so a `codex login` was never stored unless the account already held a login.

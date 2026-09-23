@@ -721,8 +721,9 @@ impl Database {
 
     // ==================== Live Backup ====================
 
-    /// 保存 Live 配置备份
-    pub async fn save_live_backup(
+    /// Starts a takeover's backup from the live file, replacing any earlier
+    /// row together with its record of what that takeover wrote.
+    pub async fn start_live_backup(
         &self,
         app_type: &str,
         config_json: &str,
@@ -739,6 +740,64 @@ impl Database {
 
         log::info!("已备份 {app_type} Live 配置");
         Ok(())
+    }
+
+    /// 保存 Live 配置备份
+    ///
+    /// Replaces what a restore writes back; the record of what the takeover
+    /// wrote to the live file is kept.
+    pub async fn save_live_backup(
+        &self,
+        app_type: &str,
+        config_json: &str,
+    ) -> Result<(), AppError> {
+        let conn = lock_conn!(self.conn);
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO proxy_live_backup (app_type, original_config, backed_up_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(app_type) DO UPDATE SET
+                original_config = excluded.original_config,
+                backed_up_at = excluded.backed_up_at",
+            rusqlite::params![app_type, config_json, now],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        log::info!("已备份 {app_type} Live 配置");
+        Ok(())
+    }
+
+    /// Records what a takeover last wrote to the live file (Switchy's own
+    /// content, before other tools' keys were merged in), so a restore can
+    /// tell Switchy's changes from theirs. Does nothing without a backup row.
+    pub async fn record_live_written(
+        &self,
+        app_type: &str,
+        config_json: &str,
+    ) -> Result<(), AppError> {
+        let conn = lock_conn!(self.conn);
+        conn.execute(
+            "UPDATE proxy_live_backup SET written_config = ?2 WHERE app_type = ?1",
+            rusqlite::params![app_type, config_json],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    /// What the takeover last wrote to the live file, when recorded.
+    pub async fn get_live_written(&self, app_type: &str) -> Result<Option<String>, AppError> {
+        let conn = lock_conn!(self.conn);
+        let result = conn.query_row(
+            "SELECT written_config FROM proxy_live_backup WHERE app_type = ?1",
+            rusqlite::params![app_type],
+            |row| row.get::<_, Option<String>>(0),
+        );
+        match result {
+            Ok(written) => Ok(written),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(AppError::Database(e.to_string())),
+        }
     }
 
     /// 检查是否存在任意 Live 配置备份

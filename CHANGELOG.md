@@ -17,6 +17,13 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ### Fixed
 
+- **Turning the proxy off no longer undoes other tools' settings.** When the
+  proxy hands Claude Code's `settings.json` or Codex's `config.toml` back —
+  turned off, Switchy quit, or Switchy restarting after a crash — only what
+  the proxy changed is put back. Hooks, plugins and settings another tool or
+  you added while the proxy was on stay, such as the status hooks Orca
+  writes. Switching the Claude account while the proxy is on keeps them too.
+
 - **Signing in to a Codex account works with the proxy on.** Enable the
   account's card and run `codex login`: the new login is stored with that
   card. Before, a login made while the proxy served Codex was never picked

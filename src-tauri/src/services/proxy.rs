@@ -9,6 +9,7 @@ use crate::provider::Provider;
 use crate::proxy::server::ProxyServer;
 use crate::proxy::switch_lock::SwitchLockManager;
 use crate::proxy::types::*;
+use crate::services::live_merge;
 use crate::services::provider::{
     build_effective_settings_with_common_config, write_live_with_common_config,
 };
@@ -32,6 +33,14 @@ const CLAUDE_MODEL_OVERRIDE_ENV_KEYS: [&str; 6] = [
     "ANTHROPIC_DEFAULT_OPUS_MODEL",
     // Legacy key (已废弃)：历史版本使用该字段区分 small/fast 模型
     "ANTHROPIC_SMALL_FAST_MODEL",
+];
+
+/// Claude `env` token keys the takeover replaces with the placeholder or removes.
+const CLAUDE_TOKEN_ENV_KEYS: [&str; 4] = [
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_API_KEY",
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
 ];
 
 #[derive(Clone)]
@@ -190,7 +199,21 @@ impl ProxyService {
 
         let keep_login = self.claude_takeover_keeps_login(Some(provider));
         Self::apply_claude_takeover_fields(&mut effective_settings, &proxy_url, keep_login);
-        self.write_claude_live(&effective_settings)?;
+        // Keys other tools wrote to the file while it was taken over stay.
+        // With no record of what the takeover wrote (no backup was ever
+        // taken), they cannot be told apart and the provider's settings are
+        // written as they are.
+        let mut merged = if self.live_written(&AppType::Claude).await.is_some() {
+            self.merge_onto_live(&AppType::Claude, effective_settings.clone())
+                .await
+        } else {
+            effective_settings.clone()
+        };
+        Self::apply_claude_takeover_fields(&mut merged, &proxy_url, keep_login);
+        self.write_claude_live(&merged)?;
+        let intended =
+            crate::services::provider::sanitize_claude_settings_for_live(&effective_settings);
+        self.record_live_written(&AppType::Claude, &intended).await;
         Ok(())
     }
 
@@ -960,7 +983,7 @@ impl ProxyService {
             let json_str = serde_json::to_string(&config)
                 .map_err(|e| format!("Could not serialize the Claude config: {e}"))?;
             self.db
-                .save_live_backup("claude", &json_str)
+                .start_live_backup("claude", &json_str)
                 .await
                 .map_err(|e| format!("Could not back up the Claude config: {e}"))?;
         }
@@ -970,7 +993,7 @@ impl ProxyService {
             let json_str = serde_json::to_string(&config)
                 .map_err(|e| format!("Could not serialize the Codex config: {e}"))?;
             self.db
-                .save_live_backup("codex", &json_str)
+                .start_live_backup("codex", &json_str)
                 .await
                 .map_err(|e| format!("Could not back up the Codex config: {e}"))?;
         }
@@ -980,7 +1003,7 @@ impl ProxyService {
             let json_str = serde_json::to_string(&config)
                 .map_err(|e| format!("Could not serialize the Gemini config: {e}"))?;
             self.db
-                .save_live_backup("gemini", &json_str)
+                .start_live_backup("gemini", &json_str)
                 .await
                 .map_err(|e| format!("Could not back up the Gemini config: {e}"))?;
         }
@@ -1008,7 +1031,7 @@ impl ProxyService {
         let json_str = serde_json::to_string(&config)
             .map_err(|e| format!("Could not serialize the {app_type_str} config: {e}"))?;
         self.db
-            .save_live_backup(app_type_str, &json_str)
+            .start_live_backup(app_type_str, &json_str)
             .await
             .map_err(|e| format!("Could not back up the {app_type_str} config: {e}"))?;
 
@@ -1058,14 +1081,14 @@ impl ProxyService {
         if let Ok(mut live_config) = self.read_claude_live() {
             let keep_login = self.claude_takeover_keeps_login(None);
             Self::apply_claude_takeover_fields(&mut live_config, &proxy_url, keep_login);
-            self.write_claude_live(&live_config)?;
+            self.write_claude_live_during_takeover(&live_config).await?;
             log::info!("Claude Live 配置已接管，代理地址: {proxy_url}");
         }
 
         // Codex: 修改 config.toml 的 base_url，auth.json 的 OPENAI_API_KEY（代理会注入真实 Token）
         if let Ok(mut live_config) = self.read_codex_live() {
             Self::apply_codex_takeover_fields(&mut live_config, &proxy_url, &proxy_codex_base_url);
-            self.write_codex_live(&live_config)?;
+            self.write_codex_live_during_takeover(&live_config).await?;
             log::info!("Codex Live 配置已接管，代理地址: {proxy_codex_base_url}");
         }
 
@@ -1097,7 +1120,7 @@ impl ProxyService {
                 let mut live_config = self.read_claude_live()?;
                 let keep_login = self.claude_takeover_keeps_login(None);
                 Self::apply_claude_takeover_fields(&mut live_config, &proxy_url, keep_login);
-                self.write_claude_live(&live_config)?;
+                self.write_claude_live_during_takeover(&live_config).await?;
                 log::info!("Claude Live 配置已接管，代理地址: {proxy_url}");
             }
             AppType::Codex => {
@@ -1107,7 +1130,7 @@ impl ProxyService {
                     &proxy_url,
                     &proxy_codex_base_url,
                 );
-                self.write_codex_live(&live_config)?;
+                self.write_codex_live_during_takeover(&live_config).await?;
                 log::info!("Codex Live 配置已接管，代理地址: {proxy_codex_base_url}");
             }
             AppType::Gemini => {
@@ -1148,7 +1171,7 @@ impl ProxyService {
                 if let Ok(mut live_config) = self.read_claude_live() {
                     let keep_login = self.claude_takeover_keeps_login(None);
                     Self::apply_claude_takeover_fields(&mut live_config, &proxy_url, keep_login);
-                    let _ = self.write_claude_live(&live_config);
+                    let _ = self.write_claude_live_during_takeover(&live_config).await;
                 }
             }
             AppType::Codex => {
@@ -1158,7 +1181,7 @@ impl ProxyService {
                         &proxy_url,
                         &proxy_codex_base_url,
                     );
-                    let _ = self.write_codex_live(&live_config);
+                    let _ = self.write_codex_live_during_takeover(&live_config).await;
                 }
             }
             AppType::Gemini => {
@@ -1194,40 +1217,17 @@ impl ProxyService {
     }
 
     async fn restore_live_config_for_app_inner(&self, app_type: &AppType) -> Result<(), String> {
-        match app_type {
-            AppType::Claude => {
-                if let Ok(Some(backup)) = self.db.get_live_backup("claude").await {
-                    let config: Value = serde_json::from_str(&backup.original_config)
-                        .map_err(|e| format!("Could not parse the Claude backup: {e}"))?;
-                    self.write_claude_live(&config)?;
-                    log::info!("Claude Live 配置已恢复");
-                }
-            }
-            AppType::Codex => {
-                if let Ok(Some(backup)) = self.db.get_live_backup("codex").await {
-                    let mut config: Value = serde_json::from_str(&backup.original_config)
-                        .map_err(|e| format!("Could not parse the Codex backup: {e}"))?;
-                    // Codex may have refreshed its own login while the proxy was
-                    // on; the backup's copy of that login is then spent.
-                    crate::proxy::codex_pool::keep_newer_live_login(&self.db, &mut config);
-                    self.write_codex_live(&config)?;
-                    log::info!("Codex Live 配置已恢复");
-                }
-            }
-            AppType::Gemini => {
-                if let Ok(Some(backup)) = self.db.get_live_backup("gemini").await {
-                    let config: Value = serde_json::from_str(&backup.original_config)
-                        .map_err(|e| format!("Could not parse the Gemini backup: {e}"))?;
-                    self.write_gemini_live(&config)?;
-                    log::info!("Gemini Live 配置已恢复");
-                }
-            }
-            AppType::OpenCode | AppType::Kimi => {
-                // OpenCode doesn't support proxy features, skip silently
-            }
-            AppType::OpenClaw => {
-                // OpenClaw doesn't support proxy features, skip silently
-            }
+        if !matches!(app_type, AppType::Claude | AppType::Codex | AppType::Gemini) {
+            // OpenCode / OpenClaw / Kimi don't support proxy features, skip silently
+            return Ok(());
+        }
+        let app_type_str = app_type.as_str();
+        if let Ok(Some(backup)) = self.db.get_live_backup(app_type_str).await {
+            let config: Value = serde_json::from_str(&backup.original_config)
+                .map_err(|e| format!("Could not parse the {app_type_str} backup: {e}"))?;
+            let config = self.config_to_restore(app_type, config).await;
+            self.write_live_config_for_app(app_type, &config)?;
+            log::info!("{app_type_str} Live 配置已恢复");
         }
 
         Ok(())
@@ -1277,6 +1277,7 @@ impl ProxyService {
         if let Some(backup) = backup {
             let config: Value = serde_json::from_str(&backup.original_config)
                 .map_err(|e| format!("Could not parse the {app_type_str} backup: {e}"))?;
+            let config = self.config_to_restore(app_type, config).await;
             self.write_live_config_for_app(app_type, &config)?;
             log::info!("{app_type_str} Live 配置已从备份恢复");
             return Ok(());
@@ -1288,7 +1289,7 @@ impl ProxyService {
         }
 
         // 2.1) 优先从 SSOT（当前供应商）重建 Live（比"清理字段"更可用）
-        match self.restore_live_from_ssot_for_app(app_type) {
+        match self.restore_live_from_ssot_for_app(app_type).await {
             Ok(true) => {
                 log::info!("{app_type_str} Live 配置已从 SSOT 恢复（无备份兜底）");
                 return Ok(());
@@ -1357,7 +1358,7 @@ impl ProxyService {
     /// 返回值：
     /// - Ok(true)：已成功写回
     /// - Ok(false)：缺少当前供应商/供应商不存在，无法写回
-    fn restore_live_from_ssot_for_app(&self, app_type: &AppType) -> Result<bool, String> {
+    async fn restore_live_from_ssot_for_app(&self, app_type: &AppType) -> Result<bool, String> {
         let current_id = crate::settings::get_effective_current_provider(&self.db, app_type)
             .map_err(|e| format!("Could not read the current {app_type:?} provider: {e}"))?;
 
@@ -1373,6 +1374,20 @@ impl ProxyService {
         let Some(provider) = providers.get(&current_id) else {
             return Ok(false);
         };
+
+        if matches!(app_type, AppType::Claude | AppType::Codex) {
+            // Same rule as a restore from the backup: only the keys the
+            // takeover manages change.
+            let target = build_effective_settings_with_common_config(
+                self.db.as_ref(),
+                app_type,
+                provider,
+            )
+            .map_err(|e| format!("Could not build the effective {app_type:?} config: {e}"))?;
+            let config = self.config_to_restore(app_type, target).await;
+            self.write_live_config_for_app(app_type, &config)?;
+            return Ok(true);
+        }
 
         write_live_with_common_config(self.db.as_ref(), app_type, provider)
             .map_err(|e| format!("Could not write the {app_type:?} live config: {e}"))?;
@@ -1666,6 +1681,7 @@ impl ProxyService {
             }
         };
 
+        self.ensure_live_written_record(&app_type_enum).await;
         self.db
             .save_live_backup(app_type, &backup_json)
             .await
@@ -1813,6 +1829,226 @@ impl ProxyService {
             log::info!("代理模式：已切换 {app_type} 的目标供应商为 {provider_id}");
         } else {
             log::debug!("代理模式：{app_type} 已对齐到目标供应商 {provider_id}");
+        }
+        Ok(())
+    }
+
+    // ==================== Handing the live config back ====================
+
+    /// What a restore writes to `app_type`'s live file: `target` (the backup,
+    /// or the current provider's settings) merged onto the file as it is on
+    /// disk, so only what the takeover changed is put back.
+    async fn config_to_restore(&self, app_type: &AppType, mut target: Value) -> Value {
+        if matches!(app_type, AppType::Codex) {
+            // Codex may have refreshed its own login while the proxy was on;
+            // the target's copy of that login is then spent.
+            crate::proxy::codex_pool::keep_newer_live_login(&self.db, &mut target);
+        }
+        self.merge_onto_live(app_type, target).await
+    }
+
+    /// `target` merged onto the live file as it is on disk: Switchy's changes
+    /// since it last wrote the file are applied, anyone else's are kept. The
+    /// merge base is the record of what the takeover wrote, or, without one,
+    /// `target` with the keys the takeover manages as they are on disk.
+    /// Claude's settings and Codex's `config.toml` are merged; anything else
+    /// in `target` (Codex's login) is written as it is.
+    async fn merge_onto_live(&self, app_type: &AppType, mut target: Value) -> Value {
+        let Some(live) = self.read_live_for_merge(app_type) else {
+            return target;
+        };
+        let base = match self.live_written(app_type).await {
+            Some(written) => written,
+            None => Self::takeover_base(app_type, &target, &live),
+        };
+        match app_type {
+            AppType::Claude => live_merge::merge_json(Some(&base), Some(&target), Some(&live))
+                .unwrap_or_else(|| json!({})),
+            AppType::Codex => {
+                let text = |v: &Value| v.get("config").and_then(Value::as_str).map(str::to_string);
+                if let (Some(base), Some(ours), Some(theirs)) =
+                    (text(&base), text(&target), text(&live))
+                {
+                    if let Some(merged) = live_merge::merge_toml(&base, &ours, &theirs) {
+                        target["config"] = json!(merged);
+                    }
+                }
+                target
+            }
+            _ => target,
+        }
+    }
+
+    /// The part of `app_type`'s live file a restore merges into: Claude's
+    /// `settings.json`, or Codex's `config.toml` as `{"config": text}`.
+    fn read_live_for_merge(&self, app_type: &AppType) -> Option<Value> {
+        match app_type {
+            AppType::Claude => self.read_claude_live().ok(),
+            AppType::Codex => std::fs::read_to_string(crate::codex_config::get_codex_config_path())
+                .ok()
+                .map(|text| json!({ "config": text })),
+            _ => None,
+        }
+    }
+
+    /// Stand-in for the record of what the takeover wrote: `target` with the
+    /// keys the takeover manages as they are in `live`.
+    fn takeover_base(app_type: &AppType, target: &Value, live: &Value) -> Value {
+        match app_type {
+            AppType::Codex => {
+                fn text(v: &Value) -> &str {
+                    v.get("config").and_then(Value::as_str).unwrap_or("")
+                }
+                json!({ "config": Self::codex_takeover_base(text(target), text(live)) })
+            }
+            _ => Self::claude_takeover_base(target, live),
+        }
+    }
+
+    /// `target` with the Claude `env` keys the takeover writes or removes
+    /// taken from `live`.
+    fn claude_takeover_base(target: &Value, live: &Value) -> Value {
+        let mut base = target.clone();
+        let live_env = live.get("env").and_then(Value::as_object);
+        if let Some(root) = base.as_object_mut() {
+            let had_env = root.contains_key("env");
+            if let Some(env) = root
+                .entry("env")
+                .or_insert_with(|| json!({}))
+                .as_object_mut()
+            {
+                let keys = std::iter::once("ANTHROPIC_BASE_URL")
+                    .chain(CLAUDE_TOKEN_ENV_KEYS)
+                    .chain(CLAUDE_MODEL_OVERRIDE_ENV_KEYS);
+                for key in keys {
+                    match live_env.and_then(|e| e.get(key)) {
+                        Some(value) => {
+                            env.insert(key.to_string(), value.clone());
+                        }
+                        None => {
+                            env.shift_remove(key);
+                        }
+                    }
+                }
+                if env.is_empty() && !had_env {
+                    root.shift_remove("env");
+                }
+            }
+        }
+        base
+    }
+
+    /// `target` (a `config.toml`) with the keys the Codex takeover writes —
+    /// `openai_base_url` and the `base_url` of the top level or of the active
+    /// model provider — taken from `live`. Unparseable input returns `target`.
+    fn codex_takeover_base(target: &str, live: &str) -> String {
+        let (Ok(mut base), Ok(live)) = (
+            target.parse::<toml_edit::DocumentMut>(),
+            live.parse::<toml_edit::DocumentMut>(),
+        ) else {
+            return target.to_string();
+        };
+        for key in ["openai_base_url", "base_url"] {
+            match live.get(key) {
+                Some(item) => base[key] = item.clone(),
+                None => {
+                    base.as_table_mut().remove(key);
+                }
+            }
+        }
+        let providers: Vec<String> = [&base, &live]
+            .iter()
+            .filter_map(|doc| doc.get("model_provider").and_then(|v| v.as_str()))
+            .map(str::to_string)
+            .collect();
+        for name in providers {
+            let live_url = live
+                .get("model_providers")
+                .and_then(|t| t.get(name.as_str()))
+                .and_then(|t| t.get("base_url"))
+                .cloned();
+            match live_url {
+                Some(item) => base["model_providers"][name.as_str()]["base_url"] = item,
+                None => {
+                    if let Some(table) = base
+                        .get_mut("model_providers")
+                        .and_then(|t| t.get_mut(name.as_str()))
+                        .and_then(toml_edit::Item::as_table_like_mut)
+                    {
+                        table.remove("base_url");
+                    }
+                }
+            }
+        }
+        base.to_string()
+    }
+
+    /// The record of what the takeover last wrote to `app_type`'s live file.
+    async fn live_written(&self, app_type: &AppType) -> Option<Value> {
+        let text = self
+            .db
+            .get_live_written(app_type.as_str())
+            .await
+            .ok()
+            .flatten()?;
+        serde_json::from_str(&text).ok()
+    }
+
+    /// Records `written` as what the takeover last put in `app_type`'s live
+    /// file: Switchy's own content, without keys other tools had added that a
+    /// merge kept. A failure is logged: a restore then changes only the keys
+    /// the takeover manages.
+    async fn record_live_written(&self, app_type: &AppType, written: &Value) {
+        let result = match serde_json::to_string(written) {
+            Ok(text) => self
+                .db
+                .record_live_written(app_type.as_str(), &text)
+                .await
+                .map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        };
+        if let Err(e) = result {
+            log::warn!(
+                "Could not record what the {} takeover wrote: {e}",
+                app_type.as_str()
+            );
+        }
+    }
+
+    /// Before a backup is replaced from a provider, makes sure what the
+    /// takeover wrote is on record, taking it to be the outgoing backup with
+    /// the takeover's keys as they are on disk when nothing was recorded.
+    async fn ensure_live_written_record(&self, app_type: &AppType) {
+        if !matches!(app_type, AppType::Claude | AppType::Codex)
+            || self.live_written(app_type).await.is_some()
+        {
+            return;
+        }
+        let Ok(Some(backup)) = self.db.get_live_backup(app_type.as_str()).await else {
+            return;
+        };
+        let Ok(backup) = serde_json::from_str::<Value>(&backup.original_config) else {
+            return;
+        };
+        let Some(live) = self.read_live_for_merge(app_type) else {
+            return;
+        };
+        let base = Self::takeover_base(app_type, &backup, &live);
+        self.record_live_written(app_type, &base).await;
+    }
+
+    async fn write_claude_live_during_takeover(&self, config: &Value) -> Result<(), String> {
+        self.write_claude_live(config)?;
+        let written = crate::services::provider::sanitize_claude_settings_for_live(config);
+        self.record_live_written(&AppType::Claude, &written).await;
+        Ok(())
+    }
+
+    async fn write_codex_live_during_takeover(&self, config: &Value) -> Result<(), String> {
+        self.write_codex_live(config)?;
+        if let Some(text) = config.get("config").and_then(Value::as_str) {
+            self.record_live_written(&AppType::Codex, &json!({ "config": text }))
+                .await;
         }
         Ok(())
     }
@@ -3049,5 +3285,342 @@ command = "latest-command"
             Some("latest-command"),
             "new MCP entries should remain in the restore backup"
         );
+    }
+
+    /// Orca's status hooks, written into `settings.json` by another tool.
+    fn orca_hooks() -> Value {
+        json!({
+            "Stop": [{
+                "hooks": [{ "type": "command", "command": "%APPDATA%\\orca\\agent-hooks\\endpoint.cmd Stop" }]
+            }],
+            "SessionStart": [{
+                "hooks": [{ "type": "command", "command": "%APPDATA%\\orca\\agent-hooks\\endpoint.cmd SessionStart" }]
+            }]
+        })
+    }
+
+    /// Adds Orca's hooks to the live `settings.json` the way Orca does: read
+    /// the file, add its block, write it back.
+    fn add_orca_hooks_to_live() {
+        let path = get_claude_settings_path();
+        let mut live: Value = read_json_file(&path).expect("read live settings");
+        live["hooks"] = orca_hooks();
+        write_json_file(&path, &live).expect("write live settings");
+    }
+
+    async fn take_over_claude(service: &ProxyService) {
+        service
+            .backup_live_config_strict(&AppType::Claude)
+            .await
+            .expect("back up Claude live");
+        service
+            .takeover_live_config_strict(&AppType::Claude)
+            .await
+            .expect("take over Claude live");
+        assert!(ProxyService::is_claude_live_taken_over(
+            &service.read_claude_live().expect("read live")
+        ));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn hooks_added_after_takeover_survive_a_clean_restore() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        let original = json!({
+            "env": { "ANTHROPIC_AUTH_TOKEN": "sk-real", "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000" },
+            "model": "opus"
+        });
+        service.write_claude_live(&original).expect("seed live");
+
+        take_over_claude(&service).await;
+        add_orca_hooks_to_live();
+
+        service
+            .stop_with_restore()
+            .await
+            .expect("stop with restore");
+
+        let mut expected = original.clone();
+        expected["hooks"] = orca_hooks();
+        assert_eq!(service.read_claude_live().expect("read live"), expected);
+        assert!(db
+            .get_live_backup("claude")
+            .await
+            .expect("read backup")
+            .is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn hooks_added_after_takeover_survive_unclean_exit_recovery() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+
+        // The proxy URL the user had before the takeover must come back.
+        let original = json!({
+            "env": { "ANTHROPIC_BASE_URL": "https://relay.example", "ANTHROPIC_AUTH_TOKEN": "sk-relay" }
+        });
+        {
+            let service = ProxyService::new(db.clone());
+            service.write_claude_live(&original).expect("seed live");
+            take_over_claude(&service).await;
+            // Killed here: no restore runs.
+        }
+        add_orca_hooks_to_live();
+
+        let restarted = ProxyService::new(db.clone());
+        assert!(restarted.detect_takeover_in_live_configs());
+        restarted.recover_from_crash().await.expect("recover");
+
+        let mut expected = original.clone();
+        expected["hooks"] = orca_hooks();
+        assert_eq!(restarted.read_claude_live().expect("read live"), expected);
+        assert!(!db.has_any_live_backup().await.expect("read backups"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn recovery_from_a_backup_with_no_record_keeps_hooks_added_since() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        // A backup taken before Orca's hooks were put back, by a build that
+        // kept no record of what the takeover wrote.
+        let backup =
+            json!({ "env": { "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000" }, "model": "opus" });
+        db.save_live_backup("claude", &backup.to_string())
+            .await
+            .expect("seed backup");
+        let mut live = json!({
+            "env": {
+                "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000",
+                "ANTHROPIC_BASE_URL": "http://127.0.0.1:15721"
+            },
+            "model": "sonnet"
+        });
+        live["hooks"] = orca_hooks();
+        service.write_claude_live(&live).expect("seed live");
+
+        service.recover_from_crash().await.expect("recover");
+
+        let restored = service.read_claude_live().expect("read live");
+        assert_eq!(restored["hooks"], orca_hooks());
+        assert_eq!(
+            restored["model"], "sonnet",
+            "a setting changed since the backup stays"
+        );
+        assert_eq!(
+            restored["env"],
+            json!({ "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000" })
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn restore_without_a_backup_rebuilds_only_the_takeover_keys() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        let provider = Provider::with_id(
+            "p".to_string(),
+            "P".to_string(),
+            json!({ "env": { "ANTHROPIC_AUTH_TOKEN": "sk-provider" } }),
+            None,
+        );
+        db.save_provider("claude", &provider)
+            .expect("save provider");
+        db.set_current_provider("claude", "p").expect("set current");
+        crate::settings::set_current_provider(&AppType::Claude, Some("p"))
+            .expect("set local current");
+
+        let mut live = json!({
+            "env": {
+                "ANTHROPIC_BASE_URL": "http://127.0.0.1:15721",
+                "ANTHROPIC_AUTH_TOKEN": PROXY_TOKEN_PLACEHOLDER
+            },
+            "model": "opus"
+        });
+        live["hooks"] = orca_hooks();
+        service.write_claude_live(&live).expect("seed live");
+
+        service.recover_from_crash().await.expect("recover");
+
+        let mut expected = json!({
+            "env": { "ANTHROPIC_AUTH_TOKEN": "sk-provider" },
+            "model": "opus"
+        });
+        expected["hooks"] = orca_hooks();
+        assert_eq!(service.read_claude_live().expect("read live"), expected);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn hot_switch_and_restore_keep_hooks_added_during_the_takeover() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        let provider_a = Provider::with_id(
+            "a".to_string(),
+            "A".to_string(),
+            json!({ "env": { "ANTHROPIC_API_KEY": "a-key" }, "permissions": { "allow": ["Bash"] } }),
+            None,
+        );
+        let provider_b = Provider::with_id(
+            "b".to_string(),
+            "B".to_string(),
+            json!({ "env": { "ANTHROPIC_API_KEY": "b-key" }, "permissions": { "allow": ["Read"] } }),
+            None,
+        );
+        db.save_provider("claude", &provider_a).expect("save a");
+        db.save_provider("claude", &provider_b).expect("save b");
+        db.set_current_provider("claude", "a").expect("set current");
+        crate::settings::set_current_provider(&AppType::Claude, Some("a"))
+            .expect("set local current");
+        service
+            .write_claude_live(&provider_a.settings_config)
+            .expect("seed live");
+
+        take_over_claude(&service).await;
+        add_orca_hooks_to_live();
+
+        service
+            .hot_switch_provider("claude", "b")
+            .await
+            .expect("hot switch");
+        let live = service.read_claude_live().expect("read live");
+        assert_eq!(live["hooks"], orca_hooks(), "a hot switch keeps the hooks");
+        assert_eq!(live["permissions"], json!({ "allow": ["Read"] }));
+        assert!(ProxyService::is_claude_live_taken_over(&live));
+
+        service
+            .stop_with_restore()
+            .await
+            .expect("stop with restore");
+
+        let mut expected = provider_b.settings_config.clone();
+        expected["hooks"] = orca_hooks();
+        assert_eq!(service.read_claude_live().expect("read live"), expected);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn codex_restore_keeps_config_toml_edits_made_during_the_takeover() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        let original = chatgpt_live("# mine\nmodel = \"gpt-5\"\n");
+        service.write_codex_live(&original).expect("seed live");
+        service
+            .backup_live_config_strict(&AppType::Codex)
+            .await
+            .expect("back up Codex live");
+        service
+            .takeover_live_config_strict(&AppType::Codex)
+            .await
+            .expect("take over Codex live");
+        let config_path = crate::codex_config::get_codex_config_path();
+        let taken_over = std::fs::read_to_string(&config_path).expect("read config");
+        assert!(ProxyService::codex_openai_base_url_is_local(&taken_over));
+
+        std::fs::write(
+            &config_path,
+            format!("{taken_over}\n[mcp_servers.orca]\ncommand = \"orca\"\n"),
+        )
+        .expect("add a table");
+
+        service
+            .stop_with_restore()
+            .await
+            .expect("stop with restore");
+
+        let restored = std::fs::read_to_string(&config_path).expect("read config");
+        let table: toml::Table = restored.parse().expect("valid toml");
+        assert!(table.get("openai_base_url").is_none());
+        assert_eq!(table["model"].as_str(), Some("gpt-5"));
+        assert_eq!(
+            table["mcp_servers"]["orca"]["command"].as_str(),
+            Some("orca")
+        );
+        assert!(restored.starts_with("# mine"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn codex_restore_after_a_hot_switch_writes_the_new_providers_config() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+        let db = Arc::new(Database::memory().expect("init db"));
+        let service = ProxyService::new(db.clone());
+
+        let relay = |name: &str, key: &str| {
+            json!({
+                "auth": { "OPENAI_API_KEY": key },
+                "config": format!(
+                    "model_provider = \"{name}\"\nmodel = \"{name}-model\"\n\n[model_providers.{name}]\nbase_url = \"https://{name}.example/v1\"\n"
+                )
+            })
+        };
+        let provider_a = Provider::with_id("a".into(), "A".into(), relay("a", "a-key"), None);
+        let provider_b = Provider::with_id("b".into(), "B".into(), relay("b", "b-key"), None);
+        db.save_provider("codex", &provider_a).expect("save a");
+        db.save_provider("codex", &provider_b).expect("save b");
+        db.set_current_provider("codex", "a").expect("set current");
+        crate::settings::set_current_provider(&AppType::Codex, Some("a"))
+            .expect("set local current");
+        service
+            .write_codex_live(&provider_a.settings_config)
+            .expect("seed live");
+
+        service
+            .backup_live_config_strict(&AppType::Codex)
+            .await
+            .expect("back up Codex live");
+        service
+            .takeover_live_config_strict(&AppType::Codex)
+            .await
+            .expect("take over Codex live");
+        let config_path = crate::codex_config::get_codex_config_path();
+        let taken_over = std::fs::read_to_string(&config_path).expect("read config");
+        std::fs::write(
+            &config_path,
+            format!("{taken_over}\n[profiles.fast]\nmodel = \"x\"\n"),
+        )
+        .expect("add a table");
+
+        service
+            .hot_switch_provider("codex", "b")
+            .await
+            .expect("hot switch");
+        service
+            .stop_with_restore()
+            .await
+            .expect("stop with restore");
+
+        let restored = std::fs::read_to_string(&config_path).expect("read config");
+        let table: toml::Table = restored.parse().expect("valid toml");
+        assert_eq!(table["model_provider"].as_str(), Some("b"));
+        assert_eq!(table["model"].as_str(), Some("b-model"));
+        assert_eq!(
+            table["model_providers"]["b"]["base_url"].as_str(),
+            Some("https://b.example/v1")
+        );
+        assert!(table["model_providers"].get("a").is_none());
+        assert_eq!(table["profiles"]["fast"]["model"].as_str(), Some("x"));
+        let auth: Value =
+            read_json_file(&crate::codex_config::get_codex_auth_path()).expect("read auth");
+        assert_eq!(auth["OPENAI_API_KEY"], "b-key");
     }
 }
