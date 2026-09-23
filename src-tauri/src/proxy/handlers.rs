@@ -597,6 +597,9 @@ pub async fn handle_claude_passthrough(
     request: axum::extract::Request,
 ) -> Result<axum::response::Response, ProxyError> {
     let path = request.uri().path().to_string();
+    if path.starts_with("/backend-api/") {
+        return handle_codex_chatgpt_backend(state, request).await;
+    }
     let claude_path = path.starts_with("/api/")
         || path.starts_with("/v1/code/")
         || path.starts_with("/v1/messages/");
@@ -664,6 +667,96 @@ pub async fn handle_claude_passthrough(
     if presents_pool_login {
         super::claude_pool::record_quota(&provider.id, None, response.headers());
     }
+
+    let mut builder = axum::response::Response::builder().status(response.status());
+    for (name, value) in response.headers() {
+        if matches!(
+            name.as_str(),
+            "content-length" | "transfer-encoding" | "connection" | "content-encoding"
+        ) {
+            continue;
+        }
+        builder = builder.header(name, value);
+    }
+    let body = axum::body::Body::from_stream(response.bytes_stream());
+    builder
+        .body(body)
+        .map_err(|e| ProxyError::Internal(e.to_string()))
+}
+
+/// Codex's calls to the ChatGPT backend beyond the model, while its
+/// `chatgpt_base_url` points here. Its usage (`/wham/usage`, what `/status`
+/// shows) is read with the login of the account the proxy serves, so `/status`
+/// in an open session shows that account's limits right after a switch. The
+/// rest keeps the login Codex sent and reaches ChatGPT as it would have.
+async fn handle_codex_chatgpt_backend(
+    state: ProxyState,
+    request: axum::extract::Request,
+) -> Result<axum::response::Response, ProxyError> {
+    let path = request.uri().path().to_string();
+    let mut url = format!("{}{path}", super::codex_pool::CHATGPT_ORIGIN);
+    if let Some(query) = request.uri().query() {
+        url.push('?');
+        url.push_str(query);
+    }
+
+    let served = if path.starts_with("/backend-api/wham/usage") {
+        state
+            .provider_router
+            .select_providers("codex", None)
+            .await
+            .map_err(|e| ProxyError::Internal(e.to_string()))?
+            .into_iter()
+            .next()
+            .filter(super::codex_pool::is_chatgpt_provider)
+    } else {
+        None
+    };
+
+    let (parts, body) = request.into_parts();
+    let body_bytes = body
+        .collect()
+        .await
+        .map_err(|e| ProxyError::Internal(format!("Failed to read request body: {e}")))?
+        .to_bytes();
+
+    let proxy_config = served
+        .as_ref()
+        .and_then(|p| p.meta.as_ref())
+        .and_then(|m| m.proxy_config.as_ref());
+    let mut upstream = super::http_client::get_for_provider(proxy_config)
+        .request(parts.method.clone(), &url)
+        .body(body_bytes);
+    for (name, value) in &parts.headers {
+        if matches!(
+            name.as_str(),
+            "host" | "content-length" | "accept-encoding" | "connection" | "transfer-encoding"
+        ) || (served.is_some()
+            && matches!(name.as_str(), "authorization" | "chatgpt-account-id"))
+        {
+            continue;
+        }
+        upstream = upstream.header(name, value);
+    }
+    if let Some(provider) = served.as_ref() {
+        super::account_pool::ensure_exit_allowed(
+            &state.db,
+            provider,
+            super::codex_pool::EXIT_TRACE_URL,
+        )
+        .await?;
+        let credentials = super::codex_pool::credentials_for(&state.db, provider, false).await?;
+        upstream = upstream.bearer_auth(credentials.access_token);
+        if let Some(account_id) = credentials.account_id {
+            upstream = upstream.header("chatgpt-account-id", account_id);
+        }
+    }
+
+    let response = upstream
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| ProxyError::ForwardFailed(e.to_string()))?;
 
     let mut builder = axum::response::Response::builder().status(response.status());
     for (name, value) in response.headers() {

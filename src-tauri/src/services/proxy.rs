@@ -607,16 +607,35 @@ impl ProxyService {
             .is_some_and(|name| name != "openai")
     }
 
-    /// Sets or removes the top-level `openai_base_url` key. Unparseable TOML is
-    /// returned untouched.
+    /// Sets or removes the keys that point Codex in ChatGPT mode at the proxy:
+    /// `openai_base_url` (the model) and `chatgpt_base_url` (its other ChatGPT
+    /// backend calls, among them the usage `/status` shows), the latter derived
+    /// from the former. Removing leaves a `chatgpt_base_url` that is not the
+    /// proxy's. Unparseable TOML is returned untouched.
     fn set_codex_openai_base_url(toml_str: &str, url: Option<&str>) -> String {
         let Ok(mut doc) = toml_str.parse::<toml_edit::DocumentMut>() else {
             return toml_str.to_string();
         };
         match url {
-            Some(url) => doc["openai_base_url"] = toml_edit::value(url),
+            Some(url) => {
+                doc["openai_base_url"] = toml_edit::value(url);
+                let chatgpt = format!(
+                    "{}{}",
+                    url.trim_end_matches('/')
+                        .trim_end_matches(crate::proxy::codex_pool::BACKEND_PATH_PREFIX),
+                    crate::proxy::codex_pool::CHATGPT_BACKEND_PATH_PREFIX
+                );
+                doc["chatgpt_base_url"] = toml_edit::value(chatgpt);
+            }
             None => {
                 doc.as_table_mut().remove("openai_base_url");
+                let chatgpt_is_local = doc
+                    .get("chatgpt_base_url")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(Self::is_local_proxy_url);
+                if chatgpt_is_local {
+                    doc.as_table_mut().remove("chatgpt_base_url");
+                }
             }
         }
         doc.to_string()
@@ -1959,8 +1978,9 @@ impl ProxyService {
     }
 
     /// `target` (a `config.toml`) with the keys the Codex takeover writes —
-    /// `openai_base_url` and the `base_url` of the top level or of the active
-    /// model provider — taken from `live`. Unparseable input returns `target`.
+    /// `openai_base_url`, `chatgpt_base_url` and the `base_url` of the top level
+    /// or of the active model provider — taken from `live`. Unparseable input
+    /// returns `target`.
     fn codex_takeover_base(target: &str, live: &str) -> String {
         let (Ok(mut base), Ok(live)) = (
             target.parse::<toml_edit::DocumentMut>(),
@@ -1968,7 +1988,7 @@ impl ProxyService {
         ) else {
             return target.to_string();
         };
-        for key in ["openai_base_url", "base_url"] {
+        for key in ["openai_base_url", "chatgpt_base_url", "base_url"] {
             match live.get(key) {
                 Some(item) => base[key] = item.clone(),
                 None => {
@@ -2841,8 +2861,10 @@ mod tests {
             Some("http://127.0.0.1:15721/backend-api/codex"),
         );
         assert!(ProxyService::codex_openai_base_url_is_local(&local));
+        assert!(local.contains("chatgpt_base_url = \"http://127.0.0.1:15721/backend-api\""));
         let cleaned = ProxyService::set_codex_openai_base_url(&local, None);
         assert!(!cleaned.contains("openai_base_url"));
+        assert!(!cleaned.contains("chatgpt_base_url"));
         assert!(cleaned.contains("model = \"gpt-5\""));
 
         let users_own = "openai_base_url = \"https://gateway.example/backend-api/codex\"\n";

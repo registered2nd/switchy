@@ -37,6 +37,13 @@ pub const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex"
 /// pointed here with `openai_base_url`.
 pub const BACKEND_PATH_PREFIX: &str = "/backend-api/codex";
 
+/// Path prefix of Codex's other ChatGPT backend calls (usage, account,
+/// plugins), pointed here with `chatgpt_base_url`.
+pub const CHATGPT_BACKEND_PATH_PREFIX: &str = "/backend-api";
+
+/// Where the proxy sends those calls on.
+pub const CHATGPT_ORIGIN: &str = "https://chatgpt.com";
+
 /// Asked, before a ChatGPT login is used, where this machine is seen from.
 pub const EXIT_TRACE_URL: &str = "https://chatgpt.com/cdn-cgi/trace";
 

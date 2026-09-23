@@ -2,6 +2,13 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-09-23 — Codex's usage reads go through the proxy, so `/status` in an open session shows the enabled account
+
+- Context: proxy mode exists so an open session switches accounts, and the user checks a switch with `/status`. Codex's `/status` shows an account line set once at startup (from its saved login; a changed login of another account is skipped, `reload_if_account_id_matches` in `codex-rs/login/src/auth/manager.rs`) and limits fetched fresh on every `/status` from `{chatgpt_base_url}/wham/usage` with the session's own login, so neither showed a switch.
+- Decision: the Codex takeover also sets `chatgpt_base_url` to the proxy's `/backend-api` (Windows and the WSL mirror; removed with `openai_base_url`). The proxy answers `/backend-api/wham/usage*` with the login of the account it serves; every other `/backend-api/*` call is forwarded to `https://chatgpt.com` unchanged, with the login Codex sent. The account line is left as Codex shows it.
+- Why: the user — `/status` is how he sees that a hot switch worked; the limits are the part of it Codex re-reads, and only the usage call is presented as the pool's account so Codex's identity plane stays its own.
+- Files: `handle_codex_chatgpt_backend` in `src-tauri/src/proxy/handlers.rs`; `set_codex_openai_base_url` and `codex_takeover_base` in `services/proxy.rs`; `CHATGPT_BACKEND_PATH_PREFIX` and `CHATGPT_ORIGIN` in `proxy/codex_pool.rs`.
+
 ## 2026-09-23 — A switch writes only what the provider owns, for every tool; the common config reaches the tool when it is saved
 
 - Context: a provider's stored settings are filled by the switch-away backfill, so every card, relay or Official, holds an old copy of the whole settings file. Writing it back on a switch rolled the file back to that moment: Orca's hooks disappeared (07:13 on 2026-09-23), Codex's `notify`, trusted projects, plugins and MCP servers reverted, and the Windows Codex config (with Windows paths) was merged into WSL's.
