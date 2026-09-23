@@ -20,7 +20,6 @@ mod health;
 pub mod http_client;
 pub mod hyper_client;
 pub mod keep_warm;
-pub mod local_tls;
 pub mod log_codes;
 pub mod manual_hold;
 pub mod model_mapper;

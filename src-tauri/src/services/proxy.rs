@@ -579,10 +579,9 @@ impl ProxyService {
                 proxy_url.trim_end_matches('/'),
                 crate::proxy::codex_pool::BACKEND_PATH_PREFIX
             );
-            let config_str = Self::set_codex_openai_base_url(&config_str, Some(&backend_url));
-            config["config"] = json!(Self::set_codex_chatgpt_base_url(
+            config["config"] = json!(Self::set_codex_openai_base_url(
                 &config_str,
-                crate::proxy::local_tls::Install::Windows
+                Some(&backend_url)
             ));
             return;
         }
@@ -608,9 +607,8 @@ impl ProxyService {
             .is_some_and(|name| name != "openai")
     }
 
-    /// Sets or removes the top-level `openai_base_url` key. Removing it also
-    /// removes a `chatgpt_base_url` that points at the proxy. Unparseable TOML
-    /// is returned untouched.
+    /// Sets or removes the top-level `openai_base_url` key. Unparseable TOML is
+    /// returned untouched.
     fn set_codex_openai_base_url(toml_str: &str, url: Option<&str>) -> String {
         let Ok(mut doc) = toml_str.parse::<toml_edit::DocumentMut>() else {
             return toml_str.to_string();
@@ -619,32 +617,8 @@ impl ProxyService {
             Some(url) => doc["openai_base_url"] = toml_edit::value(url),
             None => {
                 doc.as_table_mut().remove("openai_base_url");
-                let chatgpt_is_local = doc
-                    .get("chatgpt_base_url")
-                    .and_then(|v| v.as_str())
-                    .is_some_and(Self::is_local_proxy_url);
-                if chatgpt_is_local {
-                    doc.as_table_mut().remove("chatgpt_base_url");
-                }
             }
         }
-        doc.to_string()
-    }
-
-    /// Points Codex's other ChatGPT backend calls (the usage `/status` shows)
-    /// at the proxy's HTTPS endpoint when `install` trusts it; otherwise they
-    /// stay direct, since Codex exits at startup on an untrusted one.
-    fn set_codex_chatgpt_base_url(
-        toml_str: &str,
-        install: crate::proxy::local_tls::Install,
-    ) -> String {
-        let Some(url) = crate::proxy::local_tls::codex_chatgpt_base_url(install) else {
-            return toml_str.to_string();
-        };
-        let Ok(mut doc) = toml_str.parse::<toml_edit::DocumentMut>() else {
-            return toml_str.to_string();
-        };
-        doc["chatgpt_base_url"] = toml_edit::value(url);
         doc.to_string()
     }
 
@@ -1492,12 +1466,10 @@ impl ProxyService {
 
     fn is_local_proxy_url(url: &str) -> bool {
         let url = url.trim();
-        let Some(rest) = url
-            .strip_prefix("http://")
-            .or_else(|| url.strip_prefix("https://"))
-        else {
+        if !url.starts_with("http://") {
             return false;
-        };
+        }
+        let rest = &url["http://".len()..];
         rest.starts_with("127.0.0.1")
             || rest.starts_with("localhost")
             || rest.starts_with("0.0.0.0")
@@ -1987,9 +1959,8 @@ impl ProxyService {
     }
 
     /// `target` (a `config.toml`) with the keys the Codex takeover writes —
-    /// `openai_base_url`, `chatgpt_base_url` and the `base_url` of the top level
-    /// or of the active model provider — taken from `live`. Unparseable input
-    /// returns `target`.
+    /// `openai_base_url` and the `base_url` of the top level or of the active
+    /// model provider — taken from `live`. Unparseable input returns `target`.
     fn codex_takeover_base(target: &str, live: &str) -> String {
         let (Ok(mut base), Ok(live)) = (
             target.parse::<toml_edit::DocumentMut>(),
@@ -1997,7 +1968,7 @@ impl ProxyService {
         ) else {
             return target.to_string();
         };
-        for key in ["openai_base_url", "chatgpt_base_url", "base_url"] {
+        for key in ["openai_base_url", "base_url"] {
             match live.get(key) {
                 Some(item) => base[key] = item.clone(),
                 None => {
@@ -2284,12 +2255,7 @@ impl ProxyService {
                     proxy_url.trim_end_matches('/'),
                     crate::proxy::codex_pool::BACKEND_PATH_PREFIX
                 );
-                let text = Self::set_codex_openai_base_url(&text, Some(&backend_url));
-                let config_dir = path.parent().unwrap_or(path);
-                live["config"] = json!(Self::set_codex_chatgpt_base_url(
-                    &text,
-                    crate::proxy::local_tls::Install::Wsl(config_dir)
-                ));
+                live["config"] = json!(Self::set_codex_openai_base_url(&text, Some(&backend_url)));
             }
         }
 
@@ -2875,13 +2841,8 @@ mod tests {
             Some("http://127.0.0.1:15721/backend-api/codex"),
         );
         assert!(ProxyService::codex_openai_base_url_is_local(&local));
-        let local = format!(
-            "{local}chatgpt_base_url = \"https://127.0.0.1:15722/backend-api\"
-"
-        );
         let cleaned = ProxyService::set_codex_openai_base_url(&local, None);
         assert!(!cleaned.contains("openai_base_url"));
-        assert!(!cleaned.contains("chatgpt_base_url"));
         assert!(cleaned.contains("model = \"gpt-5\""));
 
         let users_own = "openai_base_url = \"https://gateway.example/backend-api/codex\"\n";

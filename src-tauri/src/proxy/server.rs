@@ -105,8 +105,6 @@ impl ProxyServer {
 
         log::info!("[{}] Proxy server started on {addr}", log_srv::STARTED);
 
-        let tls_task = self.start_local_tls(&app).await;
-
         // Update the global proxy port, used for system proxy detection
         crate::proxy::http_client::set_proxy_port(self.config.listen_port);
 
@@ -195,11 +193,6 @@ impl ProxyServer {
                 }
             }
 
-            if let Some(tls_task) = tls_task {
-                tls_task.abort();
-                super::local_tls::set_listening(0);
-            }
-
             // Update status once the server stops
             state.status.write().await.running = false;
             *state.start_time.write().await = None;
@@ -213,71 +206,6 @@ impl ProxyServer {
             port: self.config.listen_port,
             started_at: chrono::Utc::now().to_rfc3339(),
         })
-    }
-
-    /// The HTTPS endpoint, one port above the proxy's, serving the same
-    /// routes for the Codex setting that must be HTTPS (`local_tls`). Failing
-    /// to start it leaves the proxy as it was.
-    async fn start_local_tls(&self, app: &Router) -> Option<tokio::task::JoinHandle<()>> {
-        let port = self.config.listen_port.checked_add(1)?;
-        let acceptor = match super::local_tls::acceptor() {
-            Ok(acceptor) => acceptor,
-            Err(e) => {
-                log::warn!("[local_tls] no HTTPS endpoint: {e}");
-                return None;
-            }
-        };
-        let listener = match tokio::net::TcpListener::bind((
-            self.config.listen_address.as_str(),
-            port,
-        ))
-        .await
-        {
-            Ok(listener) => listener,
-            Err(e) => {
-                log::warn!("[local_tls] no HTTPS endpoint on port {port}: {e}");
-                return None;
-            }
-        };
-        super::local_tls::set_listening(port);
-        log::info!("[local_tls] HTTPS endpoint on port {port}");
-        let app = app.clone();
-        Some(tokio::spawn(async move {
-            loop {
-                let Ok((stream, _)) = listener.accept().await else {
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                    continue;
-                };
-                let acceptor = acceptor.clone();
-                let app = app.clone();
-                tokio::spawn(async move {
-                    let Ok(stream) = acceptor.accept(stream).await else {
-                        return;
-                    };
-                    let service = hyper::service::service_fn(
-                        move |req: hyper::Request<hyper::body::Incoming>| {
-                            let mut router = app.clone();
-                            async move {
-                                let (parts, body) = req.into_parts();
-                                let req =
-                                    http::Request::from_parts(parts, axum::body::Body::new(body));
-                                <Router as tower::Service<http::Request<axum::body::Body>>>::call(
-                                    &mut router,
-                                    req,
-                                )
-                                .await
-                            }
-                        },
-                    );
-                    if let Err(e) = hyper::server::conn::http1::Builder::new()
-                        .serve_connection(TokioIo::new(stream), service)
-                        .await
-                    {
-                        log::debug!("[local_tls] connection error: {e}");
-                    }
-                });
-            }
-        }))
     }
 
     pub async fn stop(&self) -> Result<(), ProxyError> {
