@@ -190,13 +190,16 @@ export function ProviderCard({
     appId === "codex" && isOfficial,
   );
   // Non-current Official cards read their own login rather than the live one.
-  const quotaProviderId = isCurrent
-    ? undefined
-    : appId === "claude" && provider.meta?.capturedClaudeAccount
-      ? provider.id
-      : appId === "codex" && codexAccount
+  // So does the current Codex card while the proxy serves Codex: the proxy
+  // presents the card's login, not the one in Codex's own auth.json.
+  const quotaProviderId =
+    isCurrent && !(appId === "codex" && isProxyTakeover)
+      ? undefined
+      : appId === "claude" && provider.meta?.capturedClaudeAccount
         ? provider.id
-        : undefined;
+        : appId === "codex" && codexAccount
+          ? provider.id
+          : undefined;
 
   // 获取用量数据以判断是否有多套餐
   // 累加模式应用（OpenCode/OpenClaw）：使用 isInConfig 代替 isCurrent

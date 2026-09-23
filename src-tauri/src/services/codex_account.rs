@@ -308,6 +308,10 @@ impl From<CodexLogin> for CodexIdentity {
 /// that case the live login is also filed into the provider now, under the
 /// same rules the switch-away backfill applies, so the record stops being
 /// empty.
+///
+/// While the proxy serves Codex, the live file is Codex's own login, which
+/// the proxy replaces with the current provider's stored one; the stored
+/// login is then the account in use, and the live one is filed by the proxy.
 pub fn read_identity(
     state: &crate::store::AppState,
     provider_id: &str,
@@ -327,7 +331,10 @@ pub fn read_identity(
     )?
     .as_deref()
         == Some(provider_id);
-    if !is_current {
+    let served_by_proxy = state
+        .proxy_service
+        .detect_takeover_in_live_config_for_app(&crate::app_config::AppType::Codex);
+    if !is_current || served_by_proxy {
         return Ok(inspect(&stored_auth).map(CodexIdentity::from));
     }
 
