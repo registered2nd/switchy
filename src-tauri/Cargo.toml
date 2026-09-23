@@ -59,6 +59,7 @@ tokio-rustls = "0.26"
 rustls = { version = "0.23", features = ["ring"] }
 webpki-roots = "0.26"
 rustls-native-certs = "0.8"
+rcgen = "0.13"
 regex = "1.10"
 rquickjs = { version = "0.8", features = ["array-buffer", "classes"] }
 thiserror = "2.0"

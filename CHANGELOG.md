@@ -66,8 +66,12 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   Codex on the login it has. In a Codex session that is already open,
   `/status` shows the limits of the account you enabled as soon as you
   switch, without sending a message; its account line keeps the account the
-  session started with, which Codex never changes mid-session. Sessions open
-  before this update need one restart to pick it up.
+  session started with, which Codex never changes mid-session. Codex reads
+  usage only over HTTPS, so Switchy serves it locally with its own
+  certificate and adds that certificate to the Windows and WSL trust stores.
+  While routed this way, Codex's built-in ChatGPT apps connector does not
+  start.
+  Sessions open before this update need one restart to pick it up.
 
 - **"Degraded" no longer appears on healthy accounts.** Only failures that
   are about the account count against it: a refused login, a server error, a
