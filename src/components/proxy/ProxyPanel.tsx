@@ -8,7 +8,6 @@ import {
   Save,
   Loader2,
   Zap,
-  Power,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -17,39 +16,27 @@ import { Input } from "@/components/ui/input";
 import { ToggleRow } from "@/components/ui/toggle-row";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
 import { toast } from "sonner";
-import { extractErrorMessage } from "@/utils/errorUtils";
 import { useFailoverQueue } from "@/lib/query/failover";
 import { ProviderHealthBadge } from "@/components/providers/ProviderHealthBadge";
 import { useProviderHealth } from "@/lib/query/failover";
 import {
-  useProxyTakeoverStatus,
-  useSetProxyTakeoverForApp,
   useGlobalProxyConfig,
   useUpdateGlobalProxyConfig,
 } from "@/lib/query/proxy";
 import type { ProxyStatus } from "@/types/proxy";
 import { useTranslation } from "react-i18next";
-import { AnimatePresence, motion } from "framer-motion";
 
 interface ProxyPanelProps {
   enableLocalProxy: boolean;
   onEnableLocalProxyChange: (checked: boolean) => void;
-  onToggleProxy: (checked: boolean) => Promise<void>;
-  isProxyPending: boolean;
 }
 
 export function ProxyPanel({
   enableLocalProxy,
   onEnableLocalProxyChange,
-  onToggleProxy,
-  isProxyPending,
 }: ProxyPanelProps) {
   const { t } = useTranslation();
   const { status, isRunning } = useProxyStatus();
-
-  // 获取应用接管状态
-  const { data: takeoverStatus } = useProxyTakeoverStatus();
-  const setTakeoverForApp = useSetProxyTakeoverForApp();
 
   // 获取全局代理配置
   const { data: globalConfig } = useGlobalProxyConfig();
@@ -72,30 +59,6 @@ export function ProxyPanel({
   const { data: claudeQueue = [] } = useFailoverQueue("claude");
   const { data: codexQueue = [] } = useFailoverQueue("codex");
   const { data: geminiQueue = [] } = useFailoverQueue("gemini");
-
-  const handleTakeoverChange = async (appType: string, enabled: boolean) => {
-    try {
-      await setTakeoverForApp.mutateAsync({ appType, enabled });
-      toast.success(
-        enabled
-          ? t("proxy.takeover.enabled", {
-              app: appType,
-              defaultValue: `${appType} 接管已启用`,
-            })
-          : t("proxy.takeover.disabled", {
-              app: appType,
-              defaultValue: `${appType} 接管已关闭`,
-            }),
-        { closeButton: true },
-      );
-    } catch (error) {
-      toast.error(t("proxy.takeover.failed"), {
-        description: extractErrorMessage(error) || undefined,
-        duration: 12000,
-        closeButton: true,
-      });
-    }
-  };
 
   const handleLoggingChange = async (enabled: boolean) => {
     if (!globalConfig) return;
@@ -209,84 +172,6 @@ export function ProxyPanel({
           checked={enableLocalProxy}
           onCheckedChange={onEnableLocalProxyChange}
         />
-
-        {/* [2] Proxy service toggle — always visible */}
-        <div className="flex items-center justify-between rounded-xl border border-border bg-card/50 p-4 transition-colors hover:bg-muted/50">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-background ring-1 ring-border">
-              <Power className="h-4 w-4 text-green-500" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium leading-none">
-                {t("proxyConfig.proxyEnabled", {
-                  defaultValue: "代理服务",
-                })}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {isRunning
-                  ? t("settings.advanced.proxy.running")
-                  : t("settings.advanced.proxy.stopped")}
-              </p>
-            </div>
-          </div>
-          <Switch
-            checked={isRunning}
-            onCheckedChange={onToggleProxy}
-            disabled={isProxyPending}
-          />
-        </div>
-
-        {/* [3] App takeover switches — animated, visible only when proxy is running */}
-        <AnimatePresence>
-          {isRunning && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.25, ease: "easeInOut" }}
-              className="overflow-hidden"
-            >
-              <div className="rounded-xl border-2 border-primary/20 bg-primary/5 p-4 space-y-3">
-                <p className="text-xs font-medium text-primary">
-                  {t("proxyConfig.appTakeover", {
-                    defaultValue: "应用接管",
-                  })}
-                </p>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {(["claude", "codex", "gemini"] as const).map((appType) => {
-                    const isEnabled =
-                      takeoverStatus?.[
-                        appType as keyof typeof takeoverStatus
-                      ] ?? false;
-                    return (
-                      <div
-                        key={appType}
-                        className="flex items-center justify-between rounded-md border border-primary/20 bg-background/60 px-3 py-2"
-                      >
-                        <span className="text-sm font-medium capitalize">
-                          {appType}
-                        </span>
-                        <Switch
-                          checked={isEnabled}
-                          onCheckedChange={(checked) =>
-                            handleTakeoverChange(appType, checked)
-                          }
-                          disabled={setTakeoverForApp.isPending}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t("proxy.takeover.hint", {
-                    defaultValue:
-                      "选择要接管的应用，启用后该应用的请求将通过本地代理转发",
-                  })}
-                </p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Running state: service info + stats */}
         {isRunning && status ? (

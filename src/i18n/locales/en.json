@@ -225,7 +225,7 @@
     "general": "General",
     "tabGeneral": "General",
     "tabAdvanced": "Advanced",
-    "tabProxy": "Proxy",
+    "tabPool": "Pool",
     "advanced": {
       "configDir": {
         "title": "Configuration Directory",
@@ -1993,7 +1993,7 @@
       "threshold": "Usage threshold (%)",
       "thresholdDescription": "Pass an account over once its account-wide usage reaches this level. 50–100.",
       "keepWarm": "Keep accounts warm",
-      "keepWarmDescription": "When an Official account's session window has lapsed, send it one single-token request, so an account is already inside a window before rotation reaches it. Presenting the login renews it as a byproduct — but only as far as its refresh token reaches, and that deadline comes from the last sign-in in the browser and does not move when the login is renewed. This spends a little quota with nobody present, which is why it is off. Claude and Codex, while Switchy is running.",
+      "keepWarmDescription": "When an Official account's session window has lapsed, send it one single-token request, so it is already inside a window when rotation reaches it and its login is renewed rather than left to go stale. Spends a little quota with nobody present, which is why it is off. Claude and Codex, while Switchy is running.",
       "keepWarmInterval": "Check every (minutes)",
       "keepWarmIntervalDescription": "How often each account is considered. A request goes out only when that account's window has lapsed and the account is not at its limit, so the cost stays near one request per account per window. 15–1440."
     },
@@ -2387,5 +2387,15 @@
       "account_mismatch": "The Codex login that was live belonged to a different account than “{{id}}” holds, so “{{id}}” keeps its saved login.",
       "rehomed": "That login was saved to “{{id}}”, the provider that holds that account."
     }
+  },
+  "pool": {
+    "title": "Account Pool",
+    "description": "Run several subscription accounts as one. Route an app through the local proxy, and the session moves to the next account before the current one reaches its limit.",
+    "proxy": "Local proxy",
+    "proxyDescription": "Routing, failover and rotation all need it running.",
+    "route": "Route through the proxy",
+    "routeDescription": "The apps whose requests go through the proxy.",
+    "failover": "Automatic failover",
+    "failoverDescription": "When a request fails or an account nears its limit, move on to the next provider in that app's queue."
   }
 }

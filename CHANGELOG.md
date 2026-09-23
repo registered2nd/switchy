@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Internal / repo-level changes (spec conventions, build identity, agent-facing
 structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
+## [1.0.16] — 2026-09-22 — Settings has a Pool tab
+
+### Changed
+
+- **The Proxy tab is now the Pool tab.** Its top card holds everything the
+  account pool runs on, in the order each builds on the last: the local proxy,
+  which apps are routed through it, automatic failover per app, rotating
+  accounts before the limit, and keeping accounts warm. Rotation and keep-warm
+  are set once there instead of under each app's failover settings. The proxy
+  server's address and statistics, the failover queues and circuit breaker,
+  the rectifier and the outbound proxy are in collapsed sections below it.
+
 ## [1.0.15] — 2026-09-21 — Pooled accounts can be kept warm, and the proxy speaks English
 
 ### Added

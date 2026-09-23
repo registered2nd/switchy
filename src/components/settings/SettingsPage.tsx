@@ -40,7 +40,7 @@ import { ImportExportSection } from "@/components/settings/ImportExportSection";
 import { BackupListSection } from "@/components/settings/BackupListSection";
 import { WebdavSyncSection } from "@/components/settings/WebdavSyncSection";
 import { AboutSection } from "@/components/settings/AboutSection";
-import { ProxyTabContent } from "@/components/settings/ProxyTabContent";
+import { PoolTabContent } from "@/components/settings/PoolTabContent";
 import { ModelTestConfigPanel } from "@/components/usage/ModelTestConfigPanel";
 import { UsageDashboard } from "@/components/usage/UsageDashboard";
 import { LogConfigPanel } from "@/components/settings/LogConfigPanel";
@@ -205,7 +205,7 @@ export function SettingsPage({
             <TabsTrigger value="general">
               {t("settings.tabGeneral")}
             </TabsTrigger>
-            <TabsTrigger value="proxy">{t("settings.tabProxy")}</TabsTrigger>
+            <TabsTrigger value="pool">{t("settings.tabPool")}</TabsTrigger>
             <TabsTrigger value="auth">
               {t("settings.tabAuth", { defaultValue: "认证" })}
             </TabsTrigger>
@@ -255,9 +255,9 @@ export function SettingsPage({
                 ) : null}
               </TabsContent>
 
-              <TabsContent value="proxy" className="space-y-6 mt-0 pb-4">
+              <TabsContent value="pool" className="space-y-6 mt-0 pb-4">
                 {settings ? (
-                  <ProxyTabContent
+                  <PoolTabContent
                     settings={settings}
                     onAutoSave={handleAutoSave}
                   />

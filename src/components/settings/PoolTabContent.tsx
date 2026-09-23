@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Server, Activity, Zap, Globe, ShieldAlert } from "lucide-react";
+import {
+  Server,
+  Activity,
+  Zap,
+  Globe,
+  ShieldAlert,
+  Layers,
+} from "lucide-react";
 import { motion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import {
@@ -13,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { ProxyPanel } from "@/components/proxy";
 import { AutoFailoverConfigPanel } from "@/components/proxy/AutoFailoverConfigPanel";
 import { FailoverQueueManager } from "@/components/proxy/FailoverQueueManager";
-import { AccountPoolPanel } from "@/components/proxy/AccountPoolPanel";
+import { PoolControls } from "@/components/proxy/PoolControls";
 import { RectifierConfigPanel } from "@/components/settings/RectifierConfigPanel";
 import { GlobalProxySettings } from "@/components/settings/GlobalProxySettings";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -21,15 +28,12 @@ import { ToggleRow } from "@/components/ui/toggle-row";
 import { useProxyStatus } from "@/hooks/useProxyStatus";
 import type { SettingsFormState } from "@/hooks/useSettings";
 
-interface ProxyTabContentProps {
+interface PoolTabContentProps {
   settings: SettingsFormState;
   onAutoSave: (updates: Partial<SettingsFormState>) => Promise<void>;
 }
 
-export function ProxyTabContent({
-  settings,
-  onAutoSave,
-}: ProxyTabContentProps) {
+export function PoolTabContent({ settings, onAutoSave }: PoolTabContentProps) {
   const { t } = useTranslation();
   const [showProxyConfirm, setShowProxyConfirm] = useState(false);
   const [showFailoverConfirm, setShowFailoverConfirm] = useState(false);
@@ -89,6 +93,22 @@ export function ProxyTabContent({
       transition={{ duration: 0.3 }}
       className="space-y-4"
     >
+      <div className="rounded-xl glass-card px-6 py-5 space-y-5">
+        <div className="flex items-center gap-3">
+          <Layers className="h-5 w-5 text-primary" />
+          <div>
+            <h3 className="text-base font-semibold">{t("pool.title")}</h3>
+            <p className="text-sm text-muted-foreground">
+              {t("pool.description")}
+            </p>
+          </div>
+        </div>
+        <PoolControls
+          onToggleProxy={handleToggleProxy}
+          isProxyPending={isProxyPending}
+        />
+      </div>
+
       <Accordion type="multiple" defaultValue={[]} className="w-full space-y-4">
         {/* Local Proxy */}
         <AccordionItem
@@ -125,8 +145,6 @@ export function ProxyTabContent({
               onEnableLocalProxyChange={(checked) =>
                 onAutoSave({ enableLocalProxy: checked })
               }
-              onToggleProxy={handleToggleProxy}
-              isProxyPending={isProxyPending}
             />
           </AccordionContent>
         </AccordionItem>
@@ -193,9 +211,6 @@ export function ProxyTabContent({
                     />
                   </div>
                   <div className="border-t border-border/50 pt-6">
-                    <AccountPoolPanel />
-                  </div>
-                  <div className="border-t border-border/50 pt-6">
                     <AutoFailoverConfigPanel
                       appType="claude"
                       disabled={!isRunning}
@@ -216,9 +231,6 @@ export function ProxyTabContent({
                       appType="codex"
                       disabled={!isRunning}
                     />
-                  </div>
-                  <div className="border-t border-border/50 pt-6">
-                    <AccountPoolPanel />
                   </div>
                   <div className="border-t border-border/50 pt-6">
                     <AutoFailoverConfigPanel

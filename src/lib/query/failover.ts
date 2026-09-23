@@ -283,6 +283,9 @@ export function useSetAutoFailoverEnabled() {
       queryClient.invalidateQueries({
         queryKey: ["proxyStatus"],
       });
+      queryClient.invalidateQueries({
+        queryKey: ["appProxyConfig", variables.appType],
+      });
     },
   });
 }

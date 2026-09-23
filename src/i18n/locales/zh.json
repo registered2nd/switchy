@@ -225,7 +225,7 @@
     "general": "通用",
     "tabGeneral": "通用",
     "tabAdvanced": "高级",
-    "tabProxy": "代理",
+    "tabPool": "账号池",
     "advanced": {
       "configDir": {
         "title": "配置文件目录",
@@ -1993,7 +1993,7 @@
       "threshold": "用量阈值（%）",
       "thresholdDescription": "账号整体用量达到该值后跳过此账号。范围 50–100。",
       "keepWarm": "保持账号预热",
-      "keepWarmDescription": "当官方账号的会话窗口已结束时，向其发送一次单 token 请求，使轮换到该账号时其窗口已经开启。凭证会因此顺带续期，但仅限于其 refresh token 有效期之内；该有效期由浏览器上上一次登录决定，续期并不会将其往后推。此功能会在无人使用时消耗少量额度，因此默认关闭。适用于 Claude 与 Codex，仅在 Switchy 运行期间生效。",
+      "keepWarmDescription": "当官方账号的会话窗口已结束时，向其发送一次单 token 请求，使轮换到该账号时其窗口已经开启，同时让登录保持续期而不会过期失效。此功能会在无人使用时消耗少量额度，因此默认关闭。适用于 Claude 与 Codex，仅在 Switchy 运行期间生效。",
       "keepWarmInterval": "检查间隔（分钟）",
       "keepWarmIntervalDescription": "多久检查一次每个账号。仅当该账号的窗口已结束且未达到限额时才会发出请求，因此成本接近于每个账号每个窗口一次请求。范围 15–1440。"
     },
@@ -2387,5 +2387,15 @@
       "account_mismatch": "当前 Codex 登录的账号与“{{id}}”保存的账号不同，“{{id}}”保留了原有登录。",
       "rehomed": "该登录已保存到持有此账号的供应商“{{id}}”。"
     }
+  },
+  "pool": {
+    "title": "账号池",
+    "description": "把多个订阅账号当作一个使用：让应用经本地代理转发，当前账号接近上限前会话就切换到下一个账号。",
+    "proxy": "本地代理",
+    "proxyDescription": "转发、故障转移和轮换都需要它在运行。",
+    "route": "经代理转发",
+    "routeDescription": "请求经由代理转发的应用。",
+    "failover": "自动故障转移",
+    "failoverDescription": "请求失败或账号接近上限时，切换到该应用队列中的下一个供应商。"
   }
 }
