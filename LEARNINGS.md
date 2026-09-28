@@ -4,6 +4,14 @@ Transferable heuristics captured from past sessions on this project. These are r
 
 ---
 
+## A Tauri platform config replaces the whole window entry, so a size set in `tauri.conf.json` can silently never apply
+
+Tauri merges `tauri.windows.conf.json` over `tauri.conf.json` as a JSON merge patch, and a merge patch replaces arrays outright. `app.windows` is an array, so the Windows file's one window entry, which set only a title, the title bar, `minWidth` and `minHeight`, became the whole window config on Windows. The width, height and centring in the base file were dropped. Switchy opened at its 900 minimum for months, and raising the size in `tauri.conf.json` twice changed nothing on Windows while the browser preview looked right.
+
+**Rule:** When a platform config file lists `app.windows`, every window field that matters on that platform lives there in full; edit both files together, and confirm a size change from the running window (`GetClientRect`), not from the preview.
+
+---
+
 ## Decide another tool's auth mode from the data you need, not from its mode field
 
 Codex CLI stopped writing `auth_mode` into `~/.codex/auth.json`. Switchy's usage reader required `auth_mode == "chatgpt"` before it would touch the `tokens` block, so on every up-to-date install it concluded "no login" and hid the usage badges. There was no error and no log line: the feature quietly stopped existing, while the tokens it needed sat in the same file.
