@@ -1176,7 +1176,18 @@
       "keepWarmInterval": "检查间隔（分钟）",
       "keepWarmIntervalDescription": "每隔多久检查一次各账号。只有在账号窗口已结束且未达额度上限时才发送请求，因此每个账号每个窗口大约只花一次请求。范围 15–1440。",
       "codexSharedSession": "切换 Codex 登录的账号（实验性）",
-      "codexSharedSessionDescription": "Codex 窗口会一直使用启动时的账号，所以已打开窗口里的 /status 看不到切换。开启后，在 WSL 里启动的每个 Codex 窗口都会运行在从自己终端启动的独立 Codex 服务上，Switchy 会在每次切换时把它登录到当前使用的账号：/status 显示该账号的邮箱和额度，Orca 也仍能识别该窗口。为此 Switchy 会在 ~/.bashrc 中加入一个 codex shell 函数，因此只对从新终端启动的窗口生效。这用到了一个被 OpenAI 标为不稳定的 Codex 请求，Codex 更新后可能失效。需要让 Codex 经过代理。不支持原生 Windows 上的 Codex。"
+      "codexSharedSessionDescription": "Codex 窗口会一直使用启动时的账号，所以已打开窗口里的 /status 看不到切换。开启后，在 WSL 里启动的每个 Codex 窗口都会运行在从自己终端启动的独立 Codex 服务上，Switchy 会在每次切换时把它登录到当前使用的账号：/status 显示该账号的邮箱和额度，Orca 也仍能识别该窗口。为此 Switchy 会在 ~/.bashrc 中加入一个 codex shell 函数，因此只对从新终端启动的窗口生效。这用到了一个被 OpenAI 标为不稳定的 Codex 请求，Codex 更新后可能失效。需要让 Codex 经过代理。不支持原生 Windows 上的 Codex。",
+      "codexUpdatesTitle": "Codex 窗口需要刷新",
+      "codexUpdatesDescription": "这些窗口启动后，已安装的 CLI 或所选模型目录发生了变化。请完成当前轮次，然后退出 Codex，保持终端打开。",
+      "codexCliChanged": "CLI 已更新：{{old}} → {{current}}",
+      "codexCliChangedUnknown": "已安装的 CLI 发生变化；当前版本：{{current}}",
+      "codexCatalogChanged": "所选模型目录已更新。",
+      "codexLegacyRefresh": "此窗口启动时尚未启用刷新功能。退出 Codex 后，在同一终端运行 codex resume。",
+      "codexRefreshQueued": "已排队。退出 Codex 后，Switchy 会启动当前 CLI，并显示会话选择器。",
+      "codexQueueRefresh": "退出时刷新",
+      "codexCancelRefresh": "取消刷新",
+      "codexUpdatesNotice": "已打开的 Codex 窗口需要刷新",
+      "codexUpdatesOpenPool": "打开账号池设置"
     },
     "autoFailover": {
       "info": "请求失败时，按切换顺序依次尝试下一个供应商。连续失败次数过多的供应商会被暂时跳过。",

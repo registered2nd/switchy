@@ -119,6 +119,17 @@ pub async fn get_account_pool_quota(
     Ok(crate::proxy::account_pool::quota_snapshot())
 }
 
+#[tauri::command]
+pub async fn get_codex_window_updates(
+) -> Result<Vec<crate::proxy::codex_engine::WindowUpdate>, String> {
+    crate::proxy::codex_engine::window_updates().await
+}
+
+#[tauri::command]
+pub fn set_codex_refresh_on_exit(socket: String, queued: bool) -> Result<(), String> {
+    crate::proxy::codex_engine::set_refresh_on_exit(&socket, queued)
+}
+
 /// Get the optimizer config
 #[tauri::command]
 pub async fn get_optimizer_config(

@@ -4,7 +4,12 @@ import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { settingsApi, type AccountPoolConfig } from "@/lib/api/settings";
+import { Button } from "@/components/ui/button";
+import {
+  settingsApi,
+  type AccountPoolConfig,
+  type CodexWindowUpdate,
+} from "@/lib/api/settings";
 
 interface AccountPoolPanelProps {
   disabled?: boolean;
@@ -23,6 +28,8 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
   const [thresholdText, setThresholdText] = useState("98");
   const [keepWarmText, setKeepWarmText] = useState("60");
   const [isLoading, setIsLoading] = useState(true);
+  const [codexUpdates, setCodexUpdates] = useState<CodexWindowUpdate[]>([]);
+  const [refreshPending, setRefreshPending] = useState<string | null>(null);
 
   useEffect(() => {
     settingsApi
@@ -35,6 +42,38 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
       .catch((e) => console.error("Failed to load account pool config:", e))
       .finally(() => setIsLoading(false));
   }, []);
+
+  useEffect(() => {
+    let live = true;
+    const load = () => {
+      settingsApi
+        .getCodexWindowUpdates()
+        .then((updates) => {
+          if (live) setCodexUpdates(updates);
+        })
+        .catch((error) =>
+          console.error("Failed to check Codex windows:", error),
+        );
+    };
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const toggleCodexRefresh = async (update: CodexWindowUpdate) => {
+    setRefreshPending(update.socket);
+    try {
+      await settingsApi.setCodexRefreshOnExit(update.socket, !update.queued);
+      setCodexUpdates(await settingsApi.getCodexWindowUpdates());
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setRefreshPending(null);
+    }
+  };
 
   const save = async (updates: Partial<AccountPoolConfig>) => {
     const next = { ...config, ...updates };
@@ -165,6 +204,70 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
           }
         />
       </div>
+
+      {codexUpdates.length > 0 && (
+        <div className="space-y-3 rounded-md border border-border p-3">
+          <div>
+            <p className="text-sm font-medium">
+              {t("proxy.accountPool.codexUpdatesTitle")}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {t("proxy.accountPool.codexUpdatesDescription")}
+            </p>
+          </div>
+          {codexUpdates.map((update) => (
+            <div
+              key={update.socket}
+              className="flex items-center justify-between gap-3 border-t border-border/50 pt-3"
+            >
+              <div className="min-w-0 space-y-1">
+                <p
+                  className="truncate text-xs font-medium"
+                  title={update.cwd ?? update.socket}
+                >
+                  {update.cwd ?? update.socket}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {update.cliChanged
+                    ? update.serverVersion
+                      ? t("proxy.accountPool.codexCliChanged", {
+                          old: update.serverVersion,
+                          current: update.installedVersion,
+                        })
+                      : t("proxy.accountPool.codexCliChangedUnknown", {
+                          current: update.installedVersion,
+                        })
+                    : t("proxy.accountPool.codexCatalogChanged")}
+                </p>
+                {!update.refreshOnExit && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("proxy.accountPool.codexLegacyRefresh")}
+                  </p>
+                )}
+                {update.queued && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("proxy.accountPool.codexRefreshQueued")}
+                  </p>
+                )}
+              </div>
+              {update.refreshOnExit && (
+                <Button
+                  size="sm"
+                  variant={update.queued ? "outline" : "default"}
+                  disabled={disabled || refreshPending === update.socket}
+                  onClick={() => void toggleCodexRefresh(update)}
+                >
+                  {t(
+                    update.queued
+                      ? "proxy.accountPool.codexCancelRefresh"
+                      : "proxy.accountPool.codexQueueRefresh",
+                  )}
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

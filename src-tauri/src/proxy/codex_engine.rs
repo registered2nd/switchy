@@ -23,10 +23,11 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use futures::{SinkExt, StreamExt};
 use once_cell::sync::Lazy;
+use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::Manager;
 use tokio::process::Command;
@@ -69,26 +70,53 @@ codex() {
     esac
   done
   mkdir -p "$_sw_dir" && chmod 700 "$_sw_dir"
-  _sw_sock="$_sw_dir/$$-$RANDOM.sock"
-  ( command codex app-server --listen "unix://$_sw_sock" </dev/null >/dev/null 2>&1 & )
-  _sw_n=0
-  while [ ! -S "$_sw_sock" ] && [ "$_sw_n" -lt 150 ]; do sleep 0.1; _sw_n=$((_sw_n + 1)); done
-  if [ ! -S "$_sw_sock" ]; then
-    pkill -f "unix://$_sw_sock" 2>/dev/null
-    command codex "$@"; return
-  fi
-  printf '%s\n' "$_sw_sock" > "$_sw_sock.session"
-  # Stops the server when this shell goes away without the window exiting.
-  ( ( _sw_shell=$$
-      while kill -0 "$_sw_shell" 2>/dev/null && [ -S "$_sw_sock" ]; do sleep 5; done
-      pkill -f "unix://$_sw_sock"; sleep 3; pkill -KILL -f "unix://$_sw_sock"
-      rm -f "$_sw_sock" "$_sw_sock.session" ) </dev/null >/dev/null 2>&1 & )
-  sleep 1
-  command codex --remote "unix://$_sw_sock" "$@"
-  _sw_rc=$?
-  rm -f "$_sw_sock.session"
-  ( ( pkill -f "unix://$_sw_sock"; sleep 3; pkill -KILL -f "unix://$_sw_sock"; rm -f "$_sw_sock" ) </dev/null >/dev/null 2>&1 & )
-  return $_sw_rc
+  # Keep launch overrides when the fresh client opens the conversation picker.
+  _sw_resume_opts=()
+  _sw_option_value=0
+  for _sw_arg in "$@"; do
+    if [ "$_sw_option_value" -eq 1 ]; then
+      _sw_resume_opts+=("$_sw_arg")
+      _sw_option_value=0
+      continue
+    fi
+    case "$_sw_arg" in
+      --) break ;;
+      -c|--config|-m|--model|-p|--profile|-s|--sandbox|-a|--ask-for-approval|-C|--cd|--local-provider|--enable|--disable)
+        _sw_resume_opts+=("$_sw_arg"); _sw_option_value=1 ;;
+      --config=*|--model=*|--profile=*|--sandbox=*|--ask-for-approval=*|--cd=*|--local-provider=*|--enable=*|--disable=*)
+        _sw_resume_opts+=("$_sw_arg") ;;
+      --approve-for-me|--dangerously-bypass-approvals-and-sandbox|--dangerously-bypass-hook-trust|--oss|--search|--no-alt-screen|--strict-config)
+        _sw_resume_opts+=("$_sw_arg") ;;
+    esac
+  done
+  while :; do
+    _sw_sock="$_sw_dir/$$-$RANDOM.sock"
+    ( command codex app-server --listen "unix://$_sw_sock" </dev/null >/dev/null 2>&1 & )
+    _sw_n=0
+    while [ ! -S "$_sw_sock" ] && [ "$_sw_n" -lt 150 ]; do sleep 0.1; _sw_n=$((_sw_n + 1)); done
+    if [ ! -S "$_sw_sock" ]; then
+      pkill -f "unix://$_sw_sock" 2>/dev/null
+      command codex "$@"; return
+    fi
+    printf '%s\nrefresh-on-exit-v1\n%s\n%s\n' \
+      "$_sw_sock" "$PWD" "$(command codex --version 2>/dev/null)" > "$_sw_sock.session"
+    # Stops the server when this shell goes away without the window exiting.
+    ( ( _sw_shell=$$
+        while kill -0 "$_sw_shell" 2>/dev/null && [ -S "$_sw_sock" ]; do sleep 5; done
+        pkill -f "unix://$_sw_sock"; sleep 3; pkill -KILL -f "unix://$_sw_sock"
+        rm -f "$_sw_sock" "$_sw_sock.session" "$_sw_sock.refresh" ) </dev/null >/dev/null 2>&1 & )
+    sleep 1
+    command codex --remote "unix://$_sw_sock" "$@"
+    _sw_rc=$?
+    _sw_refresh=0
+    if [ -e "$_sw_sock.refresh" ]; then _sw_refresh=1; fi
+    rm -f "$_sw_sock.session" "$_sw_sock.refresh"
+    ( ( pkill -f "unix://$_sw_sock"; sleep 3; pkill -KILL -f "unix://$_sw_sock"; rm -f "$_sw_sock" ) </dev/null >/dev/null 2>&1 & )
+    if [ "$_sw_refresh" -ne 1 ]; then return $_sw_rc; fi
+    # The picker preserves the right conversation even when several threads
+    # were loaded on the old server. The new server uses the installed CLI.
+    set -- "${_sw_resume_opts[@]}" resume
+  done
 }
 "#;
 
@@ -109,22 +137,23 @@ struct Install {
     codex_dir: PathBuf,
 }
 
+#[derive(Clone, Debug)]
+struct Session {
+    marker: PathBuf,
+    socket: String,
+    cwd: Option<String>,
+    cli_version: Option<String>,
+    refresh_on_exit: bool,
+}
+
 impl Install {
     fn sessions_dir(&self) -> PathBuf {
         self.codex_dir.join(SESSIONS_DIR)
     }
 
-    /// `codex <args>` in this distro, as the user's login shell runs it.
-    fn codex(&self, args: &str) -> Command {
+    fn shell(&self, script: &str) -> Command {
         let mut command = Command::new("wsl.exe");
-        command.args([
-            "-d",
-            &self.distro,
-            "--",
-            "bash",
-            "-lc",
-            &format!("exec codex {args}"),
-        ]);
+        command.args(["-d", &self.distro, "--", "bash", "-lc", script]);
         #[cfg(windows)]
         {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -132,6 +161,11 @@ impl Install {
         }
         command.kill_on_drop(true);
         command
+    }
+
+    /// `codex <args>` in this distro, as the user's login shell runs it.
+    fn codex(&self, args: &str) -> Command {
+        self.shell(&format!("exec codex {args}"))
     }
 
     /// Writes the shell function and sources it from `~/.bashrc`.
@@ -184,8 +218,8 @@ impl Install {
         }
     }
 
-    /// (marker path, socket path in WSL) of every window's server.
-    fn sessions(&self) -> Vec<(PathBuf, String)> {
+    /// Every window's server, including the launch metadata from newer shells.
+    fn sessions(&self) -> Vec<Session> {
         let Ok(entries) = std::fs::read_dir(self.sessions_dir()) else {
             return Vec::new();
         };
@@ -194,10 +228,141 @@ impl Install {
             .map(|e| e.path())
             .filter(|p| p.extension().is_some_and(|x| x == "session"))
             .filter_map(|marker| {
-                let socket = std::fs::read_to_string(&marker).ok()?.trim().to_string();
-                (!socket.is_empty()).then_some((marker, socket))
+                let text = std::fs::read_to_string(&marker).ok()?;
+                let mut lines = text.lines();
+                let socket = lines.next()?.trim().to_string();
+                if socket.is_empty() {
+                    return None;
+                }
+                let refresh_on_exit = lines.next() == Some("refresh-on-exit-v1");
+                Some(Session {
+                    marker,
+                    socket,
+                    cwd: refresh_on_exit.then(|| lines.next().unwrap_or("").to_string()),
+                    cli_version: refresh_on_exit.then(|| lines.next().unwrap_or("").to_string()),
+                    refresh_on_exit,
+                })
             })
             .collect()
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowUpdate {
+    pub socket: String,
+    pub cwd: Option<String>,
+    pub server_version: Option<String>,
+    pub installed_version: String,
+    pub cli_changed: bool,
+    pub catalog_changed: bool,
+    pub refresh_on_exit: bool,
+    pub queued: bool,
+}
+
+/// A custom catalog is a startup snapshot in Codex. Compare it with the
+/// session marker instead of config.toml, which Switchy also edits for proxy
+/// routing while a window is open.
+fn selected_catalog(install: &Install) -> Option<PathBuf> {
+    let text = std::fs::read_to_string(install.codex_dir.join("config.toml")).ok()?;
+    let config: toml::Value = text.parse().ok()?;
+    let name = config.get("model_catalog_json")?.as_str()?;
+    if name.starts_with('/') {
+        let mut path = PathBuf::from(format!(r"\\wsl$\{}", install.distro));
+        for part in name.split('/').filter(|part| !part.is_empty()) {
+            path.push(part);
+        }
+        Some(path)
+    } else {
+        Some(install.codex_dir.join(name))
+    }
+}
+
+/// Open windows whose server predates the installed CLI or selected catalog.
+/// The window is left running; its shell can refresh it when the user exits.
+pub async fn window_updates() -> Result<Vec<WindowUpdate>, String> {
+    let Some(install) = wsl_install() else {
+        return Ok(Vec::new());
+    };
+    let sessions = install.sessions();
+    if sessions.is_empty() {
+        return Ok(Vec::new());
+    }
+    let output = install
+        .codex("--version")
+        .output()
+        .await
+        .map_err(|e| format!("Could not check the installed Codex CLI: {e}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Could not check the installed Codex CLI: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let installed_version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    // Entry-point mtime also covers older windows whose shell marker has no
+    // version, and reinstalling a CLI build with the same version string.
+    let cli_modified = install
+        .shell("stat -Lc %Y \"$(command -v codex)\"")
+        .output()
+        .await
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .and_then(|text| text.trim().parse::<u64>().ok())
+        .map(|seconds| SystemTime::UNIX_EPOCH + Duration::from_secs(seconds));
+    let catalog_modified = selected_catalog(&install)
+        .and_then(|path| std::fs::metadata(path).ok())
+        .and_then(|metadata| metadata.modified().ok());
+    Ok(sessions
+        .into_iter()
+        .filter_map(|session| {
+            let started = std::fs::metadata(&session.marker)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok());
+            let cli_changed = session
+                .cli_version
+                .as_ref()
+                .is_some_and(|version| !version.is_empty() && version != &installed_version)
+                || cli_modified
+                    .zip(started)
+                    .is_some_and(|(binary, started)| binary > started);
+            let catalog_changed = catalog_modified
+                .zip(started)
+                .is_some_and(|(catalog, started)| catalog > started);
+            (cli_changed || catalog_changed).then(|| WindowUpdate {
+                queued: session.marker.with_extension("refresh").exists(),
+                socket: session.socket,
+                cwd: session.cwd.filter(|cwd| !cwd.is_empty()),
+                server_version: session.cli_version.filter(|version| !version.is_empty()),
+                installed_version: installed_version.clone(),
+                cli_changed,
+                catalog_changed,
+                refresh_on_exit: session.refresh_on_exit,
+            })
+        })
+        .collect())
+}
+
+/// The shell consumes this marker only after its Codex client exits. No
+/// running client or server is stopped by this command.
+pub fn set_refresh_on_exit(socket: &str, queued: bool) -> Result<(), String> {
+    let install = wsl_install().ok_or("No WSL Codex mirror is configured")?;
+    let session = install
+        .sessions()
+        .into_iter()
+        .find(|session| session.socket == socket)
+        .ok_or("That Codex window is no longer open")?;
+    if !session.refresh_on_exit {
+        return Err("This Codex window predates refresh-on-exit support".to_string());
+    }
+    let marker = session.marker.with_extension("refresh");
+    if queued {
+        std::fs::write(&marker, "").map_err(|e| format!("Could not queue refresh: {e}"))
+    } else if marker.exists() {
+        std::fs::remove_file(&marker).map_err(|e| format!("Could not cancel refresh: {e}"))
+    } else {
+        Ok(())
     }
 }
 
@@ -274,9 +439,10 @@ async fn run(app: tauri::AppHandle, install: Install) {
             failed_at.insert(socket, Instant::now());
         }
         let sessions = install.sessions();
-        let live: HashSet<&String> = sessions.iter().map(|(_, s)| s).collect();
+        let live: HashSet<&String> = sessions.iter().map(|session| &session.socket).collect();
         failed_at.retain(|socket, _| live.contains(socket));
-        for (marker, socket) in sessions {
+        for session in sessions {
+            let Session { marker, socket, .. } = session;
             if failed_at
                 .get(&socket)
                 .is_some_and(|at| at.elapsed() < RETRY)
@@ -493,7 +659,24 @@ mod tests {
         .expect("marker");
         let sessions = install.sessions();
         assert_eq!(sessions.len(), 1);
-        assert_eq!(sessions[0].1, "/home/me/.codex/switchy-sessions/1-2.sock");
+        assert_eq!(
+            sessions[0].socket,
+            "/home/me/.codex/switchy-sessions/1-2.sock"
+        );
+        assert!(!sessions[0].refresh_on_exit);
+        std::fs::write(
+            install.sessions_dir().join("3-4.sock.session"),
+            "/home/me/.codex/switchy-sessions/3-4.sock\nrefresh-on-exit-v1\n/home/me/project\ncodex-cli 0.159.0\n",
+        )
+        .expect("new marker");
+        let sessions = install.sessions();
+        let new = sessions
+            .iter()
+            .find(|session| session.socket.ends_with("3-4.sock"))
+            .expect("new session");
+        assert_eq!(new.cwd.as_deref(), Some("/home/me/project"));
+        assert_eq!(new.cli_version.as_deref(), Some("codex-cli 0.159.0"));
+        assert!(new.refresh_on_exit);
         install.set_enabled(false);
         assert!(!install.sessions_dir().join(ENABLED_FILE).exists());
     }

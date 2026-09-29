@@ -112,6 +112,50 @@ function App() {
     useState<SettingsSection>("general");
   const [isAddOpen, setIsAddOpen] = useState(false);
 
+  const notifiedCodexUpdates = useRef("");
+  useEffect(() => {
+    let live = true;
+    const check = () => {
+      settingsApi
+        .getCodexWindowUpdates()
+        .then((updates) => {
+          if (!live) return;
+          const pending = updates.filter((update) => !update.queued);
+          if (pending.length === 0) return;
+          const signature = pending
+            .map(
+              (update) =>
+                `${update.socket}:${update.installedVersion}:${update.catalogChanged}`,
+            )
+            .sort()
+            .join("|");
+          if (signature === notifiedCodexUpdates.current) return;
+          notifiedCodexUpdates.current = signature;
+          toast.warning(t("proxy.accountPool.codexUpdatesNotice"), {
+            duration: 12000,
+            closeButton: true,
+            action: {
+              label: t("proxy.accountPool.codexUpdatesOpenPool"),
+              onClick: () => {
+                setActiveApp("codex");
+                setSettingsDefaultTab("pool");
+                setCurrentView("settings");
+              },
+            },
+          });
+        })
+        .catch((error) =>
+          console.error("Failed to check Codex windows:", error),
+        );
+    };
+    check();
+    const timer = window.setInterval(check, 60_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [t]);
+
   useEffect(() => {
     localStorage.setItem(VIEW_STORAGE_KEY, currentView);
   }, [currentView]);

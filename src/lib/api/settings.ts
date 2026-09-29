@@ -125,6 +125,14 @@ export const settingsApi = {
     return await invoke("get_account_pool_config");
   },
 
+  async getCodexWindowUpdates(): Promise<CodexWindowUpdate[]> {
+    return await invoke("get_codex_window_updates");
+  },
+
+  async setCodexRefreshOnExit(socket: string, queued: boolean): Promise<void> {
+    await invoke("set_codex_refresh_on_exit", { socket, queued });
+  },
+
   async setAccountPoolConfig(config: AccountPoolConfig): Promise<boolean> {
     return await invoke("set_account_pool_config", { config });
   },
@@ -163,6 +171,17 @@ export interface AccountPoolConfig {
   keepWarmIntervalMinutes: number;
   /** Sign Codex's shared background server in to the account the proxy serves. */
   codexSharedSession: boolean;
+}
+
+export interface CodexWindowUpdate {
+  socket: string;
+  cwd: string | null;
+  serverVersion: string | null;
+  installedVersion: string;
+  cliChanged: boolean;
+  catalogChanged: boolean;
+  refreshOnExit: boolean;
+  queued: boolean;
 }
 
 export interface OptimizerConfig {

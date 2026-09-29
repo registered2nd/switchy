@@ -521,6 +521,8 @@ pub fn run() {
             commands::get_account_pool_config,
             commands::set_account_pool_config,
             commands::get_account_pool_quota,
+            commands::get_codex_window_updates,
+            commands::set_codex_refresh_on_exit,
             commands::get_optimizer_config,
             commands::set_optimizer_config,
             commands::get_copilot_optimizer_config,
