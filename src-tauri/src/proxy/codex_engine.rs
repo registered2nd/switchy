@@ -10,18 +10,19 @@
 //! open window's requests.
 //!
 //! Each window gets its own server, started from its terminal by a `codex`
-//! shell function Switchy installs in WSL (`CODEX_SHELL`), so the hooks Codex
+//! shell function Switchy installs in WSL (`CODEX_SHELL`) or PowerShell on
+//! Windows, so the hooks Codex
 //! runs keep that terminal's environment (Orca's pane variables). A shared
 //! server would run them with its own. The function records each server's
-//! socket in `~/.codex/switchy-sessions/<name>.sock.session`; Switchy connects
-//! to each through `codex app-server proxy --sock`, signs it in to the current
-//! account whenever the account or its token changes, and answers its
+//! endpoint in `~/.codex/switchy-sessions/<name>.session`; Switchy connects
+//! through a Unix socket in WSL or authenticated loopback WebSocket on Windows,
+//! signs each server in to the current account whenever the account or its token changes, and answers its
 //! requests for new tokens, so Switchy stays the only holder renewing the
 //! login. The server keeps the tokens in memory and leaves `auth.json` alone.
-//! Native Windows Codex is not covered.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -31,6 +32,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use tauri::Manager;
 use tokio::process::Command;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::database::Database;
@@ -47,6 +49,9 @@ const ENABLED_FILE: &str = "enabled";
 const SHELL_FILE: &str = "switchy/codex.sh";
 const BASHRC_LINE: &str =
     "[ -r \"$HOME/.codex/switchy/codex.sh\" ] && . \"$HOME/.codex/switchy/codex.sh\"  # Switchy";
+const WINDOWS_SHELL_FILE: &str = "switchy/codex.ps1";
+const WINDOWS_PROFILE_TAG: &str = "# Switchy Codex Windows";
+const CODEX_WINDOWS_SHELL: &str = include_str!("codex_windows.ps1");
 
 /// The `codex` shell function. Runs the window on its own app-server when
 /// `enabled` exists, and plain `codex` otherwise or for anything that is not
@@ -98,8 +103,8 @@ codex() {
       pkill -f "unix://$_sw_sock" 2>/dev/null
       command codex "$@"; return
     fi
-    printf '%s\nrefresh-on-exit-v1\n%s\n%s\n' \
-      "$_sw_sock" "$PWD" "$(command codex --version 2>/dev/null)" > "$_sw_sock.session"
+    printf '%s\nrefresh-on-exit-v1\n%s\n%s\n%s\n' \
+      "$_sw_sock" "$PWD" "$(command codex --version 2>/dev/null)" "${CODEX_HOME:-$HOME/.codex}" > "$_sw_sock.session"
     # Stops the server when this shell goes away without the window exiting.
     ( ( _sw_shell=$$
         while kill -0 "$_sw_shell" 2>/dev/null && [ -S "$_sw_sock" ]; do sleep 5; done
@@ -129,12 +134,18 @@ pub fn nudge() {
     WAKE.send_modify(|n| *n = n.wrapping_add(1));
 }
 
-/// A WSL Codex install, reached from Windows through its `\\wsl$` path.
+/// A native Windows or WSL Codex install.
 #[derive(Clone, Debug)]
 struct Install {
-    distro: String,
+    kind: InstallKind,
     /// `~/.codex` as seen from Windows.
     codex_dir: PathBuf,
+}
+
+#[derive(Clone, Debug)]
+enum InstallKind {
+    Windows,
+    Wsl(String),
 }
 
 #[derive(Clone, Debug)]
@@ -143,17 +154,29 @@ struct Session {
     socket: String,
     cwd: Option<String>,
     cli_version: Option<String>,
+    config_dir: Option<PathBuf>,
+    executable: Option<PathBuf>,
     refresh_on_exit: bool,
 }
 
 impl Install {
+    fn name(&self) -> String {
+        match &self.kind {
+            InstallKind::Windows => "Windows".into(),
+            InstallKind::Wsl(distro) => format!("WSL: {distro}"),
+        }
+    }
+
     fn sessions_dir(&self) -> PathBuf {
         self.codex_dir.join(SESSIONS_DIR)
     }
 
     fn shell(&self, script: &str) -> Command {
         let mut command = Command::new("wsl.exe");
-        command.args(["-d", &self.distro, "--", "bash", "-lc", script]);
+        let InstallKind::Wsl(distro) = &self.kind else {
+            unreachable!()
+        };
+        command.args(["-d", distro, "--", "bash", "-lc", script]);
         #[cfg(windows)]
         {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -165,11 +188,24 @@ impl Install {
 
     /// `codex <args>` in this distro, as the user's login shell runs it.
     fn codex(&self, args: &str) -> Command {
-        self.shell(&format!("exec codex {args}"))
+        match &self.kind {
+            InstallKind::Wsl(_) => self.shell(&format!("exec codex {args}")),
+            InstallKind::Windows => {
+                let mut command = Command::new("cmd.exe");
+                command.args(["/d", "/c", "codex.cmd", args]);
+                #[cfg(windows)]
+                command.creation_flags(0x0800_0000);
+                command.kill_on_drop(true);
+                command
+            }
+        }
     }
 
     /// Writes the shell function and sources it from `~/.bashrc`.
     fn install_shell(&self) -> std::io::Result<()> {
+        if matches!(self.kind, InstallKind::Windows) {
+            return self.install_windows_shell();
+        }
         let path = self.codex_dir.join(SHELL_FILE);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(CODEX_SHELL) {
             if let Some(parent) = path.parent() {
@@ -192,8 +228,45 @@ impl Install {
             std::fs::write(&bashrc, next)?;
             log::info!(
                 "[codex_engine] WSL {}: added the Codex shell function to ~/.bashrc",
-                self.distro
+                self.name()
             );
+        }
+        Ok(())
+    }
+
+    fn install_windows_shell(&self) -> std::io::Result<()> {
+        self.install_windows_shell_at(&crate::config::get_home_dir())
+    }
+
+    fn install_windows_shell_at(&self, home: &Path) -> std::io::Result<()> {
+        let path = self.codex_dir.join(WINDOWS_SHELL_FILE);
+        if std::fs::read_to_string(&path).ok().as_deref() != Some(CODEX_WINDOWS_SHELL) {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&path, CODEX_WINDOWS_SHELL)?;
+        }
+        let quoted = path.to_string_lossy().replace('\'', "''");
+        let line = format!(
+            "if (Test-Path -LiteralPath '{quoted}') {{ . '{quoted}' }} {WINDOWS_PROFILE_TAG}"
+        );
+        for shell in ["WindowsPowerShell", "PowerShell"] {
+            let profile = home.join("Documents").join(shell).join("profile.ps1");
+            let current = std::fs::read_to_string(&profile).unwrap_or_default();
+            let mut lines: Vec<&str> = current
+                .lines()
+                .filter(|line| !line.contains(WINDOWS_PROFILE_TAG))
+                .collect();
+            if lines.last().is_some_and(|line| !line.is_empty()) {
+                lines.push("");
+            }
+            let next = format!("{}{}\n", lines.join("\n"), line);
+            if current != next {
+                if let Some(parent) = profile.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&profile, next)?;
+            }
         }
         Ok(())
     }
@@ -211,8 +284,8 @@ impl Install {
         };
         if let Err(e) = result {
             log::warn!(
-                "[codex_engine] WSL {}: could not {} per-window Codex servers: {e}",
-                self.distro,
+                "[codex_engine] {}: could not {} per-window Codex servers: {e}",
+                self.name(),
                 if on { "turn on" } else { "turn off" }
             );
         }
@@ -240,6 +313,12 @@ impl Install {
                     socket,
                     cwd: refresh_on_exit.then(|| lines.next().unwrap_or("").to_string()),
                     cli_version: refresh_on_exit.then(|| lines.next().unwrap_or("").to_string()),
+                    config_dir: refresh_on_exit
+                        .then(|| PathBuf::from(lines.next().unwrap_or("")))
+                        .filter(|path| !path.as_os_str().is_empty()),
+                    executable: refresh_on_exit
+                        .then(|| PathBuf::from(lines.next().unwrap_or("")))
+                        .filter(|path| !path.as_os_str().is_empty()),
                     refresh_on_exit,
                 })
             })
@@ -250,6 +329,7 @@ impl Install {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowUpdate {
+    pub platform: String,
     pub socket: String,
     pub cwd: Option<String>,
     pub server_version: Option<String>,
@@ -263,33 +343,134 @@ pub struct WindowUpdate {
 /// A custom catalog is a startup snapshot in Codex. Compare it with the
 /// session marker instead of config.toml, which Switchy also edits for proxy
 /// routing while a window is open.
-fn selected_catalog(install: &Install) -> Option<PathBuf> {
-    let text = std::fs::read_to_string(install.codex_dir.join("config.toml")).ok()?;
+fn selected_catalog(install: &Install, session: &Session) -> Option<PathBuf> {
+    let config_dir = session.config_dir.as_ref().unwrap_or(&install.codex_dir);
+    let config_dir = match &install.kind {
+        InstallKind::Windows => config_dir.clone(),
+        InstallKind::Wsl(distro) => wsl_path(distro, &config_dir.to_string_lossy()),
+    };
+    let text = std::fs::read_to_string(config_dir.join("config.toml")).ok()?;
     let config: toml::Value = text.parse().ok()?;
     let name = config.get("model_catalog_json")?.as_str()?;
-    if name.starts_with('/') {
-        let mut path = PathBuf::from(format!(r"\\wsl$\{}", install.distro));
-        for part in name.split('/').filter(|part| !part.is_empty()) {
-            path.push(part);
-        }
-        Some(path)
-    } else {
-        Some(install.codex_dir.join(name))
+    match &install.kind {
+        InstallKind::Wsl(distro) if name.starts_with('/') => Some(wsl_path(distro, name)),
+        _ if Path::new(name).is_absolute() => Some(PathBuf::from(name)),
+        _ => Some(config_dir.join(name)),
     }
+}
+
+fn wsl_path(distro: &str, path: &str) -> PathBuf {
+    if path.starts_with(r"\\wsl$\") || path.starts_with(r"\\wsl.localhost\") {
+        return PathBuf::from(path);
+    }
+    let mut result = PathBuf::from(format!(r"\\wsl$\{distro}"));
+    for part in path.split('/').filter(|part| !part.is_empty()) {
+        result.push(part);
+    }
+    result
 }
 
 /// Open windows whose server predates the installed CLI or selected catalog.
 /// The window is left running; its shell can refresh it when the user exits.
 pub async fn window_updates() -> Result<Vec<WindowUpdate>, String> {
-    let Some(install) = wsl_install() else {
-        return Ok(Vec::new());
-    };
+    let mut updates = Vec::new();
+    for install in installs() {
+        updates.extend(window_updates_for(&install).await?);
+    }
+    Ok(updates)
+}
+
+async fn window_updates_for(install: &Install) -> Result<Vec<WindowUpdate>, String> {
     let sessions = install.sessions();
     if sessions.is_empty() {
         return Ok(Vec::new());
     }
-    let output = install
-        .codex("--version")
+    let wsl_version = if matches!(install.kind, InstallKind::Wsl(_)) {
+        Some(cli_version(install.codex("--version")).await?)
+    } else {
+        None
+    };
+    // Entry-point mtime also covers older windows whose shell marker has no
+    // version, and reinstalling a CLI build with the same version string.
+    let wsl_cli_modified = match &install.kind {
+        InstallKind::Wsl(_) => install
+            .shell("stat -Lc %Y \"$(command -v codex)\"")
+            .output()
+            .await
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .and_then(|text| text.trim().parse::<u64>().ok())
+            .map(|seconds| SystemTime::UNIX_EPOCH + Duration::from_secs(seconds)),
+        InstallKind::Windows => None,
+    };
+    let mut updates = Vec::new();
+    for session in sessions {
+        let executable = session.executable.clone().or_else(native_codex_entrypoint);
+        let installed_version = if let Some(version) = &wsl_version {
+            version.clone()
+        } else {
+            let path = executable
+                .as_ref()
+                .ok_or("Could not find the native Codex CLI")?;
+            let mut command = if path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+            {
+                Command::new(path)
+            } else {
+                let mut command = Command::new("cmd.exe");
+                command.args(["/d", "/c"]).arg(path);
+                command
+            };
+            command.arg("--version");
+            #[cfg(windows)]
+            command.creation_flags(0x0800_0000);
+            cli_version(command).await?
+        };
+        let cli_modified = if wsl_version.is_some() {
+            wsl_cli_modified
+        } else {
+            executable
+                .as_ref()
+                .and_then(|path| std::fs::metadata(path).ok())
+                .and_then(|metadata| metadata.modified().ok())
+        };
+        let catalog_modified = selected_catalog(install, &session)
+            .and_then(|path| std::fs::metadata(path).ok())
+            .and_then(|metadata| metadata.modified().ok());
+        let started = std::fs::metadata(&session.marker)
+            .ok()
+            .and_then(|metadata| metadata.modified().ok());
+        let cli_changed = session
+            .cli_version
+            .as_ref()
+            .is_some_and(|version| !version.is_empty() && version != &installed_version)
+            || cli_modified
+                .zip(started)
+                .is_some_and(|(binary, started)| binary > started);
+        let catalog_changed = catalog_modified
+            .zip(started)
+            .is_some_and(|(catalog, started)| catalog > started);
+        if cli_changed || catalog_changed {
+            updates.push(WindowUpdate {
+                platform: install.name(),
+                queued: session.marker.with_extension("refresh").exists(),
+                socket: session.socket,
+                cwd: session.cwd.filter(|cwd| !cwd.is_empty()),
+                server_version: session.cli_version.filter(|version| !version.is_empty()),
+                installed_version,
+                cli_changed,
+                catalog_changed,
+                refresh_on_exit: session.refresh_on_exit,
+            });
+        }
+    }
+    Ok(updates)
+}
+
+async fn cli_version(mut command: Command) -> Result<String, String> {
+    let output = command
         .output()
         .await
         .map_err(|e| format!("Could not check the installed Codex CLI: {e}"))?;
@@ -299,58 +480,15 @@ pub async fn window_updates() -> Result<Vec<WindowUpdate>, String> {
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    let installed_version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    // Entry-point mtime also covers older windows whose shell marker has no
-    // version, and reinstalling a CLI build with the same version string.
-    let cli_modified = install
-        .shell("stat -Lc %Y \"$(command -v codex)\"")
-        .output()
-        .await
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .and_then(|text| text.trim().parse::<u64>().ok())
-        .map(|seconds| SystemTime::UNIX_EPOCH + Duration::from_secs(seconds));
-    let catalog_modified = selected_catalog(&install)
-        .and_then(|path| std::fs::metadata(path).ok())
-        .and_then(|metadata| metadata.modified().ok());
-    Ok(sessions
-        .into_iter()
-        .filter_map(|session| {
-            let started = std::fs::metadata(&session.marker)
-                .ok()
-                .and_then(|metadata| metadata.modified().ok());
-            let cli_changed = session
-                .cli_version
-                .as_ref()
-                .is_some_and(|version| !version.is_empty() && version != &installed_version)
-                || cli_modified
-                    .zip(started)
-                    .is_some_and(|(binary, started)| binary > started);
-            let catalog_changed = catalog_modified
-                .zip(started)
-                .is_some_and(|(catalog, started)| catalog > started);
-            (cli_changed || catalog_changed).then(|| WindowUpdate {
-                queued: session.marker.with_extension("refresh").exists(),
-                socket: session.socket,
-                cwd: session.cwd.filter(|cwd| !cwd.is_empty()),
-                server_version: session.cli_version.filter(|version| !version.is_empty()),
-                installed_version: installed_version.clone(),
-                cli_changed,
-                catalog_changed,
-                refresh_on_exit: session.refresh_on_exit,
-            })
-        })
-        .collect())
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 /// The shell consumes this marker only after its Codex client exits. No
 /// running client or server is stopped by this command.
 pub fn set_refresh_on_exit(socket: &str, queued: bool) -> Result<(), String> {
-    let install = wsl_install().ok_or("No WSL Codex mirror is configured")?;
-    let session = install
-        .sessions()
+    let session = installs()
         .into_iter()
+        .flat_map(|install| install.sessions())
         .find(|session| session.socket == socket)
         .ok_or("That Codex window is no longer open")?;
     if !session.refresh_on_exit {
@@ -382,16 +520,38 @@ fn wsl_distro(config_dir: &Path) -> Option<String> {
 fn wsl_install() -> Option<Install> {
     let codex_dir = crate::settings::get_codex_mirror_override_dir()?;
     let distro = wsl_distro(&codex_dir)?;
-    Some(Install { distro, codex_dir })
+    Some(Install {
+        kind: InstallKind::Wsl(distro),
+        codex_dir,
+    })
+}
+
+fn installs() -> Vec<Install> {
+    let mut result = Vec::new();
+    #[cfg(windows)]
+    result.push(Install {
+        kind: InstallKind::Windows,
+        codex_dir: crate::codex_config::get_codex_config_dir(),
+    });
+    if let Some(install) = wsl_install() {
+        result.push(install);
+    }
+    result
+}
+
+fn native_codex_entrypoint() -> Option<PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .flat_map(|dir| [dir.join("codex.cmd"), dir.join("codex.exe")])
+        .find(|path| path.is_file())
 }
 
 /// Starts the task that serves the WSL install's windows. Called once at
 /// startup.
 pub fn start(app: tauri::AppHandle) {
-    let Some(install) = wsl_install() else {
-        return;
-    };
-    tauri::async_runtime::spawn(async move { run(app, install).await });
+    for install in installs() {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move { run(app, install).await });
+    }
 }
 
 /// New windows get their own server when the setting is on and Codex is
@@ -425,8 +585,8 @@ async fn run(app: tauri::AppHandle, install: Install) {
     let db = app.state::<crate::store::AppState>().db.clone();
     if let Err(e) = install.install_shell() {
         log::warn!(
-            "[codex_engine] WSL {}: could not install the Codex shell function: {e}",
-            install.distro
+            "[codex_engine] {}: could not install the Codex shell function: {e}",
+            install.name()
         );
     }
     let serving: Arc<Mutex<HashSet<String>>> = Arc::default();
@@ -489,20 +649,50 @@ async fn serve(
     socket: &str,
     marker: &Path,
 ) -> Result<(), String> {
-    let mut child = install
-        .codex(&format!("app-server proxy --sock '{socket}'"))
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    let stdin = child.stdin.take().ok_or("no stdin")?;
-    let stdout = child.stdout.take().ok_or("no stdout")?;
-    let (ws, _) =
-        tokio_tungstenite::client_async("ws://localhost/", tokio::io::join(stdout, stdin))
-            .await
-            .map_err(|e| format!("could not connect: {e}"))?;
-    let (mut tx, mut rx) = ws.split();
+    type WsError = tokio_tungstenite::tungstenite::Error;
+    let mut relay = None;
+    let (mut tx, mut rx): (
+        Pin<Box<dyn futures::Sink<Message, Error = WsError> + Send>>,
+        Pin<Box<dyn futures::Stream<Item = Result<Message, WsError>> + Send>>,
+    ) = match &install.kind {
+        InstallKind::Windows => {
+            let token = std::fs::read_to_string(marker.with_extension("token"))
+                .map_err(|e| format!("could not read window token: {e}"))?;
+            let mut request = socket.into_client_request().map_err(|e| e.to_string())?;
+            request.headers_mut().insert(
+                tokio_tungstenite::tungstenite::http::header::AUTHORIZATION,
+                format!("Bearer {token}").parse().map_err(
+                    |e: tokio_tungstenite::tungstenite::http::header::InvalidHeaderValue| {
+                        e.to_string()
+                    },
+                )?,
+            );
+            let (ws, _) = tokio_tungstenite::connect_async(request)
+                .await
+                .map_err(|e| format!("could not connect: {e}"))?;
+            let (tx, rx) = ws.split();
+            (Box::pin(tx), Box::pin(rx))
+        }
+        InstallKind::Wsl(_) => {
+            let mut child = install
+                .codex(&format!("app-server proxy --sock '{socket}'"))
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            let stdin = child.stdin.take().ok_or("no stdin")?;
+            let stdout = child.stdout.take().ok_or("no stdout")?;
+            let (ws, _) =
+                tokio_tungstenite::client_async("ws://localhost/", tokio::io::join(stdout, stdin))
+                    .await
+                    .map_err(|e| format!("could not connect: {e}"))?;
+            relay = Some(child);
+            let (tx, rx) = ws.split();
+            (Box::pin(tx), Box::pin(rx))
+        }
+    };
+    let _relay = relay;
 
     let send = |value: Value| Message::Text(value.to_string().into());
     tx.send(send(json!({
@@ -637,7 +827,7 @@ mod tests {
         std::fs::create_dir_all(&codex_dir).expect("codex dir");
         std::fs::write(home.path().join(".bashrc"), "export A=1").expect("bashrc");
         let install = Install {
-            distro: "Test".into(),
+            kind: InstallKind::Wsl("Test".into()),
             codex_dir: codex_dir.clone(),
         };
         install.install_shell().expect("install");
@@ -679,5 +869,66 @@ mod tests {
         assert!(new.refresh_on_exit);
         install.set_enabled(false);
         assert!(!install.sessions_dir().join(ENABLED_FILE).exists());
+    }
+
+    #[test]
+    fn windows_profiles_keep_their_content_and_load_the_launcher_once() {
+        let home = tempfile::TempDir::new().expect("temp home");
+        let install = Install {
+            kind: InstallKind::Windows,
+            codex_dir: home.path().join(".codex"),
+        };
+        let profile = home.path().join("Documents/WindowsPowerShell/profile.ps1");
+        std::fs::create_dir_all(profile.parent().unwrap()).expect("profile dir");
+        std::fs::write(&profile, "$env:EXAMPLE = 'kept'\n").expect("profile");
+        install
+            .install_windows_shell_at(home.path())
+            .expect("install");
+        install
+            .install_windows_shell_at(home.path())
+            .expect("install again");
+        let text = std::fs::read_to_string(&profile).expect("read profile");
+        assert!(text.starts_with("$env:EXAMPLE = 'kept'\n"));
+        assert_eq!(text.matches(WINDOWS_PROFILE_TAG).count(), 1);
+        assert!(home
+            .path()
+            .join("Documents/PowerShell/profile.ps1")
+            .exists());
+        assert_eq!(
+            std::fs::read_to_string(install.codex_dir.join(WINDOWS_SHELL_FILE)).unwrap(),
+            CODEX_WINDOWS_SHELL
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn native_window_detects_new_cli_at_its_own_launch_path() {
+        let home = tempfile::TempDir::new().expect("temp home");
+        let codex_dir = home.path().join(".codex");
+        let install = Install {
+            kind: InstallKind::Windows,
+            codex_dir: codex_dir.clone(),
+        };
+        let sessions = install.sessions_dir();
+        std::fs::create_dir_all(&sessions).expect("sessions dir");
+        let binary_dir = home.path().join("CLI folder");
+        std::fs::create_dir_all(&binary_dir).expect("binary dir");
+        let executable = binary_dir.join("codex.cmd");
+        std::fs::write(&executable, "@echo off\r\necho codex-cli 0.160.0\r\n").expect("fake CLI");
+        let marker = sessions.join("window.session");
+        std::fs::write(
+            &marker,
+            format!(
+            "ws://127.0.0.1:4321\nrefresh-on-exit-v1\nC:\\Projects\ncodex-cli 0.159.0\n{}\n{}\n",
+            codex_dir.display(), executable.display()
+        ),
+        )
+        .expect("session");
+        let updates = window_updates_for(&install).await.expect("updates");
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].platform, "Windows");
+        assert_eq!(updates[0].installed_version, "codex-cli 0.160.0");
+        assert!(updates[0].cli_changed);
+        assert!(updates[0].refresh_on_exit);
     }
 }

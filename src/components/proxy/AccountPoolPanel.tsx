@@ -225,7 +225,7 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
                   className="truncate text-xs font-medium"
                   title={update.cwd ?? update.socket}
                 >
-                  {update.cwd ?? update.socket}
+                  {update.platform} · {update.cwd ?? update.socket}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {update.cliChanged

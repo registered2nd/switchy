@@ -174,6 +174,7 @@ export interface AccountPoolConfig {
 }
 
 export interface CodexWindowUpdate {
+  platform: string;
   socket: string;
   cwd: string | null;
   serverVersion: string | null;
