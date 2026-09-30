@@ -4,9 +4,14 @@ import type { AppId } from "@/lib/api/types";
 
 const REFETCH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-export function useSubscriptionQuota(appId: AppId, enabled: boolean) {
+/** `liveOwner` is the provider in use, so a switch never shows the previous account's figures. */
+export function useSubscriptionQuota(
+  appId: AppId,
+  enabled: boolean,
+  liveOwner?: string,
+) {
   return useQuery({
-    queryKey: ["subscription", "quota", appId],
+    queryKey: ["subscription", "quota", appId, liveOwner ?? ""],
     queryFn: () => subscriptionApi.getQuota(appId),
     enabled: enabled && ["claude", "codex", "gemini"].includes(appId),
     refetchInterval: REFETCH_INTERVAL,

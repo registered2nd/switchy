@@ -17,6 +17,8 @@ interface SubscriptionQuotaFooterProps {
    * own account's quota rather than the current one's.
    */
   providerId?: string;
+  /** The card's own provider, which keys the live figures when it is in use. */
+  ownerId?: string;
   inline?: boolean;
 }
 
@@ -89,10 +91,11 @@ function formatRelativeTime(
 const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
   appId,
   providerId,
+  ownerId,
   inline = false,
 }) => {
   const { t } = useTranslation();
-  const liveQuery = useSubscriptionQuota(appId, !providerId);
+  const liveQuery = useSubscriptionQuota(appId, !providerId, ownerId);
   const providerQuery = useSubscriptionQuotaForProvider(
     appId,
     providerId ?? "",

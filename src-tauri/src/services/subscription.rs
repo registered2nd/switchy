@@ -1595,8 +1595,18 @@ where
 }
 
 pub async fn get_subscription_quota(tool: &str) -> Result<SubscriptionQuota, String> {
+    // The live login changes hands on every switch; a figure remembered for
+    // one account must never be served for the next.
+    let login = if tool == "claude" {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        read_claude_credentials().0.hash(&mut hasher);
+        hasher.finish()
+    } else {
+        0
+    };
     with_last_good(
-        format!("{tool}:live"),
+        format!("{tool}:live:{login:x}"),
         get_subscription_quota_uncached(tool),
     )
     .await

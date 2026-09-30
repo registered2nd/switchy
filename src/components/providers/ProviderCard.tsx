@@ -402,6 +402,7 @@ export function ProviderCard({
                 <SubscriptionQuotaFooter
                   appId={appId}
                   providerId={quotaProviderId}
+                  ownerId={provider.id}
                   inline={true}
                 />
               ) : hasMultiplePlans ? (
