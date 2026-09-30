@@ -1098,6 +1098,18 @@ impl ProviderService {
         let existing_provider = state
             .db
             .get_provider_by_id(&original_id, app_type.as_str())?;
+        // The edit form carries the meta it opened with; a login captured
+        // while it was open lives only in the stored copy.
+        if let Some(stored) = existing_provider
+            .as_ref()
+            .and_then(|p| p.meta.as_ref())
+            .and_then(|m| m.captured_claude_account.clone())
+        {
+            let meta = provider.meta.get_or_insert_with(Default::default);
+            if meta.captured_claude_account.is_none() {
+                meta.captured_claude_account = Some(stored);
+            }
+        }
         // Normalize Claude model keys
         Self::normalize_provider_if_claude(&app_type, &mut provider);
         Self::validate_provider_settings(&app_type, &provider)?;

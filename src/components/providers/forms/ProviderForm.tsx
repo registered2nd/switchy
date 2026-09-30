@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -223,6 +223,7 @@ export function ProviderForm({
     incoming: CapturedIdentity;
   } | null>(null);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const queryClient = useQueryClient();
   const [capturing, setCapturing] = useState(false);
 
   const showCaptureControls =
@@ -1986,6 +1987,7 @@ export function ProviderForm({
                       await claudeAccountApi.capture(providerId, false);
                     if (result.kind === "captured") {
                       setCapturedIdentity(result.identity);
+                      void queryClient.invalidateQueries({ queryKey: ["providers"] });
                       toast.success(
                         t("claudeAccount.capture.success", {
                           email: result.identity.emailAddress,
@@ -2043,6 +2045,7 @@ export function ProviderForm({
               const result = await claudeAccountApi.capture(providerId, true);
               if (result.kind === "captured") {
                 setCapturedIdentity(result.identity);
+                void queryClient.invalidateQueries({ queryKey: ["providers"] });
                 toast.success(
                   t("claudeAccount.capture.success", {
                     email: result.identity.emailAddress,
@@ -2077,6 +2080,7 @@ export function ProviderForm({
             try {
               await claudeAccountApi.clear(providerId);
               setCapturedIdentity(null);
+              void queryClient.invalidateQueries({ queryKey: ["providers"] });
             } catch (err) {
               toast.error(String(err));
             } finally {
