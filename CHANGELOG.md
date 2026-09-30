@@ -8,6 +8,10 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.19] — 2026-09-30 — A network drop or turning the proxy off no longer strands open sessions
+
+Windows installer: download `Switchy_1.0.19_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
 ### Fixed
 
 - **A network drop no longer locks out every subscription account.** When
