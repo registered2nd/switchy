@@ -8,6 +8,21 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.20] — 2026-09-30 — Claude account cards show the right usage after a switch
+
+Windows installer: download `Switchy_1.0.20_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+### Fixed
+
+- **Switching Claude accounts no longer shows the previous account's usage on
+  the new one.** For up to a few minutes after a switch, the card of the
+  account now in use showed the 5-hour and 7-day figures of the account just
+  left. Usage figures are now kept per account.
+- **Capturing a login from the edit dialog shows on the card straight away.**
+  The card kept showing the provider name without the account's email or
+  usage until the list reloaded, and saving the dialog afterwards could drop
+  the capture just made.
+
 ## [1.0.19] — 2026-09-30 — A network drop or turning the proxy off no longer strands open sessions
 
 Windows installer: download `Switchy_1.0.19_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
