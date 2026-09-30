@@ -49,6 +49,11 @@ const CLAUDE_TOKEN_ENV_KEYS: [&str; 4] = [
 pub struct ProxyService {
     db: Arc<Database>,
     server: Arc<RwLock<Option<ProxyServer>>>,
+    /// Set when the user turned the proxy off: the configs are handed back
+    /// but the listener stays up for sessions opened under it (a running
+    /// Codex window keeps the address it started with), until the proxy is
+    /// turned on again or Switchy quits.
+    released: Arc<std::sync::atomic::AtomicBool>,
     /// AppHandle, passed to ProxyServer so failover can update the UI
     app_handle: Arc<RwLock<Option<tauri::AppHandle>>>,
     switch_locks: SwitchLockManager,
@@ -64,6 +69,7 @@ impl ProxyService {
         Self {
             db,
             server: Arc::new(RwLock::new(None)),
+            released: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             app_handle: Arc::new(RwLock::new(None)),
             switch_locks: SwitchLockManager::new(),
         }
@@ -279,6 +285,8 @@ impl ProxyService {
 
         // 3. If already running: make sure the state is persisted (if needed) and return the current info
         if let Some(server) = self.server.read().await.as_ref() {
+            self.released
+                .store(false, std::sync::atomic::Ordering::SeqCst);
             let status = server.get_status().await;
             return Ok(ProxyServerInfo {
                 address: status.address,
@@ -541,8 +549,9 @@ impl ProxyService {
         if !any_enabled {
             let _ = self.db.set_live_takeover_active(false).await;
 
-            // No app is taken over any more; just stop the service
-            self.stop_after_hand_back().await;
+            // No app is taken over any more: turn the proxy off, keeping the
+            // listener for the sessions opened under it
+            self.release().await;
         }
 
         Ok(())
@@ -899,6 +908,8 @@ impl ProxyService {
 
     /// Stop the proxy server
     pub async fn stop(&self) -> Result<(), String> {
+        self.released
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         if let Some(server) = self.server.write().await.take() {
             server
                 .stop()
@@ -931,7 +942,7 @@ impl ProxyService {
     /// to the address it names; requests they send before that still reach
     /// the proxy instead of a closed port.
     async fn stop_after_hand_back(&self) {
-        if !self.is_running().await {
+        if !self.is_listening().await {
             return;
         }
         tokio::time::sleep(std::time::Duration::from_secs(HAND_BACK_GRACE_SECS)).await;
@@ -940,14 +951,40 @@ impl ProxyService {
         }
     }
 
+    /// Turns the proxy off after the configs were handed back, leaving its
+    /// listener up. Open Claude Code sessions move to the address the
+    /// restored `settings.json` names; an open Codex window keeps calling the
+    /// address it started with, so the listener goes on serving it until the
+    /// proxy is turned on again or Switchy quits.
+    async fn release(&self) {
+        if !self.is_listening().await {
+            return;
+        }
+        self.released
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        match self.db.get_global_proxy_config().await {
+            Ok(mut global_config) if global_config.proxy_enabled => {
+                global_config.proxy_enabled = false;
+                if let Err(e) = self.db.update_global_proxy_config(global_config).await {
+                    log::warn!("Could not update the proxy master switch: {e}");
+                }
+            }
+            Ok(_) => {}
+            Err(e) => log::warn!("Could not read the global proxy config: {e}"),
+        }
+        log::info!(
+            "Proxy turned off; its listener stays up for sessions opened under it until Switchy quits"
+        );
+    }
+
     /// Stop the proxy server and restore the live config (used when the user turns it off)
     ///
     /// Clears the proxy state in the settings table, so it is not restored automatically on the next start.
     pub async fn stop_with_restore(&self) -> Result<(), String> {
-        // 1. Restore the original live config, then stop the proxy once open
-        //    sessions have moved off it
+        // 1. Restore the original live config; the listener stays up for the
+        //    sessions opened under it
         let restored = self.restore_live_configs().await;
-        self.stop_after_hand_back().await;
+        self.release().await;
         restored?;
 
         // 3. Clear the takeover state in the proxy_config table (legacy compatibility)
@@ -2572,7 +2609,11 @@ impl ProxyService {
     /// Get the server status
     pub async fn get_status(&self) -> Result<ProxyStatus, String> {
         if let Some(server) = self.server.read().await.as_ref() {
-            Ok(server.get_status().await)
+            let mut status = server.get_status().await;
+            if self.released.load(std::sync::atomic::Ordering::SeqCst) {
+                status.running = false;
+            }
+            Ok(status)
         } else {
             // Return the default status when the server is not running
             Ok(ProxyStatus {
@@ -2671,7 +2712,14 @@ impl ProxyService {
     }
 
     /// Check whether the server is running
+    /// Whether the proxy is on. A listener left up after the proxy was
+    /// turned off does not count.
     pub async fn is_running(&self) -> bool {
+        self.is_listening().await && !self.released.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Whether the proxy's port is being served, whether or not it is on.
+    pub async fn is_listening(&self) -> bool {
         self.server.read().await.is_some()
     }
 

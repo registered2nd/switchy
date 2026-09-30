@@ -25,14 +25,19 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   for a new sign-in instead of retrying. The app now sees what the accounts
   that were tried answered — a 502 it retries, or the rate limit — and the
   sign-in error only when no account got further.
-- **Turning the proxy off, or quitting Switchy, no longer breaks open Claude
-  Code sessions.** A running session follows a changed API address in its
-  `settings.json` but keeps the old one when the address is removed, so
-  sessions started with the proxy on went on calling it after Switchy had
-  handed the config back and stopped listening. Switchy now names
-  Anthropic's address when it hands back a config that had none, on Windows
-  and in WSL, and keeps the proxy answering for a few seconds after the
-  hand-back while open sessions move over.
+- **Turning the proxy off no longer breaks open sessions.** Sessions started
+  with the proxy on went on calling it after Switchy had handed the configs
+  back and stopped listening. A running Claude Code session follows a
+  changed API address in its `settings.json` but keeps the old one when the
+  address is removed, so Switchy now names Anthropic's address when it hands
+  back a config that had none, on Windows and in WSL; open Claude sessions
+  move to it within seconds. A running Codex window keeps the address it
+  started with whatever its config says, so the proxy's listener now stays up
+  after the proxy is turned off and goes on serving those windows until the
+  proxy is turned on again or Switchy quits. On quitting, Switchy hands the
+  configs back first and keeps answering for a few seconds, so open Claude
+  sessions move over before the port closes; open Codex windows lose the
+  proxy and need a restart.
 
 ## [1.0.18] — 2026-09-23 — A picked account stays picked, `/status` shows it, and usage is counted per account
 

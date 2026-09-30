@@ -869,7 +869,7 @@ pub async fn cleanup_before_exit(app_handle: &tauri::AppHandle) {
         }
 
         // Not taken over: just stop the proxy if it is running
-        if proxy_service.is_running().await {
+        if proxy_service.is_listening().await {
             log::info!("Proxy server is running; stopping it...");
             if let Err(e) = proxy_service.stop().await {
                 log::error!("Failed to stop the proxy on exit: {e}");
