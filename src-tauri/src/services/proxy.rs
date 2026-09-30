@@ -20,6 +20,8 @@ use tokio::sync::RwLock;
 
 /// Placeholder written during live-config takeover (stops clients complaining about a missing key without exposing the real token)
 const PROXY_TOKEN_PLACEHOLDER: &str = "PROXY_MANAGED";
+/// How long the proxy keeps answering after the configs are handed back.
+const HAND_BACK_GRACE_SECS: u64 = 3;
 
 /// "Model override" fields removed from the Claude live config in proxy takeover mode.
 ///
@@ -539,10 +541,8 @@ impl ProxyService {
         if !any_enabled {
             let _ = self.db.set_live_takeover_active(false).await;
 
-            if self.is_running().await {
-                // No app is taken over any more; just stop the service
-                let _ = self.stop().await;
-            }
+            // No app is taken over any more; just stop the service
+            self.stop_after_hand_back().await;
         }
 
         Ok(())
@@ -926,19 +926,29 @@ impl ProxyService {
         }
     }
 
+    /// Stops the proxy a moment after the live configs were handed back.
+    /// Open Claude Code sessions notice the restored `settings.json` and move
+    /// to the address it names; requests they send before that still reach
+    /// the proxy instead of a closed port.
+    async fn stop_after_hand_back(&self) {
+        if !self.is_running().await {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(HAND_BACK_GRACE_SECS)).await;
+        if let Err(e) = self.stop().await {
+            log::warn!("Failed to stop the proxy server: {e}");
+        }
+    }
+
     /// Stop the proxy server and restore the live config (used when the user turns it off)
     ///
     /// Clears the proxy state in the settings table, so it is not restored automatically on the next start.
     pub async fn stop_with_restore(&self) -> Result<(), String> {
-        // 1. Stop the proxy server (restore continues even if it is not running)
-        if let Err(e) = self.stop().await {
-            log::warn!(
-                "Failed to stop the proxy server (continuing to restore the live config): {e}"
-            );
-        }
-
-        // 2. Restore the original live config
-        self.restore_live_configs().await?;
+        // 1. Restore the original live config, then stop the proxy once open
+        //    sessions have moved off it
+        let restored = self.restore_live_configs().await;
+        self.stop_after_hand_back().await;
+        restored?;
 
         // 3. Clear the takeover state in the proxy_config table (legacy compatibility)
         self.db
@@ -979,15 +989,11 @@ impl ProxyService {
     ///
     /// Used on a normal app exit, so the proxy state is restored automatically on the next start
     pub async fn stop_with_restore_keep_state(&self) -> Result<(), String> {
-        // 1. Stop the proxy server (restore continues even if it is not running)
-        if let Err(e) = self.stop().await {
-            log::warn!(
-                "Failed to stop the proxy server (continuing to restore the live config): {e}"
-            );
-        }
-
-        // 2. Restore the original live config
-        self.restore_live_configs().await?;
+        // 1. Restore the original live config, then stop the proxy once open
+        //    sessions have moved off it
+        let restored = self.restore_live_configs().await;
+        self.stop_after_hand_back().await;
+        restored?;
 
         // 3. Update the live_takeover_active flag in the proxy_config table (legacy compatibility)
         //    Note: proxy_config.enabled is kept so it is restored automatically on the next start
@@ -1509,6 +1515,7 @@ impl ProxyService {
             .unwrap_or(false)
         {
             env.remove("ANTHROPIC_BASE_URL");
+            Self::name_claude_base_url(config);
         }
     }
 
@@ -1858,7 +1865,27 @@ impl ProxyService {
             // or one it renewed or signed in itself).
             crate::proxy::codex_pool::keep_live_login(&self.db, &mut target);
         }
-        self.merge_onto_live(app_type, target).await
+        let mut restored = self.merge_onto_live(app_type, target).await;
+        if matches!(app_type, AppType::Claude) {
+            Self::name_claude_base_url(&mut restored);
+        }
+        restored
+    }
+
+    /// A running Claude Code session applies a changed `ANTHROPIC_BASE_URL`
+    /// from `settings.json` but keeps the last one it had when the key is
+    /// removed, so a hand-back that only removed the proxy address would leave
+    /// every open session calling a proxy that is about to stop. A restored
+    /// config without its own address therefore names Anthropic's.
+    fn name_claude_base_url(config: &mut Value) {
+        let Some(root) = config.as_object_mut() else {
+            return;
+        };
+        let env = root.entry("env").or_insert_with(|| json!({}));
+        if let Some(env) = env.as_object_mut() {
+            env.entry("ANTHROPIC_BASE_URL")
+                .or_insert_with(|| json!(crate::proxy::claude_pool::ANTHROPIC_BASE_URL));
+        }
     }
 
     /// `target` merged onto the live file as it is on disk: Switchy's changes
@@ -2339,7 +2366,10 @@ impl ProxyService {
             Some(written) => written,
             None => Self::takeover_base(app_type, &backup, &live),
         };
-        let merged = Self::merge_live(app_type, &base, backup, &live);
+        let mut merged = Self::merge_live(app_type, &base, backup, &live);
+        if matches!(app_type, AppType::Claude) {
+            Self::name_claude_base_url(&mut merged);
+        }
         Self::write_mirror_live(app_type, path, &merged)?;
 
         if let Some(login) = login.filter(Value::is_object) {
@@ -2682,6 +2712,13 @@ impl ProxyService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `config` as a hand-back writes it: with Anthropic's address named when
+    /// it names none.
+    fn handed_back(mut config: Value) -> Value {
+        ProxyService::name_claude_base_url(&mut config);
+        config
+    }
     use crate::provider::ProviderMeta;
     use serial_test::serial;
     use std::env;
@@ -3365,7 +3402,7 @@ model = "gpt-5.1-codex"
         assert_eq!(backup.original_config, expected);
         assert_eq!(
             service.read_claude_live().expect("read live"),
-            provider_b.settings_config
+            handed_back(provider_b.settings_config.clone())
         );
     }
 
@@ -3695,7 +3732,10 @@ command = "latest-command"
 
         let mut expected = original.clone();
         expected["hooks"] = orca_hooks();
-        assert_eq!(service.read_claude_live().expect("read live"), expected);
+        assert_eq!(
+            service.read_claude_live().expect("read live"),
+            handed_back(expected)
+        );
         assert!(db
             .get_live_backup("claude")
             .await
@@ -3767,7 +3807,7 @@ command = "latest-command"
         );
         assert_eq!(
             restored["env"],
-            json!({ "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000" })
+            json!({ "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000", "ANTHROPIC_BASE_URL": "https://api.anthropic.com" })
         );
     }
 
@@ -3808,7 +3848,10 @@ command = "latest-command"
             "model": "opus"
         });
         expected["hooks"] = orca_hooks();
-        assert_eq!(service.read_claude_live().expect("read live"), expected);
+        assert_eq!(
+            service.read_claude_live().expect("read live"),
+            handed_back(expected)
+        );
     }
 
     #[tokio::test]
@@ -3864,7 +3907,7 @@ command = "latest-command"
         assert_eq!(
             service.read_claude_live().expect("read live"),
             json!({
-                "env": { "ANTHROPIC_API_KEY": "b-key" },
+                "env": { "ANTHROPIC_API_KEY": "b-key", "ANTHROPIC_BASE_URL": "https://api.anthropic.com" },
                 "permissions": { "allow": ["Bash"] },
                 "hooks": orca_hooks(),
             })
@@ -4095,7 +4138,7 @@ command = "latest-command"
         expected["hooks"] = orca_hooks();
         assert_eq!(
             read_json_file::<Value>(&mirror_settings).expect("read mirror"),
-            expected
+            handed_back(expected)
         );
         assert!(db
             .get_live_backup("claude_mirror")
@@ -4306,7 +4349,7 @@ command = "latest-command"
         assert_eq!(
             service.read_claude_live().expect("read live"),
             json!({
-                "env": { "ANTHROPIC_API_KEY": "b-key" },
+                "env": { "ANTHROPIC_API_KEY": "b-key", "ANTHROPIC_BASE_URL": "https://api.anthropic.com" },
                 "model": "opus",
                 "hooks": orca_hooks(),
             })

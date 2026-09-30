@@ -719,8 +719,10 @@ impl RequestForwarder {
                             {
                                 passed_over = Some(switch_reason_for(provider, &e));
                             }
-                            last_error = Some(e);
-                            last_provider = Some(provider.clone());
+                            if replaces_reported_error(last_error.as_ref(), &e) {
+                                last_error = Some(e);
+                                last_provider = Some(provider.clone());
+                            }
                             // Try the next provider
                             continue;
                         }
@@ -1623,6 +1625,16 @@ fn counts_against_provider(provider: &Provider, error: &ProxyError) -> bool {
     }
 }
 
+/// Whether `next` becomes the error the app sees if every provider fails.
+/// A login Switchy cannot use is refused before anything is sent, so it says
+/// nothing about the request; reported over a dropped connection or a rate
+/// limit from an account that was tried, it would send the user to sign in
+/// again (Claude Code answers a 401 with "Please run /login") instead of
+/// letting the app retry. It is reported only when no account got further.
+fn replaces_reported_error(current: Option<&ProxyError>, next: &ProxyError) -> bool {
+    current.is_none() || !matches!(next, ProxyError::AuthError(_))
+}
+
 /// A subscription account served from its stored login over the shared
 /// outbound route, rather than through a proxy of its own.
 fn shares_pool_route(provider: &Provider) -> bool {
@@ -1942,6 +1954,21 @@ mod tests {
             !counts_against_provider(&api_key, &upstream(429)),
             "rate limits hit every account"
         );
+    }
+
+    #[test]
+    fn a_signed_out_account_does_not_mask_what_the_others_answered() {
+        let dropped = ProxyError::ForwardFailed("TCP connect failed".into());
+        let signed_out = ProxyError::AuthError("needs a new sign-in".into());
+        let limited = ProxyError::UpstreamError {
+            status: 429,
+            body: None,
+        };
+        assert!(replaces_reported_error(None, &signed_out));
+        assert!(!replaces_reported_error(Some(&dropped), &signed_out));
+        assert!(!replaces_reported_error(Some(&limited), &signed_out));
+        assert!(replaces_reported_error(Some(&signed_out), &dropped));
+        assert!(replaces_reported_error(Some(&dropped), &limited));
     }
 
     #[test]

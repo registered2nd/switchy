@@ -18,6 +18,21 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   connection, a timeout or a refused exit check is now put down to the network
   rather than the account, unless that account goes out through a proxy of
   its own.
+- **A signed-out account no longer turns a dropped connection into "Please run
+  /login".** When every account failed, the app was shown the error of the
+  last one tried; if that was an account whose login had been rejected, a
+  lost connection or a rate limit came back as a 401 and Claude Code asked
+  for a new sign-in instead of retrying. The app now sees what the accounts
+  that were tried answered — a 502 it retries, or the rate limit — and the
+  sign-in error only when no account got further.
+- **Turning the proxy off, or quitting Switchy, no longer breaks open Claude
+  Code sessions.** A running session follows a changed API address in its
+  `settings.json` but keeps the old one when the address is removed, so
+  sessions started with the proxy on went on calling it after Switchy had
+  handed the config back and stopped listening. Switchy now names
+  Anthropic's address when it hands back a config that had none, on Windows
+  and in WSL, and keeps the proxy answering for a few seconds after the
+  hand-back while open sessions move over.
 
 ## [1.0.18] — 2026-09-23 — A picked account stays picked, `/status` shows it, and usage is counted per account
 
