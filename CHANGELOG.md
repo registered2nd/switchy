@@ -22,6 +22,10 @@ Windows installer: download `Switchy_1.0.20_x64-setup.exe` (or the `.msi`) below
   The card kept showing the provider name without the account's email or
   usage until the list reloaded, and saving the dialog afterwards could drop
   the capture just made.
+- **The Official Claude card in use shows its account and usage again.** After
+  the proxy handed Claude Code back, that card showed only "Claude Official"
+  and Anthropic's web address, with no email and no 5-hour or 7-day figures,
+  even with its login captured.
 
 ## [1.0.19] — 2026-09-30 — A network drop or turning the proxy off no longer strands open sessions
 

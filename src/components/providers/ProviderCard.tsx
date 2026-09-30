@@ -69,8 +69,13 @@ interface ProviderCardProps {
 function isOfficialProvider(provider: Provider, appId: AppId): boolean {
   const config = provider.settingsConfig as Record<string, any>;
   if (appId === "claude") {
+    // Handing Claude Code back from the proxy names Anthropic's own address,
+    // which is still the official login.
     const baseUrl = config?.env?.ANTHROPIC_BASE_URL;
-    return !baseUrl || (typeof baseUrl === "string" && baseUrl.trim() === "");
+    if (!baseUrl) return true;
+    if (typeof baseUrl !== "string") return false;
+    const trimmed = baseUrl.trim().replace(/\/+$/, "");
+    return trimmed === "" || trimmed === "https://api.anthropic.com";
   }
   if (appId === "codex") {
     // No OPENAI_API_KEY → Codex CLI's built-in OAuth (official)
