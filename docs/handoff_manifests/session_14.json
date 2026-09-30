@@ -1,0 +1,63 @@
+{
+  "schema_version": 2,
+  "base": {
+    "publication_token": 1687,
+    "context_source_revision": "workstate:handoff/switchy/session_13@sha256:10888f60e2d622add13f2b36f589c291f8847a38d3f15deed692498e6f1a24e9",
+    "context_generated_at": "2026-09-30T18:35:59.720417Z"
+  },
+  "session": {
+    "id": "session_14",
+    "title": "Switchy 1.0.20: Claude account cards show the right email and usage",
+    "started_at": "2026-09-30T19:31:37Z",
+    "ended_at": "2026-09-30T19:59:00Z",
+    "purpose": "the user reported the in-use Official Claude card showing no email or usage, and a switch carrying the previous account's usage onto the new card; he directed the fixes, a version bump, changelog, rebuild, reinstall and push.",
+    "outcomes": [
+      "Root cause of the blank in-use card: the proxy hand-back writes ANTHROPIC_BASE_URL=https://api.anthropic.com into Claude Code settings, which backfilled into that provider's stored config; the card list treated any base URL as third-party, so it hid the email and never fetched usage. ProviderCard now counts Anthropic's own address as Official (fdb612e8).",
+      "Stale usage after a switch: the backend's last-good usage cache for the live Claude login was keyed by tool only and the frontend query by app only; both are now keyed by the live login / owning card (5517d1f9).",
+      "Capturing a login in the edit dialog now reloads the provider list, and saving the dialog keeps a capture made while it was open (f2b402e7).",
+      "Version 1.0.19 -> 1.0.20 with a [1.0.20] changelog section holding all three fixes; built, reinstalled with the one-command sequence (installed exe 1.0.20, port 15721 listening), pushed to origin main at fdb612e8. the user confirmed the card now shows correctly.",
+      "Not done: scripts/publish_public.sh and the GitHub release for 1.0.20 were not run; the public repo and release page still show 1.0.19.",
+      "Unexplained: when the Apple-relay account's card first went non-current it showed no usage even though its snapshot login was valid; no log line shows why."
+    ],
+    "pickup": null,
+    "task_ids": [],
+    "artifact_ids": [],
+    "decision_pointers": [],
+    "finding_pointers": [],
+    "evidence_pointers": [
+      "C:/Projects/Switchy/CHANGELOG.md",
+      "C:/Projects/Switchy/installers/Switchy_1.0.20_x64-setup.exe",
+      "C:/Projects/Switchy/src/components/providers/ProviderCard.tsx",
+      "C:/Projects/Switchy/src-tauri/src/services/subscription.rs"
+    ],
+    "attention": true,
+    "attention_note": "Live state at close: installed build is 1.0.20 (fdb612e8), pushed to the private origin but NOT published publicly (public repo and GitHub release are at 1.0.19). Claude current provider is the Apple-relay account (58cad6b9); Claude routing OFF; Codex routed through 127.0.0.1:15721.",
+    "latest_summary": "Fixed Claude card email/usage display bugs; 1.0.20 installed and pushed, not publicly released."
+  },
+  "context": {
+    "current_focus": {
+      "source": "C:/Projects/Switchy/CHANGELOG.md",
+      "summary": "Wait for the user's feedback on the installed 1.0.20 build, and get his calls on the open proxy-off verification and the quit case."
+    },
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "Wait for the user's feedback on the installed 1.0.20 build. If a Claude card again shows no usage after switching away, inspect switchy.log immediately and query https://api.anthropic.com/api/oauth/usage with that card's snapshot token (~/.switchy/accounts/<id>/credentials.json) to separate an Anthropic refusal from a display fault. Reinstall with the one-command sequence in CLAUDE.md. A release is: bump the four version files, date the changelog section, CI=true pnpm build, commit, push origin, run scripts/publish_public.sh, then gh release create on registered2nd/switchy with both installers; 1.0.20 has had every step except the last two."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      }
+    ],
+    "initiative_focus": []
+  },
+  "task_completions": []
+}
