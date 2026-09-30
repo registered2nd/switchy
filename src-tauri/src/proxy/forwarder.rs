@@ -417,7 +417,8 @@ impl RequestForwarder {
                                         );
 
                                         // By error type: provider problems are recorded as failures; client problems only release the permit
-                                        let is_provider_error = counts_against_provider(&retry_err);
+                                        let is_provider_error =
+                                            counts_against_provider(provider, &retry_err);
 
                                         if is_provider_error {
                                             // Provider problem: record the failure in the circuit breaker
@@ -607,7 +608,8 @@ impl RequestForwarder {
                                         "[{app_type_str}] [RECT-012] budget rectified retry still failed: {retry_err}"
                                     );
 
-                                    let is_provider_error = counts_against_provider(&retry_err);
+                                    let is_provider_error =
+                                        counts_against_provider(provider, &retry_err);
 
                                     if is_provider_error {
                                         let _ = self
@@ -671,7 +673,7 @@ impl RequestForwarder {
 
                     // Failure: count it against the provider only when it says
                     // something about the provider; otherwise just free the permit.
-                    if counts_against_provider(&e) {
+                    if counts_against_provider(provider, &e) {
                         let _ = self
                             .router
                             .record_result(
@@ -1603,18 +1605,35 @@ fn is_bedrock_provider(provider: &Provider) -> bool {
 /// 404, 413, ...) and rate limits (429, which also hit every account at once
 /// when the request itself is too large) still move on to the next provider
 /// but leave this one's health alone.
-fn counts_against_provider(error: &ProxyError) -> bool {
+///
+/// A pooled subscription account reaches the same host over the same route as
+/// every other account in its pool, so a timeout, a dropped connection or a
+/// refused exit check there is about this machine's network, not the account:
+/// counting it would open every account's breaker on one network drop.
+fn counts_against_provider(provider: &Provider, error: &ProxyError) -> bool {
     match error {
         ProxyError::Timeout(_)
         | ProxyError::ForwardFailed(_)
-        | ProxyError::StreamIdleTimeout(_)
-        | ProxyError::ProviderUnhealthy(_)
-        | ProxyError::AuthError(_) => true,
+        | ProxyError::StreamIdleTimeout(_) => !shares_pool_route(provider),
+        ProxyError::ProviderUnhealthy(_) | ProxyError::AuthError(_) => true,
         ProxyError::UpstreamError { status, .. } => {
             *status >= 500 || *status == 401 || *status == 403
         }
         _ => false,
     }
+}
+
+/// A subscription account served from its stored login over the shared
+/// outbound route, rather than through a proxy of its own.
+fn shares_pool_route(provider: &Provider) -> bool {
+    let own_route = provider
+        .meta
+        .as_ref()
+        .and_then(|m| m.proxy_config.as_ref())
+        .is_some_and(|c| c.enabled);
+    !own_route
+        && (super::codex_pool::is_chatgpt_provider(provider)
+            || super::claude_pool::is_oauth_provider(provider))
 }
 
 /// Why a failed request moved the pool off `provider`, for the switch history.
@@ -1864,22 +1883,98 @@ fn summarize_text_for_log(text: &str, max_chars: usize) -> String {
 mod tests {
     use super::*;
 
+    fn test_provider(
+        meta: Option<crate::provider::ProviderMeta>,
+        category: Option<&str>,
+    ) -> Provider {
+        Provider {
+            id: "p".to_string(),
+            name: "P".to_string(),
+            settings_config: serde_json::json!({}),
+            website_url: None,
+            category: category.map(str::to_string),
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta,
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        }
+    }
+
+    fn pooled_claude_account(own_route: bool) -> Provider {
+        use crate::provider::{CapturedClaudeAccountMeta, ProviderMeta, ProviderProxyConfig};
+        test_provider(
+            Some(ProviderMeta {
+                captured_claude_account: Some(CapturedClaudeAccountMeta {
+                    account_uuid: "acct".to_string(),
+                    email_address: "a@example.com".to_string(),
+                    captured_at: 0,
+                }),
+                proxy_config: own_route.then(|| ProviderProxyConfig {
+                    enabled: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            Some("official"),
+        )
+    }
+
     #[test]
     fn only_failures_about_the_account_count_against_it() {
+        let api_key = test_provider(None, None);
         let upstream = |status| ProxyError::UpstreamError { status, body: None };
-        assert!(counts_against_provider(&upstream(401)));
-        assert!(counts_against_provider(&upstream(403)));
-        assert!(counts_against_provider(&upstream(503)));
-        assert!(counts_against_provider(&ProxyError::Timeout("t".into())));
+        assert!(counts_against_provider(&api_key, &upstream(401)));
+        assert!(counts_against_provider(&api_key, &upstream(403)));
+        assert!(counts_against_provider(&api_key, &upstream(503)));
+        assert!(counts_against_provider(
+            &api_key,
+            &ProxyError::Timeout("t".into())
+        ));
         assert!(
-            !counts_against_provider(&upstream(400)),
+            !counts_against_provider(&api_key, &upstream(400)),
             "a request that is too long"
         );
-        assert!(!counts_against_provider(&upstream(413)));
+        assert!(!counts_against_provider(&api_key, &upstream(413)));
         assert!(
-            !counts_against_provider(&upstream(429)),
+            !counts_against_provider(&api_key, &upstream(429)),
             "rate limits hit every account"
         );
+    }
+
+    #[test]
+    fn a_network_drop_does_not_count_against_pooled_accounts() {
+        let pooled = pooled_claude_account(false);
+        let dns = ProxyError::ForwardFailed("TCP connect failed: No such host is known.".into());
+        assert!(!counts_against_provider(&pooled, &dns));
+        assert!(!counts_against_provider(
+            &pooled,
+            &ProxyError::Timeout("t".into())
+        ));
+        assert!(!counts_against_provider(
+            &pooled,
+            &ProxyError::StreamIdleTimeout(90)
+        ));
+        assert!(counts_against_provider(
+            &pooled,
+            &ProxyError::UpstreamError {
+                status: 401,
+                body: None
+            }
+        ));
+        assert!(counts_against_provider(
+            &pooled,
+            &ProxyError::AuthError("a".into())
+        ));
+
+        let own_route = pooled_claude_account(true);
+        assert!(
+            counts_against_provider(&own_route, &dns),
+            "an account behind its own proxy can fail on its own"
+        );
+        assert!(counts_against_provider(&test_provider(None, None), &dns));
     }
     use axum::http::header::{HeaderValue, ACCEPT};
     use axum::http::HeaderMap;

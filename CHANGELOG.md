@@ -8,6 +8,17 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A network drop no longer locks out every subscription account.** When
+  this machine lost its connection — switching Wi-Fi networks, say — each
+  request failed on every Claude or Codex account in turn, and a few seconds
+  of that opened every account's circuit breaker, so the proxy kept refusing
+  for up to a minute and a half after the network was back. A dropped
+  connection, a timeout or a refused exit check is now put down to the network
+  rather than the account, unless that account goes out through a proxy of
+  its own.
+
 ## [1.0.18] — 2026-09-23 — A picked account stays picked, `/status` shows it, and usage is counted per account
 
 ### Added
