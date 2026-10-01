@@ -1,0 +1,75 @@
+{
+  "schema_version": 2,
+  "base": {
+    "context_generated_at": "2026-09-30T19:59:21.413197Z",
+    "context_source_revision": "workstate:handoff/switchy/session_14@sha256:5fb4e03104582ff2df360d753b43196b30180384e1c1644cadb47d1bb1cc7bde",
+    "publication_token": 1702
+  },
+  "session": {
+    "id": "session_15",
+    "title": "Switchy 1.0.21-1.0.22: Codex turns survive account switches; macOS build restored",
+    "started_at": "2026-10-01T03:13:05Z",
+    "ended_at": "2026-10-01T17:10:00Z",
+    "purpose": "the user asked whether the macOS version was done (it was not) and to publish releases publicly, install Switchy on his wife's PC and MacBook, explain the 'thinking from another organization' notice and the Codex 'application network permission was revoked' crashes, fix the latter, and close with a handoff.",
+    "outcomes": [
+      "macOS build had been broken since deep links were removed: a macOS-only RunEvent::Opened arm still called the deleted deeplink module. Removed it (52600055); the macOS workflow builds again.",
+      "Releases now go public with all three installers (exe, msi, aarch64 dmg): v1.0.20, v1.0.21 and v1.0.22 are on registered2nd/switchy, v1.0.22 is Latest, public main matches private main.",
+      "'Claude can't use thinking from another organization' traced to Anthropic binding Sonnet 5.5 thinking to the producing organization; only the Sonnet 5.5 text-summaries WSL session showed it, after the 20:36 proxy move and the 01:02 manual switch. Opus 5.5 / Fable 5.1 reasoning carries across. Recorded in README.",
+      "Codex 'Fatal error: application network permission was revoked' root cause: Switchy's codex_engine sent account/login/start to a window's app-server mid-turn; Codex revokes in-flight requests on a login change (Codex log: revocation 7 ms after Switchy's login/start at 08:32:20Z). 1.0.21 (e638376d) waits until no loaded thread is active (thread/loaded/list + thread/read) before signing a window in.",
+      "The Codex switches that triggered it came from a one-off upstream 503 at 23:15 failing over to the other account, then quota moving back at 01:32. 1.0.22 (75150058) retries a dropped connection or gateway 502/503/504 once on the same account after 1 s before failing over.",
+      "1.0.22 installed on the workstation (port 15721 listening) and on another user's PC (DESKTOP-EFPDEDI, running on her desktop). another user's MacBook stayed unreachable all session: doorway port 20722 refused (tunnel down; likely asleep).",
+      "Removed the transient live-state snapshot from session_14's attention note at the user's direction (republished v2; manifest file 0ba68d8b).",
+      "Offered, not answered: pinning open Sonnet 5.5 Claude sessions to their account on a manual switch so they keep their reasoning. Nothing built.",
+      "Not yet observed live: a Codex account switch during a running turn under 1.0.21+; the deferral logs '[codex_engine] ... is mid-turn; signing it in ... once it is idle'.",
+      "Full cargo test: 718/719 pass; services::provider::tests::update_current_claude_provider_syncs_live_when_proxy_takeover_detected_without_backup fails only because the running Switchy holds port 15721."
+    ],
+    "pickup": null,
+    "task_ids": [],
+    "artifact_ids": [],
+    "decision_pointers": [],
+    "finding_pointers": [
+      "C:/Projects/Switchy/README.md"
+    ],
+    "evidence_pointers": [
+      "C:/Projects/Switchy/CHANGELOG.md",
+      "C:/Projects/Switchy/src-tauri/src/proxy/codex_engine.rs",
+      "C:/Projects/Switchy/src-tauri/src/proxy/forwarder.rs",
+      "C:/Projects/Switchy/src-tauri/src/lib.rs",
+      "C:/Projects/Switchy/installers/Switchy_1.0.22_x64-setup.exe",
+      "C:/Projects/Switchy/installers/Switchy_1.0.22_aarch64.dmg"
+    ],
+    "attention": false,
+    "attention_note": null,
+    "latest_summary": "1.0.21 stops account switches killing Codex turns; 1.0.22 retries network blips on the same account; macOS build fixed; all public."
+  },
+  "context": {
+    "current_focus": {
+      "source": "C:/Projects/Switchy/CHANGELOG.md",
+      "summary": "Wait for the user's feedback on 1.0.22, and install it on another user's MacBook once that machine is reachable."
+    },
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "INSTALL ON CHELSEA'S MACBOOK when reachable (ssh chelsea-mac; doorway 20722 refused all of 2026-10-01). Copy installers/Switchy_<latest>_aarch64.dmg over, hdiutil attach, copy Switchy.app into /Applications, xattr -dr com.apple.quarantine /Applications/Switchy.app, open it. She signs in to each account herself; never copy a login from the user's machines."
+      },
+      {
+        "source": "C:/Projects/Switchy/CHANGELOG.md",
+        "summary": "Wait for the user's feedback on 1.0.22. When a Codex account switch happens during a running turn, confirm in C:/Users/Administrator/.switchy/logs/switchy.log the line '[codex_engine] ... is mid-turn; signing it in to provider=... once it is idle' and that the turn completes; a passing fault shows '[FWD-003]' and should not switch accounts. A release is: bump the four version files, changelog section, CI=true pnpm build, commit, push origin, run build-macos.yml on switchy-private and add its DMG to installers/, run scripts/publish_public.sh, then gh release create on registered2nd/switchy with the exe, msi and dmg."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      }
+    ],
+    "initiative_focus": []
+  },
+  "task_completions": []
+}
