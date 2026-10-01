@@ -30,8 +30,8 @@
       "C:/Projects/Switchy/src/components/providers/ProviderCard.tsx",
       "C:/Projects/Switchy/src-tauri/src/services/subscription.rs"
     ],
-    "attention": true,
-    "attention_note": "Live state at close: installed build is 1.0.20 (fdb612e8), pushed to the private origin but NOT published publicly (public repo and GitHub release are at 1.0.19). Claude current provider is the Apple-relay account (58cad6b9); Claude routing OFF; Codex routed through 127.0.0.1:15721.",
+    "attention": false,
+    "attention_note": null,
     "latest_summary": "Fixed Claude card email/usage display bugs; 1.0.20 installed and pushed, not publicly released."
   },
   "context": {
