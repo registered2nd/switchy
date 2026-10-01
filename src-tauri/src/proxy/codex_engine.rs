@@ -43,6 +43,12 @@ use crate::provider::Provider;
 const TICK: Duration = Duration::from_secs(2);
 /// How long a server that could not be served is left alone.
 const RETRY: Duration = Duration::from_secs(60);
+/// How long a request to a window's server may take to answer.
+const CALL_TIMEOUT: Duration = Duration::from_secs(10);
+
+type WsError = tokio_tungstenite::tungstenite::Error;
+type WsTx = Pin<Box<dyn futures::Sink<Message, Error = WsError> + Send>>;
+type WsRx = Pin<Box<dyn futures::Stream<Item = Result<Message, WsError>> + Send>>;
 
 const SESSIONS_DIR: &str = "switchy-sessions";
 const ENABLED_FILE: &str = "enabled";
@@ -640,21 +646,18 @@ async fn run(app: tauri::AppHandle, install: Install) {
 }
 
 /// Holds one window's server: signs it in to the current account whenever
-/// that account or its token changes, and answers its requests for new
-/// tokens. Returns when the window's session file goes away: the relay does
-/// not end when its server does.
+/// that account or its token changes, once none of its conversations is
+/// mid-turn, and answers its requests for new tokens. Returns when the
+/// window's session file goes away: the relay does not end when its server
+/// does.
 async fn serve(
     db: &Arc<Database>,
     install: &Install,
     socket: &str,
     marker: &Path,
 ) -> Result<(), String> {
-    type WsError = tokio_tungstenite::tungstenite::Error;
     let mut relay = None;
-    let (mut tx, mut rx): (
-        Pin<Box<dyn futures::Sink<Message, Error = WsError> + Send>>,
-        Pin<Box<dyn futures::Stream<Item = Result<Message, WsError>> + Send>>,
-    ) = match &install.kind {
+    let (mut tx, mut rx): (WsTx, WsRx) = match &install.kind {
         InstallKind::Windows => {
             let token = std::fs::read_to_string(marker.with_extension("token"))
                 .map_err(|e| format!("could not read window token: {e}"))?;
@@ -714,6 +717,10 @@ async fn serve(
     let mut next_id: i64 = 2;
     // (provider id, access token) the server was last signed in with.
     let mut signed: Option<(String, String)> = None;
+    // The sign-in waiting for the window to finish its turn, logged once, and
+    // when the server was last asked whether it is still mid-turn.
+    let mut deferred: Option<(String, String)> = None;
+    let mut checked_at = Instant::now();
     loop {
         if !marker.exists() {
             return Ok(());
@@ -722,7 +729,33 @@ async fn serve(
             match super::codex_pool::credentials_for(db, &provider, false).await {
                 Ok(creds) => {
                     let fingerprint = (provider.id.clone(), creds.access_token.clone());
-                    if signed.as_ref() != Some(&fingerprint) {
+                    let busy = if signed.as_ref() == Some(&fingerprint) {
+                        false
+                    } else if deferred.as_ref() == Some(&fingerprint)
+                        && checked_at.elapsed() < TICK
+                    {
+                        true
+                    } else {
+                        checked_at = Instant::now();
+                        match window_busy(&mut tx, &mut rx, db, &mut next_id).await {
+                            Ok(Some(busy)) => busy,
+                            Ok(None) => return Ok(()),
+                            Err(e) => {
+                                log::debug!("[codex_engine] {socket}: could not read its turns: {e}");
+                                false
+                            }
+                        }
+                    };
+                    if busy {
+                        if deferred.as_ref() != Some(&fingerprint) {
+                            log::info!(
+                                "[codex_engine] {socket} is mid-turn; signing it in to provider={} once it is idle",
+                                provider.id
+                            );
+                            deferred = Some(fingerprint);
+                        }
+                    } else if signed.as_ref() != Some(&fingerprint) {
+                        deferred = None;
                         tx.send(send(json!({
                             "id": next_id,
                             "method": "account/login/start",
@@ -767,6 +800,82 @@ async fn serve(
             _ = tokio::time::timeout(TICK, wake.changed()) => {}
         }
     }
+}
+
+/// Whether any conversation loaded on a window's server is mid-turn. Signing
+/// the server in cancels the requests it has in flight, and a running turn
+/// ends on "application network permission was revoked", so a sign-in waits
+/// until this is false. `Ok(None)` when the connection closed.
+async fn window_busy(
+    tx: &mut WsTx,
+    rx: &mut WsRx,
+    db: &Arc<Database>,
+    next_id: &mut i64,
+) -> Result<Option<bool>, String> {
+    let Some(list) = call(tx, rx, db, next_id, "thread/loaded/list", json!({})).await? else {
+        return Ok(None);
+    };
+    let threads: Vec<String> = list
+        .pointer("/result/data")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("thread/loaded/list answered {list}"))?
+        .iter()
+        .filter_map(|thread| thread.as_str().map(str::to_string))
+        .collect();
+    for thread in threads {
+        let params = json!({ "threadId": thread, "includeTurns": false });
+        let Some(read) = call(tx, rx, db, next_id, "thread/read", params).await? else {
+            return Ok(None);
+        };
+        if read.pointer("/result/thread/status/type").and_then(Value::as_str) == Some("active") {
+            return Ok(Some(true));
+        }
+    }
+    Ok(Some(false))
+}
+
+/// Sends one request to a window's server and returns its response, answering
+/// the server's own requests in the meantime. `Ok(None)` when the connection
+/// closed.
+async fn call(
+    tx: &mut WsTx,
+    rx: &mut WsRx,
+    db: &Arc<Database>,
+    next_id: &mut i64,
+    method: &str,
+    params: Value,
+) -> Result<Option<Value>, String> {
+    let id = *next_id;
+    *next_id += 1;
+    let request = json!({ "id": id, "method": method, "params": params });
+    tx.send(Message::Text(request.to_string().into()))
+        .await
+        .map_err(|e| e.to_string())?;
+    let response = async {
+        while let Some(message) = rx.next().await {
+            let text = match message {
+                Ok(Message::Text(text)) => text.to_string(),
+                Ok(Message::Close(_)) | Err(_) => return Ok(None),
+                Ok(_) => continue,
+            };
+            let Ok(value) = serde_json::from_str::<Value>(&text) else {
+                continue;
+            };
+            if value.get("method").is_none() && value.get("id").and_then(Value::as_i64) == Some(id)
+            {
+                return Ok(Some(value));
+            }
+            if let Some(reply) = answer(db, &text).await {
+                tx.send(Message::Text(reply.to_string().into()))
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(None)
+    };
+    tokio::time::timeout(CALL_TIMEOUT, response)
+        .await
+        .map_err(|_| format!("{method}: no answer"))?
 }
 
 /// The reply to a request the server sent this client; `None` for responses
@@ -930,5 +1039,65 @@ mod tests {
         assert_eq!(updates[0].installed_version, "codex-cli 0.160.0");
         assert!(updates[0].cli_changed);
         assert!(updates[0].refresh_on_exit);
+    }
+
+    /// A window server that answers each request with the next scripted
+    /// reply, after a notification the client must skip.
+    fn scripted_server(replies: Vec<Value>) -> (WsTx, WsRx) {
+        let (sent, received) = futures::channel::mpsc::unbounded::<Message>();
+        std::mem::forget(received);
+        let tx: WsTx = Box::pin(sent.sink_map_err(|_| WsError::ConnectionClosed));
+        let mut stream = Vec::new();
+        for reply in replies {
+            stream.push(Ok(Message::Text(
+                json!({ "method": "thread/tokenUsage/updated", "params": {} }).to_string().into(),
+            )));
+            stream.push(Ok(Message::Text(reply.to_string().into())));
+        }
+        (tx, Box::pin(futures::stream::iter(stream)))
+    }
+
+    fn read(id: i64, status: &str) -> Value {
+        json!({ "id": id, "result": { "thread": { "status": { "type": status } } } })
+    }
+
+    #[tokio::test]
+    async fn a_window_with_a_conversation_mid_turn_is_busy() {
+        let db = Arc::new(Database::memory().unwrap());
+        let (mut tx, mut rx) = scripted_server(vec![
+            json!({ "id": 7, "result": { "data": ["main", "agent"] } }),
+            read(8, "idle"),
+            read(9, "active"),
+        ]);
+        let mut next_id = 7;
+        let busy = window_busy(&mut tx, &mut rx, &db, &mut next_id).await;
+        assert_eq!(busy, Ok(Some(true)));
+    }
+
+    #[tokio::test]
+    async fn a_window_whose_conversations_are_idle_or_failed_is_not_busy() {
+        let db = Arc::new(Database::memory().unwrap());
+        let (mut tx, mut rx) = scripted_server(vec![
+            json!({ "id": 2, "result": { "data": ["main", "agent"] } }),
+            read(3, "systemError"),
+            read(4, "idle"),
+        ]);
+        let mut next_id = 2;
+        let busy = window_busy(&mut tx, &mut rx, &db, &mut next_id).await;
+        assert_eq!(busy, Ok(Some(false)));
+        assert_eq!(next_id, 5);
+    }
+
+    #[tokio::test]
+    async fn a_server_without_the_turn_queries_is_an_error_and_a_closed_one_is_none() {
+        let db = Arc::new(Database::memory().unwrap());
+        let (mut tx, mut rx) = scripted_server(vec![
+            json!({ "id": 2, "error": { "code": -32601, "message": "unknown method" } }),
+        ]);
+        let mut next_id = 2;
+        assert!(window_busy(&mut tx, &mut rx, &db, &mut next_id).await.is_err());
+
+        let (mut tx, mut rx) = scripted_server(Vec::new());
+        assert_eq!(window_busy(&mut tx, &mut rx, &db, &mut next_id).await, Ok(None));
     }
 }

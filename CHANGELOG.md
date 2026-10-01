@@ -8,6 +8,24 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.21] — 2026-10-01 — A Codex account switch no longer kills a running turn
+
+Windows installer: download `Switchy_1.0.21_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.21_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Fixed
+
+- **A Codex window keeps working through an account switch.** When the proxy
+  moved Codex to another account, Switchy handed the new account's login to
+  every open Codex window at once. Codex cancels whatever a window has in
+  flight when its login changes, so a window in the middle of a turn stopped
+  with "Fatal error: application network permission was revoked", and several
+  windows could fail at the same second. Switchy now waits until a window's
+  conversations are all idle before handing it the new login. Its requests
+  already go through the proxy on the new account in the meantime; only what
+  `/status` shows catches up after the turn.
+
 ## [1.0.20] — 2026-09-30 — Claude account cards show the right usage after a switch
 
 Windows installer: download `Switchy_1.0.20_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
