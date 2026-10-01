@@ -8,6 +8,24 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.22] — 2026-10-01 — A network blip no longer moves Claude or Codex to another account
+
+Windows installer: download `Switchy_1.0.22_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.22_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Fixed
+
+- **A one-off connection error retries the same account.** A request that met
+  a dropped connection, or a 502, 503 or 504 from the gateway in front of
+  OpenAI or Anthropic ("upstream connect error or disconnect/reset before
+  headers"), went straight to the next account in the pool, and its success
+  there made that account the current one. One blip on a busy evening could
+  switch Codex to an account at 99% of its limit and back again later, and
+  each switch costs a Claude session on Sonnet 5.5 its earlier reasoning.
+  Such a request is now tried once more on the same account a second later,
+  and moves on only if that fails too.
+
 ## [1.0.21] — 2026-10-01 — A Codex account switch no longer kills a running turn
 
 Windows installer: download `Switchy_1.0.21_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

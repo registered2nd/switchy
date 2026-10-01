@@ -196,8 +196,10 @@ impl RequestForwarder {
                 status.last_request_at = Some(chrono::Utc::now().to_rfc3339());
             }
 
-            // Forward the request (one attempt per provider; the client controls retries)
-            match self
+            // Forward the request: one attempt per provider, plus one more on
+            // the same provider after a passing network fault, so a blip does
+            // not move the pool to another account.
+            let mut outcome = self
                 .forward(
                     provider,
                     endpoint,
@@ -206,8 +208,28 @@ impl RequestForwarder {
                     &extensions,
                     adapter.as_ref(),
                 )
-                .await
-            {
+                .await;
+            if let Err(e) = &outcome {
+                if is_passing_fault(e) {
+                    log::info!(
+                        "[{app_type_str}] [FWD-003] Provider {} hit a passing fault ({}); retrying it once before trying the next",
+                        provider.name,
+                        summarize_proxy_error(e)
+                    );
+                    tokio::time::sleep(PASSING_FAULT_RETRY_DELAY).await;
+                    outcome = self
+                        .forward(
+                            provider,
+                            endpoint,
+                            &provider_body,
+                            &headers,
+                            &extensions,
+                            adapter.as_ref(),
+                        )
+                        .await;
+                }
+            }
+            match outcome {
                 Ok((response, claude_api_format)) => {
                     // Success: record it and update the circuit breaker
                     let _ = self
@@ -1625,6 +1647,22 @@ fn counts_against_provider(provider: &Provider, error: &ProxyError) -> bool {
     }
 }
 
+/// How long to wait before retrying a provider after a passing fault.
+const PASSING_FAULT_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// A fault that usually clears within a second and says nothing about the
+/// account: a dropped or refused connection, or a gateway in front of the
+/// upstream answering 502, 503 or 504 ("upstream connect error or
+/// disconnect/reset before headers"). A timeout is left out: retrying it would
+/// double an already long wait before the next provider is tried.
+fn is_passing_fault(error: &ProxyError) -> bool {
+    match error {
+        ProxyError::ForwardFailed(_) => true,
+        ProxyError::UpstreamError { status, .. } => matches!(status, 502..=504),
+        _ => false,
+    }
+}
+
 /// Whether `next` becomes the error the app sees if every provider fails.
 /// A login Switchy cannot use is refused before anything is sent, so it says
 /// nothing about the request; reported over a dropped connection or a rate
@@ -2281,5 +2319,28 @@ mod tests {
             let will_replace = is_copilot && !is_full_url;
             assert_eq!(will_replace, should_replace, "{desc}");
         }
+    }
+    #[test]
+    fn a_dropped_connection_or_gateway_blip_is_retried_on_the_same_provider() {
+        assert!(is_passing_fault(&ProxyError::ForwardFailed(
+            "connection reset by peer".into()
+        )));
+        let gateway = |status| ProxyError::UpstreamError {
+            status,
+            body: Some("upstream connect error or disconnect/reset before headers".into()),
+        };
+        assert!(is_passing_fault(&gateway(502)));
+        assert!(is_passing_fault(&gateway(503)));
+        assert!(is_passing_fault(&gateway(504)));
+    }
+
+    #[test]
+    fn limits_refusals_and_timeouts_move_on_without_a_same_provider_retry() {
+        let upstream = |status| ProxyError::UpstreamError { status, body: None };
+        for status in [400, 401, 403, 404, 429, 500, 529] {
+            assert!(!is_passing_fault(&upstream(status)), "status {status}");
+        }
+        assert!(!is_passing_fault(&ProxyError::Timeout("first byte".into())));
+        assert!(!is_passing_fault(&ProxyError::AuthError("refused".into())));
     }
 }
