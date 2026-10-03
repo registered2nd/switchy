@@ -510,9 +510,10 @@ pub async fn handle_codex_websocket_refusal() -> impl IntoResponse {
     )
 }
 
-/// GET requests Codex makes against the ChatGPT backend besides the model
-/// call itself (the model list). Served with the selected account's login.
-pub async fn handle_codex_backend_get(
+/// Requests Codex makes against the ChatGPT backend besides the model call
+/// itself: the model list (GET) and the built-in image tool (POST
+/// `images/generations`, `images/edits`). Served with the selected account's login.
+pub async fn handle_codex_backend(
     State(state): State<ProxyState>,
     axum::extract::Path(path): axum::extract::Path<String>,
     request: axum::extract::Request,
@@ -535,12 +536,28 @@ pub async fn handle_codex_backend_get(
         url.push_str(query);
     }
 
+    let (parts, body) = request.into_parts();
+    let body = body
+        .collect()
+        .await
+        .map_err(|e| ProxyError::Internal(format!("Failed to read request body: {e}")))?
+        .to_bytes();
+    // Image generation runs for minutes; a model-list GET does not.
+    let timeout_secs = if parts.method == axum::http::Method::GET { 60 } else { 600 };
+
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
-    let mut upstream = super::http_client::get_for_provider(proxy_config).get(&url);
-    for (name, value) in request.headers() {
+    let mut upstream = super::http_client::get_for_provider(proxy_config)
+        .request(parts.method.clone(), &url)
+        .body(body);
+    for (name, value) in parts.headers.iter() {
         if matches!(
             name.as_str(),
-            "host" | "authorization" | "chatgpt-account-id" | "accept-encoding" | "connection"
+            "host"
+                | "authorization"
+                | "chatgpt-account-id"
+                | "accept-encoding"
+                | "connection"
+                | "content-length"
         ) {
             continue;
         }
@@ -563,7 +580,7 @@ pub async fn handle_codex_backend_get(
     }
 
     let response = upstream
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(timeout_secs))
         .send()
         .await
         .map_err(|e| ProxyError::ForwardFailed(e.to_string()))?;

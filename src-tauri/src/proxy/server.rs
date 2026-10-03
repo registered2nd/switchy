@@ -338,7 +338,7 @@ impl ProxyServer {
             )
             .route(
                 "/backend-api/codex/*path",
-                get(handlers::handle_codex_backend_get),
+                get(handlers::handle_codex_backend).post(handlers::handle_codex_backend),
             )
             // Gemini API (with or without prefix)
             .route("/v1beta/*path", post(handlers::handle_gemini))

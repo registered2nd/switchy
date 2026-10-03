@@ -8,6 +8,19 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.23] — 2026-10-02 — Codex's built-in image generation works through the proxy
+
+Windows installer: download `Switchy_1.0.23_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+### Fixed
+
+- **Codex can generate images again while routed through the proxy.** Codex's
+  built-in image tool sends its request to the same address as the model
+  call, and the proxy refused it with "HTTP 405 Method Not Allowed", so no
+  image came back. The proxy now passes image generation and editing on to
+  OpenAI with the current account's login, and the image lands in Codex's
+  `generated_images` folder as it does without the proxy.
+
 ## [1.0.22] — 2026-10-01 — A network blip no longer moves Claude or Codex to another account
 
 Windows installer: download `Switchy_1.0.22_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
