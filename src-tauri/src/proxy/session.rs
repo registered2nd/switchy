@@ -261,7 +261,7 @@ pub fn extract_session_id(
 /// Extract the Codex session ID
 fn extract_codex_session(headers: &HeaderMap, body: &serde_json::Value) -> Option<SessionIdResult> {
     // 1. From headers
-    for header_name in &["session_id", "x-session-id"] {
+    for header_name in &["session-id", "session_id", "x-session-id"] {
         if let Some(value) = headers.get(*header_name) {
             if let Ok(session_id) = value.to_str() {
                 // Codex session IDs are usually long (UUID format)
@@ -528,6 +528,22 @@ mod tests {
         assert_eq!(result.session_id, "codex_resp_abc123def456789");
         assert_eq!(result.source, SessionIdSource::PreviousResponseId);
         assert!(result.client_provided);
+    }
+
+    #[test]
+    fn test_extract_session_from_codex_session_id_header() {
+        // Codex 0.160 names it `session-id`, and it wins over the continuation id.
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "session-id",
+            "019f5084-5844-7d82-b53c-814aadf2e691".parse().unwrap(),
+        );
+        let body = json!({ "previous_response_id": "resp_abc123def456789" });
+
+        let result = extract_session_id(&headers, &body, "codex");
+
+        assert_eq!(result.session_id, "codex_019f5084-5844-7d82-b53c-814aadf2e691");
+        assert_eq!(result.source, SessionIdSource::Header);
     }
 
     #[test]

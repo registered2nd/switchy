@@ -367,6 +367,114 @@ fn error_event(text: &str) -> Option<(u16, HeaderMap)> {
     Some((status, headers))
 }
 
+/// What the usage log needs of the turn in flight.
+struct TurnLog {
+    started: std::time::Instant,
+    first_event_ms: Option<u64>,
+    request_model: String,
+    session_id: String,
+    /// Codex's connection warm-up (`generate: false`): no answer, not counted.
+    warmup: bool,
+}
+
+impl TurnLog {
+    fn new(create: &str, handshake: &ClientHandshake) -> Self {
+        let body: Value = serde_json::from_str(create).unwrap_or(Value::Null);
+        Self {
+            started: std::time::Instant::now(),
+            first_event_ms: None,
+            request_model: body
+                .get("model")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+                .to_string(),
+            session_id: super::session::extract_session_id(&handshake.headers, &body, "codex")
+                .session_id,
+            warmup: body.get("generate").and_then(Value::as_bool) == Some(false),
+        }
+    }
+}
+
+fn logging_enabled(state: &ProxyState) -> bool {
+    state
+        .config
+        .try_read()
+        .map(|c| c.enable_logging)
+        .unwrap_or(true)
+}
+
+/// Records a finished turn in the request log, as the HTTP path records a
+/// streamed response, so Usage Statistics count it for `provider`.
+fn log_completed(state: &ProxyState, provider: &Provider, turn: &TurnLog, event: &str) {
+    if turn.warmup || !logging_enabled(state) {
+        return;
+    }
+    let Ok(event) = serde_json::from_str::<Value>(event) else {
+        return;
+    };
+    let Some(usage) =
+        super::usage::parser::TokenUsage::from_codex_stream_events_auto(std::slice::from_ref(&event))
+    else {
+        return;
+    };
+    let model = usage
+        .model
+        .clone()
+        .or_else(|| {
+            event
+                .pointer("/response/model")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| turn.request_model.clone());
+    let (state, provider_id, request_model, session_id) = (
+        state.clone(),
+        provider.id.clone(),
+        turn.request_model.clone(),
+        turn.session_id.clone(),
+    );
+    let latency_ms = turn.started.elapsed().as_millis() as u64;
+    let first_event_ms = turn.first_event_ms;
+    tokio::spawn(async move {
+        super::response_processor::log_usage_internal(
+            &state,
+            &provider_id,
+            "codex",
+            &model,
+            &request_model,
+            usage,
+            latency_ms,
+            first_event_ms,
+            true,
+            200,
+            Some(session_id),
+        )
+        .await;
+    });
+}
+
+/// Records a turn the backend refused, against the account that refused it.
+fn log_refused(state: &ProxyState, provider: &Provider, turn: &TurnLog, status: u16, event: &str) {
+    if !logging_enabled(state) {
+        return;
+    }
+    let logger = super::usage::logger::UsageLogger::new(&state.db);
+    if let Err(e) = logger.log_error_with_context(
+        uuid::Uuid::new_v4().to_string(),
+        provider.id.clone(),
+        "codex".to_string(),
+        turn.request_model.clone(),
+        status,
+        event.chars().take(500).collect(),
+        turn.started.elapsed().as_millis() as u64,
+        true,
+        Some(turn.session_id.clone()),
+        None,
+    ) {
+        log::warn!("[CodexWS] could not record a refused turn: {e}");
+    }
+}
+
 /// Moves frames both ways until either side closes, or until the pool would
 /// serve another account and no turn is in flight. A turn refused for usage
 /// before any of it reached Codex is sent again on the next account.
@@ -382,6 +490,7 @@ async fn relay(
     // The turn in flight, and whether any of its events have reached Codex;
     // those that have not are in `held`.
     let mut turn: Option<Message> = None;
+    let mut turn_log: Option<TurnLog> = None;
     let mut streaming = false;
     let mut held: Vec<Message> = Vec::new();
     let mut answered = false;
@@ -403,6 +512,7 @@ async fn relay(
                 if let Message::Text(text) = &message {
                     if event_type(text.as_str()).as_deref() == Some("response.create") {
                         turn = Some(message.clone());
+                        turn_log = Some(TurnLog::new(text.as_str(), &handshake));
                         streaming = false;
                         held.clear();
                     }
@@ -428,6 +538,9 @@ async fn relay(
                     if let Some((status, quota)) = &error {
                         super::codex_pool::record_quota(&provider.id, quota);
                         super::codex_pool::record_limit_refusal(&provider.id, *status, Some(&text));
+                        if let Some(log) = &turn_log {
+                            log_refused(&state, &provider, log, *status, &text);
+                        }
                     }
                     let limit = matches!(error, Some((429, _)));
                     if turn.is_some() && !streaming {
@@ -466,10 +579,18 @@ async fn relay(
                             continue;
                         }
                         streaming = true;
+                        if let Some(log) = turn_log.as_mut() {
+                            log.first_event_ms = Some(log.started.elapsed().as_millis() as u64);
+                        }
                         for event in held.drain(..) {
                             if client_tx.send(event).await.is_err() {
                                 break 'relay "client closed".to_string();
                             }
+                        }
+                    }
+                    if kind == "response.completed" {
+                        if let Some(log) = &turn_log {
+                            log_completed(&state, &provider, log, &text);
                         }
                     }
                     if kind == "response.completed" && !answered {
@@ -562,6 +683,22 @@ mod tests {
             Some(400)
         );
         assert!(error_event(r#"{"type":"response.created"}"#).is_none());
+    }
+
+    #[test]
+    fn a_warm_up_turn_is_not_counted() {
+        let handshake = ClientHandshake {
+            headers: HeaderMap::new(),
+            query: None,
+        };
+        let warmup = TurnLog::new(
+            r#"{"type":"response.create","model":"gpt-x","generate":false}"#,
+            &handshake,
+        );
+        assert!(warmup.warmup);
+        assert_eq!(warmup.request_model, "gpt-x");
+        let turn = TurnLog::new(r#"{"type":"response.create","model":"gpt-x"}"#, &handshake);
+        assert!(!turn.warmup);
     }
 
     #[test]

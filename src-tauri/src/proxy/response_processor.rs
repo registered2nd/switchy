@@ -528,7 +528,7 @@ fn spawn_log_usage(
 
 /// Internal usage recording
 #[allow(clippy::too_many_arguments)]
-async fn log_usage_internal(
+pub(crate) async fn log_usage_internal(
     state: &ProxyState,
     provider_id: &str,
     app_type: &str,

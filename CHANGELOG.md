@@ -21,7 +21,11 @@ Windows installer: download `Switchy_1.0.24_x64-setup.exe` (or the `.msi`) below
   OpenAI on the current account. Switching accounts still reaches an open
   session: the connection moves to the new account at the next turn. When an
   account runs out of quota as a turn starts, the turn goes to the next
-  account without an error, as it did before.
+  account without an error, as it did before. Usage Statistics count these
+  turns as they counted Codex's requests before.
+- **Usage Statistics keep a Codex session together.** Codex 0.160 renamed the
+  header that carries its session id, so each request was counted as a
+  session of its own. Switchy reads the new name.
 
 ## [1.0.23] — 2026-10-02 — Codex's built-in image generation works through the proxy
 
