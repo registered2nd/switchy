@@ -8,9 +8,13 @@
 //! relay closes the connection once no turn is in flight; Codex reconnects on
 //! its next turn with a full request, and the router picks the account again.
 //!
-//! Anything the relay cannot serve (a provider that is not a ChatGPT login, a
-//! refused exit, a failed upstream handshake) is answered 426, which makes
-//! Codex use the HTTP transport for the rest of its session.
+//! As on the HTTP path, an account that refuses the connection, or refuses a
+//! turn for usage before any of the turn reached Codex, is passed over for the
+//! next one; the turn is sent again there and Codex sees no error.
+//!
+//! Anything the relay cannot serve (a provider that is not a ChatGPT login, or
+//! no account accepting the connection) is answered 426, which makes Codex use
+//! the HTTP transport for the rest of its session.
 
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -20,11 +24,15 @@ use serde_json::Value;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::handshake::client::generate_key;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
-use tokio_tungstenite::tungstenite::protocol::{frame::coding::CloseCode, CloseFrame, Role};
+use tokio_tungstenite::tungstenite::protocol::{
+    frame::coding::CloseCode, CloseFrame, Role, WebSocketConfig,
+};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
 use super::server::ProxyState;
+use crate::app_config::AppType;
+use crate::database::SwitchReason;
 use crate::provider::Provider;
 
 /// How often an idle connection checks whether the pool would still choose
@@ -47,6 +55,18 @@ const NOT_FORWARDED: &[&str] = &[
     "sec-websocket-extensions",
 ];
 
+type Upstream = WebSocketStream<reqwest::Upgraded>;
+
+/// No size limits of the relay's own: a long conversation's full request runs
+/// to tens of megabytes in one frame, and the backend decides what it accepts.
+fn unlimited() -> Option<WebSocketConfig> {
+    Some(
+        WebSocketConfig::default()
+            .max_message_size(None)
+            .max_frame_size(None),
+    )
+}
+
 fn fall_back_to_http() -> Response {
     (
         StatusCode::UPGRADE_REQUIRED,
@@ -62,17 +82,89 @@ fn is_websocket_upgrade(headers: &HeaderMap) -> bool {
         .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
 }
 
-/// The ChatGPT account the pool would serve Codex from now, if it is one.
-async fn chosen_account(state: &ProxyState) -> Option<Provider> {
-    let providers = state
-        .provider_router
-        .select_providers("codex", None)
-        .await
-        .ok()?;
+/// The ChatGPT accounts the pool would serve Codex from now, in order. Empty
+/// when its first choice is not a ChatGPT login: that is served over HTTP.
+async fn chosen_accounts(state: &ProxyState) -> Vec<Provider> {
+    let Ok(providers) = state.provider_router.select_providers("codex", None).await else {
+        return Vec::new();
+    };
+    if !providers
+        .first()
+        .is_some_and(super::codex_pool::is_chatgpt_provider)
+    {
+        return Vec::new();
+    }
     providers
         .into_iter()
-        .next()
         .filter(super::codex_pool::is_chatgpt_provider)
+        .collect()
+}
+
+/// Records in the switch history, the window and the tray that `provider` now
+/// serves Codex, when it is not the current provider.
+fn note_switch(state: &ProxyState, provider: &Provider, reason: (SwitchReason, String)) {
+    let current = crate::settings::get_effective_current_provider(&state.db, &AppType::Codex)
+        .ok()
+        .flatten();
+    if current.as_deref() == Some(provider.id.as_str()) {
+        return;
+    }
+    let (fm, app, id, name) = (
+        state.failover_manager.clone(),
+        state.app_handle.clone(),
+        provider.id.clone(),
+        provider.name.clone(),
+    );
+    tokio::spawn(async move {
+        let _ = fm
+            .try_switch(app.as_ref(), "codex", &id, &name, Some(reason))
+            .await;
+    });
+}
+
+/// The client's handshake, kept to open the upstream again on another account.
+/// Held as owned parts: the request body is not Sync, so the request itself
+/// cannot be borrowed across an await.
+#[derive(Clone)]
+struct ClientHandshake {
+    headers: HeaderMap,
+    query: Option<String>,
+}
+
+/// Opens the upstream WebSocket on the first of `accounts` that accepts it,
+/// as the HTTP path tries the next account when one fails. `passed_over` is
+/// why the pool moved past the current provider, when it did.
+async fn connect_first(
+    state: &ProxyState,
+    accounts: Vec<Provider>,
+    handshake: &ClientHandshake,
+    mut passed_over: Option<(SwitchReason, String)>,
+) -> Option<(Provider, Upstream, HeaderMap)> {
+    for provider in accounts {
+        match connect_upstream(state, &provider, handshake).await {
+            Ok((upstream, headers)) => {
+                super::codex_pool::record_quota(&provider.id, &headers);
+                let reason = passed_over
+                    .unwrap_or((SwitchReason::Rotation, "Near its usage limit".to_string()));
+                note_switch(state, &provider, reason);
+                return Some((provider, upstream, headers));
+            }
+            Err((status, e)) => {
+                log::warn!("[CodexWS] provider={}: websocket refused ({e})", provider.id);
+                if passed_over.is_none() {
+                    let reason = if super::codex_pool::needs_sign_in(&provider) {
+                        SwitchReason::SignedOut
+                    } else if status == Some(429) {
+                        SwitchReason::Limit
+                    } else {
+                        SwitchReason::Failover
+                    };
+                    passed_over = Some((reason, e));
+                }
+            }
+        }
+    }
+    None
 }
 
 pub async fn handle(
@@ -89,25 +181,21 @@ pub async fn handle(
     else {
         return fall_back_to_http();
     };
-    let Some(provider) = chosen_account(&state).await else {
+    let accounts = chosen_accounts(&state).await;
+    if accounts.is_empty() {
+        return fall_back_to_http();
+    }
+
+    let handshake = ClientHandshake {
+        headers: request.headers().clone(),
+        query: request.uri().query().map(str::to_string),
+    };
+    let Some((provider, upstream, upstream_headers)) =
+        connect_first(&state, accounts, &handshake, None).await
+    else {
+        log::warn!("[CodexWS] no account accepted the websocket; Codex falls back to HTTP");
         return fall_back_to_http();
     };
-
-    // The request body is not Sync, so nothing borrows the request across an await.
-    let client_headers = request.headers().clone();
-    let query = request.uri().query().map(str::to_string);
-    let (upstream, upstream_headers) =
-        match connect_upstream(&state, &provider, &client_headers, query.as_deref()).await {
-        Ok(connected) => connected,
-        Err(e) => {
-            log::warn!(
-                "[CodexWS] provider={}: websocket not relayed ({e}); Codex falls back to HTTP",
-                provider.id
-            );
-            return fall_back_to_http();
-        }
-    };
-    super::codex_pool::record_quota(&provider.id, &upstream_headers);
     log::info!(
         "[CodexWS] relaying a Codex websocket through provider={}",
         provider.id
@@ -118,9 +206,9 @@ pub async fn handle(
         match on_upgrade.await {
             Ok(upgraded) => {
                 let client =
-                    WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, None)
+                    WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, unlimited())
                         .await;
-                relay(state, provider, client, upstream).await;
+                relay(state, provider, client, upstream, handshake).await;
             }
             Err(e) => log::warn!("[CodexWS] client upgrade failed: {e}"),
         }
@@ -150,34 +238,32 @@ pub async fn handle(
         .unwrap_or_else(|_| fall_back_to_http())
 }
 
-type Upstream = WebSocketStream<reqwest::Upgraded>;
-
 /// Opens the WebSocket to the ChatGPT backend with `provider`'s login, after
-/// the exit check. Returns the upstream handshake's response headers.
+/// the exit check. Returns the upstream handshake's response headers, or the
+/// status the upstream refused it with.
 async fn connect_upstream(
     state: &ProxyState,
     provider: &Provider,
-    client_headers: &HeaderMap,
-    query: Option<&str>,
-) -> Result<(Upstream, HeaderMap), String> {
+    handshake: &ClientHandshake,
+) -> Result<(Upstream, HeaderMap), (Option<u16>, String)> {
     super::account_pool::ensure_exit_allowed(
         &state.db,
         provider,
         super::codex_pool::EXIT_TRACE_URL,
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| (None, e.to_string()))?;
     let credentials = super::codex_pool::credentials_for(&state.db, provider, false)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| (None, e.to_string()))?;
 
     let mut url = format!("{}/responses", super::codex_pool::CHATGPT_CODEX_BASE_URL);
-    if let Some(query) = query {
+    if let Some(query) = handshake.query.as_deref() {
         url.push('?');
         url.push_str(query);
     }
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
-    let client = super::http_client::get_http1_for_provider(proxy_config)?;
+    let client = super::http_client::get_http1_for_provider(proxy_config).map_err(|e| (None, e))?;
 
     let mut upstream = client
         .get(&url)
@@ -189,7 +275,7 @@ async fn connect_upstream(
     if let Some(account_id) = credentials.account_id.as_deref() {
         upstream = upstream.header("chatgpt-account-id", account_id);
     }
-    for (name, value) in client_headers {
+    for (name, value) in &handshake.headers {
         if !NOT_FORWARDED.contains(&name.as_str()) {
             upstream = upstream.header(name, value);
         }
@@ -199,19 +285,25 @@ async fn connect_upstream(
         .timeout(Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| (None, e.to_string()))?;
     let status = response.status();
     if status != reqwest::StatusCode::SWITCHING_PROTOCOLS {
         let body = response.text().await.unwrap_or_default();
         super::codex_pool::record_limit_refusal(&provider.id, status.as_u16(), Some(&body));
-        return Err(format!(
-            "upstream answered {status}: {}",
-            body.chars().take(300).collect::<String>()
+        return Err((
+            Some(status.as_u16()),
+            format!(
+                "upstream answered {status}: {}",
+                body.chars().take(300).collect::<String>()
+            ),
         ));
     }
     let headers = response.headers().clone();
-    let upgraded = response.upgrade().await.map_err(|e| e.to_string())?;
-    let socket = WebSocketStream::from_raw_socket(upgraded, Role::Client, None).await;
+    let upgraded = response
+        .upgrade()
+        .await
+        .map_err(|e| (None, e.to_string()))?;
+    let socket = WebSocketStream::from_raw_socket(upgraded, Role::Client, unlimited()).await;
     Ok((socket, headers))
 }
 
@@ -229,23 +321,75 @@ fn ends_turn(kind: &str) -> bool {
     )
 }
 
+/// Events that open a turn before any of the answer. They are held back until
+/// the turn is known not to be refused, so a refusal can move to another
+/// account without Codex having seen the turn start.
+fn opens_turn(kind: &str) -> bool {
+    matches!(
+        kind,
+        "response.created"
+            | "response.in_progress"
+            | "codex.rate_limits"
+            | "codex.response.metadata"
+            | "responsesapi.websocket_timing"
+    )
+}
+
+/// The status of a wrapped error event (`{"type":"error","status":429,...}`)
+/// and the `x-codex-*` quota it carries, as headers.
+fn error_event(text: &str) -> Option<(u16, HeaderMap)> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    if value.get("type")?.as_str()? != "error" {
+        return None;
+    }
+    let status = value
+        .get("status")
+        .or_else(|| value.get("status_code"))?
+        .as_u64()? as u16;
+    let mut headers = HeaderMap::new();
+    for (name, value) in value
+        .get("headers")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        let value = match value {
+            Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        if let (Ok(name), Ok(value)) = (
+            axum::http::HeaderName::from_bytes(name.as_bytes()),
+            axum::http::HeaderValue::from_str(&value),
+        ) {
+            headers.insert(name, value);
+        }
+    }
+    Some((status, headers))
+}
+
 /// Moves frames both ways until either side closes, or until the pool would
-/// serve another account and no turn is in flight.
+/// serve another account and no turn is in flight. A turn refused for usage
+/// before any of it reached Codex is sent again on the next account.
 async fn relay(
     state: ProxyState,
-    provider: Provider,
+    mut provider: Provider,
     client: WebSocketStream<TokioIo<hyper::upgrade::Upgraded>>,
     upstream: Upstream,
+    handshake: ClientHandshake,
 ) {
     let (mut client_tx, mut client_rx) = client.split();
     let (mut upstream_tx, mut upstream_rx) = upstream.split();
-    let mut in_flight = false;
+    // The turn in flight, and whether any of its events have reached Codex;
+    // those that have not are in `held`.
+    let mut turn: Option<Message> = None;
+    let mut streaming = false;
+    let mut held: Vec<Message> = Vec::new();
     let mut answered = false;
     let mut refused = false;
     let mut check = tokio::time::interval(ACCOUNT_CHECK);
     check.tick().await;
 
-    let reason = loop {
+    let reason = 'relay: loop {
         tokio::select! {
             message = client_rx.next() => {
                 let message = match message {
@@ -253,15 +397,17 @@ async fn relay(
                     Some(Err(e)) => break format!("client error: {e}"),
                     None => break "client closed".to_string(),
                 };
-                if let Message::Text(text) = &message {
-                    if event_type(text.as_str()).as_deref() == Some("response.create") {
-                        in_flight = true;
-                    }
-                }
-                let closing = matches!(message, Message::Close(_));
                 if matches!(message, Message::Ping(_) | Message::Pong(_)) {
                     continue;
                 }
+                if let Message::Text(text) = &message {
+                    if event_type(text.as_str()).as_deref() == Some("response.create") {
+                        turn = Some(message.clone());
+                        streaming = false;
+                        held.clear();
+                    }
+                }
+                let closing = matches!(message, Message::Close(_));
                 if upstream_tx.send(message).await.is_err() || closing {
                     break "client closed".to_string();
                 }
@@ -272,46 +418,82 @@ async fn relay(
                     Some(Err(e)) => break format!("upstream error: {e}"),
                     None => break "upstream closed".to_string(),
                 };
-                if let Message::Text(text) = &message {
-                    if let Some(kind) = event_type(text.as_str()) {
-                        if kind == "response.completed" && !answered {
-                            answered = true;
-                            super::codex_pool::save_login_of_serving_account(&state.db, &provider);
-                        }
-                        if kind == "error" {
-                            let status = serde_json::from_str::<Value>(text.as_str())
-                                .ok()
-                                .and_then(|v| v.get("status").and_then(Value::as_u64));
-                            if let Some(status) = status {
-                                super::codex_pool::record_limit_refusal(
-                                    &provider.id,
-                                    status as u16,
-                                    Some(text.as_str()),
-                                );
-                                refused |= status == 429;
-                            }
-                        }
-                        if ends_turn(&kind) {
-                            in_flight = false;
-                        }
-                    }
-                }
-                let closing = matches!(message, Message::Close(_));
                 if matches!(message, Message::Ping(_) | Message::Pong(_)) {
                     continue;
                 }
+                if let Message::Text(text) = &message {
+                    let text = text.as_str().to_string();
+                    let kind = event_type(&text).unwrap_or_default();
+                    let error = error_event(&text);
+                    if let Some((status, quota)) = &error {
+                        super::codex_pool::record_quota(&provider.id, quota);
+                        super::codex_pool::record_limit_refusal(&provider.id, *status, Some(&text));
+                    }
+                    let limit = matches!(error, Some((429, _)));
+                    if turn.is_some() && !streaming {
+                        if limit {
+                            let others: Vec<Provider> = chosen_accounts(&state)
+                                .await
+                                .into_iter()
+                                .filter(|p| p.id != provider.id)
+                                .collect();
+                            let reason = (SwitchReason::Limit, "Usage limit reached".to_string());
+                            if let Some((next, upstream, _)) =
+                                connect_first(&state, others, &handshake, Some(reason)).await
+                            {
+                                let (mut tx, rx) = upstream.split();
+                                let resent = match turn.clone() {
+                                    Some(create) => tx.send(create).await.is_ok(),
+                                    None => false,
+                                };
+                                if resent {
+                                    log::info!(
+                                        "[CodexWS] provider={} refused the turn for usage; sent it again on provider={}",
+                                        provider.id,
+                                        next.id
+                                    );
+                                    let _ = upstream_tx.send(Message::Close(None)).await;
+                                    upstream_tx = tx;
+                                    upstream_rx = rx;
+                                    provider = next;
+                                    held.clear();
+                                    answered = false;
+                                    continue 'relay;
+                                }
+                            }
+                        } else if opens_turn(&kind) {
+                            held.push(message);
+                            continue;
+                        }
+                        streaming = true;
+                        for event in held.drain(..) {
+                            if client_tx.send(event).await.is_err() {
+                                break 'relay "client closed".to_string();
+                            }
+                        }
+                    }
+                    if kind == "response.completed" && !answered {
+                        answered = true;
+                        super::codex_pool::save_login_of_serving_account(&state.db, &provider);
+                    }
+                    refused |= limit;
+                    if ends_turn(&kind) {
+                        turn = None;
+                    }
+                }
+                let closing = matches!(message, Message::Close(_));
                 if client_tx.send(message).await.is_err() || closing {
                     break "upstream closed".to_string();
                 }
             }
             _ = check.tick() => {
-                if in_flight {
+                if turn.is_some() {
                     continue;
                 }
                 if refused {
                     break "account refused for usage".to_string();
                 }
-                let chosen = chosen_account(&state).await.map(|p| p.id);
+                let chosen = chosen_accounts(&state).await.into_iter().next().map(|p| p.id);
                 if chosen.as_deref() != Some(provider.id.as_str()) {
                     break format!(
                         "pool now serves {}",
@@ -352,6 +534,34 @@ mod tests {
         for kind in ["response.output_text.delta", "codex.rate_limits", "response.created"] {
             assert!(!ends_turn(kind));
         }
+    }
+
+    #[test]
+    fn only_the_opening_of_a_turn_is_held_back() {
+        assert!(opens_turn("response.created"));
+        assert!(opens_turn("codex.rate_limits"));
+        assert!(!opens_turn("response.output_item.added"));
+        assert!(!opens_turn("response.output_text.delta"));
+    }
+
+    #[test]
+    fn a_usage_limit_error_event_is_read_with_its_quota() {
+        let text = serde_json::json!({
+            "type": "error",
+            "status": 429,
+            "error": { "type": "usage_limit_reached", "resets_at": 1738888888 },
+            "headers": { "x-codex-primary-used-percent": "100.0", "x-codex-primary-window-minutes": 15 }
+        })
+        .to_string();
+        let (status, headers) = error_event(&text).expect("error event");
+        assert_eq!(status, 429);
+        assert_eq!(headers.get("x-codex-primary-used-percent").unwrap(), "100.0");
+        assert_eq!(headers.get("x-codex-primary-window-minutes").unwrap(), "15");
+        assert_eq!(
+            error_event(r#"{"type":"error","status_code":400}"#).map(|e| e.0),
+            Some(400)
+        );
+        assert!(error_event(r#"{"type":"response.created"}"#).is_none());
     }
 
     #[test]

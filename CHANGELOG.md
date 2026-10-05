@@ -19,7 +19,9 @@ Windows installer: download `Switchy_1.0.24_x64-setup.exe` (or the `.msi`) below
   start logged "failed to connect to websocket … 426 Upgrade Required" and
   interactive Codex was blocked. The proxy now carries the WebSocket to
   OpenAI on the current account. Switching accounts still reaches an open
-  session: the connection moves to the new account at the next turn.
+  session: the connection moves to the new account at the next turn. When an
+  account runs out of quota as a turn starts, the turn goes to the next
+  account without an error, as it did before.
 
 ## [1.0.23] — 2026-10-02 — Codex's built-in image generation works through the proxy
 
