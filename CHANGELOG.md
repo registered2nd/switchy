@@ -8,6 +8,19 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.24] — 2026-10-04 — Codex 0.160 connects through the proxy
+
+Windows installer: download `Switchy_1.0.24_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+### Fixed
+
+- **Codex 0.160 no longer fails with "426 Upgrade Required".** Codex 0.160
+  sends its requests over a WebSocket, and the proxy refused it, so every
+  start logged "failed to connect to websocket … 426 Upgrade Required" and
+  interactive Codex was blocked. The proxy now carries the WebSocket to
+  OpenAI on the current account. Switching accounts still reaches an open
+  session: the connection moves to the new account at the next turn.
+
 ## [1.0.23] — 2026-10-02 — Codex's built-in image generation works through the proxy
 
 Windows installer: download `Switchy_1.0.23_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

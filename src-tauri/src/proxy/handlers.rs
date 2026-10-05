@@ -500,16 +500,6 @@ fn decode_request_body(headers: &axum::http::HeaderMap, body: Bytes) -> Result<B
     }
 }
 
-/// Codex tries Responses-over-WebSocket first on its built-in provider. The
-/// proxy speaks HTTP only; 426 is the answer that makes Codex fall back to it
-/// at once instead of spending its retry budget.
-pub async fn handle_codex_websocket_refusal() -> impl IntoResponse {
-    (
-        StatusCode::UPGRADE_REQUIRED,
-        [(axum::http::header::CONTENT_LENGTH, "0")],
-    )
-}
-
 /// Requests Codex makes against the ChatGPT backend besides the model call
 /// itself: the model list (GET) and the built-in image tool (POST
 /// `images/generations`, `images/edits`). Served with the selected account's login.

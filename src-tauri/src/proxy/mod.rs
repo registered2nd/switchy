@@ -9,6 +9,7 @@ pub mod circuit_breaker;
 pub mod claude_pool;
 pub mod codex_engine;
 pub mod codex_pool;
+mod codex_ws;
 pub mod copilot_optimizer;
 pub mod error;
 pub mod error_mapper;

@@ -222,8 +222,16 @@ pub fn is_proxy_enabled() -> bool {
 
 /// Builds the HTTP client
 fn build_client(proxy_url: Option<&str>) -> Result<Client, String> {
+    build_client_with(proxy_url, false)
+}
+
+fn build_client_with(proxy_url: Option<&str>, http1_only: bool) -> Result<Client, String> {
     install_rustls_provider();
-    let mut builder = Client::builder()
+    let mut builder = Client::builder();
+    if http1_only {
+        builder = builder.http1_only();
+    }
+    let mut builder = builder
         .timeout(Duration::from_secs(600))
         .connect_timeout(Duration::from_secs(30))
         .pool_max_idle_per_host(10)
@@ -437,6 +445,18 @@ pub fn get_for_provider(proxy_config: Option<&ProviderProxyConfig>) -> Client {
 
     // Fall back to the global client
     get()
+}
+
+/// An HTTP/1.1-only client taking the same route as `get_for_provider`, for a
+/// request upgraded to a WebSocket: an upgrade does not exist in HTTP/2.
+pub fn get_http1_for_provider(
+    proxy_config: Option<&ProviderProxyConfig>,
+) -> Result<Client, String> {
+    let proxy_url = proxy_config
+        .filter(|c| c.enabled)
+        .and_then(build_proxy_url_from_config)
+        .or_else(get_current_proxy_url);
+    build_client_with(proxy_url.as_deref(), true)
 }
 
 #[cfg(test)]

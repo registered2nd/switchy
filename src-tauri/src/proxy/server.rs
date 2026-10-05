@@ -180,6 +180,8 @@ impl ProxyServer {
                             if let Err(e) = hyper::server::conn::http1::Builder::new()
                                 .preserve_header_case(true)
                                 .serve_connection(TokioIo::new(stream), service)
+                                // Codex's Responses WebSocket (codex_ws)
+                                .with_upgrades()
                                 .await
                             {
                                 // Connection reset / broken pipe etc. are common when proxying; log at debug
@@ -330,7 +332,7 @@ impl ProxyServer {
             // `openai_base_url`. Fixed routes win over the wildcard.
             .route(
                 "/backend-api/codex/responses",
-                post(handlers::handle_responses).get(handlers::handle_codex_websocket_refusal),
+                post(handlers::handle_responses).get(super::codex_ws::handle),
             )
             .route(
                 "/backend-api/codex/responses/compact",
