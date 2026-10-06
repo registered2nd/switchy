@@ -739,6 +739,30 @@ pub fn run() {
             return;
         }
 
+        // Windows ending the session (restart, shutdown, sign-out) skips
+        // ExitRequested and kills the process once this returns, so hand the
+        // configs back here, synchronously and within Windows' grace period.
+        #[cfg(target_os = "windows")]
+        if let RunEvent::Exit = &event {
+            if let Some(state) = app_handle.try_state::<store::AppState>() {
+                log::info!("Session ending; handing the live configs back");
+                let result = tauri::async_runtime::block_on(async {
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(4),
+                        state.proxy_service.hand_back_for_session_end(),
+                    )
+                    .await
+                });
+                match result {
+                    Ok(Ok(())) => log::info!("Live configs handed back for the session end"),
+                    Ok(Err(e)) => log::error!("Could not hand the live configs back: {e}"),
+                    Err(_) => log::error!("Handing the live configs back timed out"),
+                }
+                log::logger().flush();
+            }
+            return;
+        }
+
         #[cfg(target_os = "macos")]
         {
             match event {

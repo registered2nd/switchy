@@ -23,6 +23,13 @@ Windows installer: download `Switchy_1.0.24_x64-setup.exe` (or the `.msi`) below
   account runs out of quota as a turn starts, the turn goes to the next
   account without an error, as it did before. Usage Statistics count these
   turns as they counted Codex's requests before.
+- **Restarting Windows no longer leaves Claude Code pointed at a proxy that
+  is not running.** Windows closed Switchy without letting it hand the
+  configs back, so after the restart Claude Code, Codex and Gemini still
+  called Switchy's address and failed with "Connection refused" until
+  Switchy was started again. Switchy now hands them back as Windows shuts
+  down: tools opened before Switchy starts go direct, and Switchy takes them
+  over again when it starts.
 - **Usage Statistics keep a Codex session together.** Codex 0.160 renamed the
   header that carries its session id, so each request was counted as a
   session of its own. Switchy reads the new name.

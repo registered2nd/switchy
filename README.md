@@ -69,7 +69,7 @@ While an app is routed through the proxy, its WSL install is pointed at the prox
 
 ## Handing configs back
 
-Routing an app through the proxy edits its config — Claude Code's `settings.json`, Codex's `config.toml` — to point at the proxy. When the proxy lets go, whether it is turned off, Switchy quits, or Switchy starts again after a crash, only what the proxy changed is put back. Hooks, plugins and settings that another tool or you added in the meantime stay, such as the status hooks Orca writes. Switching the Claude account while the proxy is on keeps them too.
+Routing an app through the proxy edits its config — Claude Code's `settings.json`, Codex's `config.toml` — to point at the proxy. When the proxy lets go, whether it is turned off, Switchy quits, Windows shuts down or restarts, or Switchy starts again after a crash, only what the proxy changed is put back; after a Windows restart the proxy takes the configs over again when Switchy starts. Hooks, plugins and settings that another tool or you added in the meantime stay, such as the status hooks Orca writes. Switching the Claude account while the proxy is on keeps them too.
 
 ## Other tools in the app
 

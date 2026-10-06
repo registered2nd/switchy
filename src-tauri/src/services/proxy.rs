@@ -1348,8 +1348,45 @@ impl ProxyService {
         app_type: &AppType,
     ) -> Result<(), String> {
         let _guard = self.switch_locks.lock_for_app(app_type.as_str()).await;
+        self.restore_mirror(app_type).await;
         self.restore_live_config_for_app_with_fallback_inner(app_type)
             .await
+    }
+
+    /// Windows is ending the session (restart, shutdown, sign-out): hand every
+    /// app's config back before the process is killed, so a tool started after
+    /// the next login, before Switchy is running again, goes direct instead of
+    /// to a listener that is not there. The Windows configs go first; the WSL
+    /// copies sit behind a VM that may already be stopping. The proxy state is
+    /// kept, so the next start takes the configs over again.
+    pub async fn hand_back_for_session_end(&self) -> Result<(), String> {
+        let mut errors = Vec::new();
+        for app_type in [AppType::Claude, AppType::Codex, AppType::Gemini] {
+            let _guard = self.switch_locks.lock_for_app(app_type.as_str()).await;
+            if let Err(e) = self
+                .restore_live_config_for_app_with_fallback_inner(&app_type)
+                .await
+            {
+                errors.push(e);
+            }
+        }
+        for app_type in [AppType::Claude, AppType::Codex, AppType::Gemini] {
+            let _guard = self.switch_locks.lock_for_app(app_type.as_str()).await;
+            self.restore_mirror(&app_type).await;
+        }
+        if !errors.is_empty() {
+            return Err(errors.join("; "));
+        }
+
+        self.db
+            .set_live_takeover_active(false)
+            .await
+            .map_err(|e| format!("Could not clear the takeover state: {e}"))?;
+        self.db
+            .delete_all_live_backups()
+            .await
+            .map_err(|e| format!("Could not delete the backup: {e}"))?;
+        Ok(())
     }
 
     async fn restore_live_config_for_app_with_fallback_inner(
@@ -1357,7 +1394,6 @@ impl ProxyService {
         app_type: &AppType,
     ) -> Result<(), String> {
         let app_type_str = app_type.as_str();
-        self.restore_mirror(app_type).await;
 
         // 1) Restore from the live backup first (the only reliable source of the "original live" config)
         let backup = self
