@@ -100,6 +100,22 @@ async fn chosen_accounts(state: &ProxyState) -> Vec<Provider> {
         .collect()
 }
 
+/// Why the pool chose an account other than Codex's current provider.
+fn rotation_reason(state: &ProxyState) -> (SwitchReason, String) {
+    let current = crate::settings::get_effective_current_provider(&state.db, &AppType::Codex)
+        .ok()
+        .flatten();
+    let threshold = state
+        .db
+        .get_account_pool_config()
+        .unwrap_or_default()
+        .threshold_percent;
+    match current {
+        Some(current) => super::account_pool::rotation_reason(&current, None, threshold),
+        None => (SwitchReason::Rotation, "Near its usage limit".to_string()),
+    }
+}
+
 /// Records in the switch history, the window and the tray that `provider` now
 /// serves Codex, when it is not the current provider.
 fn note_switch(state: &ProxyState, provider: &Provider, reason: (SwitchReason, String)) {
@@ -144,8 +160,7 @@ async fn connect_first(
         match connect_upstream(state, &provider, handshake).await {
             Ok((upstream, headers)) => {
                 super::codex_pool::record_quota(&provider.id, &headers);
-                let reason = passed_over
-                    .unwrap_or((SwitchReason::Rotation, "Near its usage limit".to_string()));
+                let reason = passed_over.unwrap_or_else(|| rotation_reason(state));
                 note_switch(state, &provider, reason);
                 return Some((provider, upstream, headers));
             }

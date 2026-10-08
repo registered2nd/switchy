@@ -8,6 +8,22 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.25] — 2026-10-08 — Rotation uses up the account whose week ends first
+
+Windows installer: download `Switchy_1.0.25_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+### Changed
+
+- **Rotation switches back to an account once its five-hour limit resets.**
+  An account that reached its five-hour limit was rotated out, and the
+  account that took over stayed in use, so the first one's remaining weekly
+  quota could run out unused. Among the accounts not at their limit, rotation
+  now serves first the one whose weekly limit resets soonest: an account
+  rotated out for its five-hour limit takes over again as soon as that limit
+  resets, and each account's weekly quota is used before it expires. Usage
+  Statistics record such a switch as "Another account's weekly limit resets
+  sooner".
+
 ## [1.0.24] — 2026-10-06 — Codex 0.160 connects through the proxy
 
 Windows installer: download `Switchy_1.0.24_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

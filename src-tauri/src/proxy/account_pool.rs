@@ -9,7 +9,7 @@ use std::sync::{Mutex, RwLock};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
-use crate::database::Database;
+use crate::database::{Database, SwitchReason};
 use crate::provider::Provider;
 use crate::proxy::error::ProxyError;
 
@@ -438,19 +438,64 @@ fn quota_is_spent(
     })
 }
 
-/// Puts accounts that should be passed over for `model` at the back, keeping
-/// queue order otherwise. They stay in the list: when every account is spent
-/// the request still goes out and upstream's own answer reaches the client.
+/// When the account's weekly window resets: the longest account-wide window,
+/// while it is running. `None` when no response has reported one or the last
+/// reading's reset has passed.
+fn weekly_reset_of(quota: &AccountQuota, now: i64) -> Option<i64> {
+    quota
+        .windows
+        .iter()
+        .filter(|w| w.limit_name.is_none())
+        .max_by_key(|w| w.window_minutes)?
+        .reset_at
+        .filter(|reset| *reset > now)
+}
+
+/// Orders accounts for `model`. Those not at their limit come first, the one
+/// whose weekly window resets soonest leading, so its quota is used before it
+/// expires; an account that went to the back for its session window comes
+/// back to the front as soon as that window resets. Accounts with no running
+/// weekly window follow in queue order. Accounts at their limit go last, in
+/// queue order. They stay in the list: when every account is spent the
+/// request still goes out and upstream's own answer reaches the client.
 pub fn order_by_quota(
     providers: Vec<Provider>,
     model: Option<&str>,
     threshold_percent: u8,
 ) -> Vec<Provider> {
     let now = chrono::Utc::now().timestamp();
-    let (fresh, spent): (Vec<_>, Vec<_>) = providers
+    let (mut fresh, spent): (Vec<_>, Vec<_>) = providers
         .into_iter()
         .partition(|p| !is_spent(&p.id, model, threshold_percent, now));
+    {
+        let quotas = QUOTAS.read().unwrap_or_else(|e| e.into_inner());
+        fresh.sort_by_key(|p| {
+            match quotas.get(&p.id).and_then(|q| weekly_reset_of(q, now)) {
+                Some(reset) => (0, reset),
+                None => (1, 0),
+            }
+        });
+    }
     fresh.into_iter().chain(spent).collect()
+}
+
+/// Why rotation served another account ahead of `current`, for the switch
+/// history: `current` was at its limit, or another account's weekly window
+/// resets sooner.
+pub fn rotation_reason(
+    current: &str,
+    model: Option<&str>,
+    threshold_percent: u8,
+) -> (SwitchReason, String) {
+    let now = chrono::Utc::now().timestamp();
+    if is_spent(current, model, threshold_percent, now) {
+        (SwitchReason::Rotation, "Near its usage limit".to_string())
+    } else {
+        (
+            SwitchReason::Recovered,
+            "Another account's weekly limit resets sooner".to_string(),
+        )
+    }
 }
 
 /// Quota last seen for each account, for the UI.
@@ -625,5 +670,60 @@ mod tests {
         q.limited_until = Some(2000);
         assert!(quota_is_spent(&q, &[], 98, 1500));
         assert!(!quota_is_spent(&q, &[], 98, 2500));
+    }
+
+    fn session_and_week(id: &str, session_used: f64, session_reset: i64, week_reset: i64) {
+        record_windows(
+            id,
+            None,
+            vec![
+                QuotaWindow {
+                    limit_name: None,
+                    window_minutes: 300,
+                    used_percent: session_used,
+                    reset_at: Some(session_reset),
+                },
+                QuotaWindow {
+                    limit_name: None,
+                    window_minutes: 10080,
+                    used_percent: 40.0,
+                    reset_at: Some(week_reset),
+                },
+            ],
+        );
+    }
+
+    fn ids(providers: Vec<Provider>) -> Vec<String> {
+        providers.into_iter().map(|p| p.id).collect()
+    }
+
+    #[test]
+    fn the_account_whose_week_ends_first_leads_and_comes_back_after_its_session_resets() {
+        let now = chrono::Utc::now().timestamp();
+        let day = 86_400;
+        let queue = || {
+            ["ord-current", "ord-unread", "ord-week-ends"]
+                .map(|id| Provider::with_id(id.into(), id.into(), serde_json::json!({}), None))
+                .to_vec()
+        };
+        session_and_week("ord-current", 10.0, now + 3_600, now + 5 * day);
+        session_and_week("ord-week-ends", 100.0, now + 3_600, now + day);
+        assert_eq!(
+            ids(order_by_quota(queue(), None, 98)),
+            ["ord-current", "ord-unread", "ord-week-ends"],
+            "its session window is spent, so it waits at the back"
+        );
+        assert_eq!(
+            rotation_reason("ord-week-ends", None, 98).1,
+            "Near its usage limit"
+        );
+
+        session_and_week("ord-week-ends", 2.0, now + 5 * 3_600, now + day);
+        assert_eq!(
+            ids(order_by_quota(queue(), None, 98)),
+            ["ord-week-ends", "ord-current", "ord-unread"],
+            "its session window reset, and its week ends first"
+        );
+        assert_eq!(rotation_reason("ord-current", None, 98).0, SwitchReason::Recovered);
     }
 }

@@ -2,6 +2,14 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-10-08 — Rotation serves first the account whose weekly window resets soonest, refining point 4 of 2026-09-21
+
+- Context: the switching order lists the current provider first. When the account in use reached its five-hour limit, rotation moved to the next one, which became current; once the first account's five-hour window reset it stayed behind the new current account, and its weekly quota could expire unused. the user: switch back to it, to finish using it before its weekly reset.
+- Decision: among the accounts not at their limit, rotation orders by the reset of each account's longest account-wide window (the weekly one), soonest first; accounts with no running weekly reading follow in switching order; spent accounts stay at the back in switching order (`order_by_quota`). A switch made because another account's week ends sooner, not because the current one is spent, is recorded as `recovered` with that reason.
+- Why: quota left in a weekly window is lost at its reset, so the account whose window ends first is the one to use now; the same rule brings an account back after its five-hour window without a separate "switch back" rule.
+- Consequence: an account enabled by hand leads only while its 10-minute hold lasts; after that rotation picks by weekly reset. Quota readings are in memory, so after a restart an account that has not answered since is ordered after those that have.
+- Files: `src-tauri/src/proxy/account_pool.rs` (`order_by_quota`, `rotation_reason`); pass-over reasons in `proxy/forwarder.rs` and `proxy/codex_ws.rs`.
+
 ## 2026-10-04 — Codex's Responses WebSocket is relayed, account chosen per connection; 426 only where the relay cannot serve, superseding point 2's "answered 426" of 2026-09-21
 
 - Context: codex-cli 0.160.0 logged every startup `failed to connect to websocket: HTTP error: 426 Upgrade Required, url: ws://127.0.0.1:15721/backend-api/codex/responses`, and interactive Codex was blocked by it. The 426 was Switchy's own: the proxy spoke HTTP only and refused the upgrade so Codex would fall back, relying on a fallback Codex never promised.

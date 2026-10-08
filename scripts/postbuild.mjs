@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Promote the current version's Windows installers into installers/ and
-// prune stale-version bundles so target/.../{nsis,msi} don't accumulate
-// every build. No-ops cleanly on platforms where a bundle dir is absent
+// prune stale-version bundles and installers so neither target/.../{nsis,msi}
+// nor installers/ accumulates every build. No-ops cleanly on platforms where a bundle dir is absent
 // (e.g. macOS/Linux have no nsis/msi dirs).
 
 import { readdirSync, readFileSync, mkdirSync, copyFileSync, rmSync, existsSync } from 'fs';
@@ -37,6 +37,15 @@ for (const { dir, suffix } of bundles) {
     } else {
       rmSync(src, { force: true });
       console.log(`pruned stale ${dir}/${f}`);
+    }
+  }
+
+  // Only once the current installer is in place, so a failed build keeps the old one.
+  if (!files.some((f) => f.includes(tag))) continue;
+  for (const f of readdirSync(out)) {
+    if (f.endsWith(suffix) && !f.includes(tag)) {
+      rmSync(path.join(out, f), { force: true });
+      console.log(`pruned stale installers/${f}`);
     }
   }
 }

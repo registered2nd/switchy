@@ -127,15 +127,29 @@ impl RequestForwarder {
             && providers.first().map(|p| p.id.as_str())
                 != Some(self.current_provider_id_at_start.as_str())
         {
-            let detail = if providers
-                .iter()
-                .any(|p| p.id == self.current_provider_id_at_start)
-            {
-                "Near its usage limit"
-            } else {
-                "Taken out of rotation after repeated failures"
-            };
-            passed_over = Some((SwitchReason::Rotation, detail.to_string()));
+            passed_over = Some(
+                if providers
+                    .iter()
+                    .any(|p| p.id == self.current_provider_id_at_start)
+                {
+                    let threshold = self
+                        .router
+                        .db()
+                        .get_account_pool_config()
+                        .unwrap_or_default()
+                        .threshold_percent;
+                    super::account_pool::rotation_reason(
+                        &self.current_provider_id_at_start,
+                        body.get("model").and_then(Value::as_str),
+                        threshold,
+                    )
+                } else {
+                    (
+                        SwitchReason::Rotation,
+                        "Taken out of rotation after repeated failures".to_string(),
+                    )
+                },
+            );
         }
 
         // Rectifier retry flags: rectification fires at most once
