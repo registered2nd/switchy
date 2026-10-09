@@ -8,6 +8,21 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.28] — 2026-10-09 — `codex resume` with permission flags
+
+Windows installer: download `Switchy_1.0.28_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+### Fixed
+
+- **`codex resume` works again with permission flags.** With *Switch Codex's
+  signed-in account* on, a Codex window started with
+  `--dangerously-bypass-approvals-and-sandbox`, `--approve-for-me`, `-s` or
+  `-a` stopped at once on resume with "Permission overrides are not supported
+  when resuming a remote task", and so did the conversation picker that opens
+  after a refresh. Those flags now go to the window's own Codex server as
+  settings, which Codex accepts on resume, so the window opens with the same
+  permissions. Open a new terminal after installing.
+
 ## [1.0.27] — 2026-10-09 — Claude accounts no longer signed out by WSL
 
 Windows installer: download `Switchy_1.0.27_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

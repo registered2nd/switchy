@@ -101,13 +101,36 @@ codex() {
     esac
   done
   while :; do
+    # Codex refuses permission flags from a remote client resuming a
+    # conversation, so they go to the window's server as config.
+    _sw_all=("$@")
+    _sw_server_opts=()
+    _sw_client_args=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --) _sw_client_args+=("$@"); break ;;
+        -c|--config|-m|--model|-p|--profile|-C|--cd|--local-provider|--enable|--disable|-i|--image)
+          _sw_client_args+=("$1"); [ $# -gt 1 ] && { shift; _sw_client_args+=("$1"); } ;;
+        --dangerously-bypass-approvals-and-sandbox)
+          _sw_server_opts+=(-c sandbox_mode=danger-full-access -c approval_policy=never) ;;
+        --approve-for-me)
+          _sw_server_opts+=(-c sandbox_mode=workspace-write -c approval_policy=on-request -c approvals_reviewer=auto_review) ;;
+        -s|--sandbox) [ $# -gt 1 ] && { shift; _sw_server_opts+=(-c "sandbox_mode=$1"); } ;;
+        --sandbox=*) _sw_server_opts+=(-c "sandbox_mode=${1#*=}") ;;
+        -a|--ask-for-approval) [ $# -gt 1 ] && { shift; _sw_server_opts+=(-c "approval_policy=$1"); } ;;
+        --ask-for-approval=*) _sw_server_opts+=(-c "approval_policy=${1#*=}") ;;
+        *) _sw_client_args+=("$1") ;;
+      esac
+      shift
+    done
+    set -- "${_sw_client_args[@]}"
     _sw_sock="$_sw_dir/$$-$RANDOM.sock"
-    ( command codex app-server --listen "unix://$_sw_sock" </dev/null >/dev/null 2>&1 & )
+    ( command codex app-server "${_sw_server_opts[@]}" --listen "unix://$_sw_sock" </dev/null >/dev/null 2>&1 & )
     _sw_n=0
     while [ ! -S "$_sw_sock" ] && [ "$_sw_n" -lt 150 ]; do sleep 0.1; _sw_n=$((_sw_n + 1)); done
     if [ ! -S "$_sw_sock" ]; then
       pkill -f "unix://$_sw_sock" 2>/dev/null
-      command codex "$@"; return
+      command codex "${_sw_all[@]}"; return
     fi
     printf '%s\nrefresh-on-exit-v1\n%s\n%s\n%s\n' \
       "$_sw_sock" "$PWD" "$(command codex --version 2>/dev/null)" "${CODEX_HOME:-$HOME/.codex}" > "$_sw_sock.session"

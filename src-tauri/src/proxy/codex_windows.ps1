@@ -47,6 +47,39 @@ function global:codex {
 
     [System.IO.Directory]::CreateDirectory($swDir) | Out-Null
     while ($true) {
+        # Codex refuses permission flags from a remote client resuming a
+        # conversation, so they go to the window's server as config.
+        $swAll = $swArgs
+        $swServerOpts = @()
+        $swClientArgs = @()
+        for ($swI = 0; $swI -lt $swArgs.Count; $swI++) {
+            $swArg = $swArgs[$swI]
+            $swHasValue = $swI + 1 -lt $swArgs.Count
+            if ($swArg -eq '--') {
+                $swClientArgs += $swArgs[$swI..($swArgs.Count - 1)]
+                break
+            } elseif ($swArg -in @('-c', '--config', '-m', '--model', '-p', '--profile', '-C', '--cd',
+                '--local-provider', '--enable', '--disable', '-i', '--image')) {
+                $swClientArgs += $swArg
+                if ($swHasValue) { $swI++; $swClientArgs += $swArgs[$swI] }
+            } elseif ($swArg -eq '--dangerously-bypass-approvals-and-sandbox') {
+                $swServerOpts += @('-c', 'sandbox_mode=danger-full-access', '-c', 'approval_policy=never')
+            } elseif ($swArg -eq '--approve-for-me') {
+                $swServerOpts += @('-c', 'sandbox_mode=workspace-write', '-c', 'approval_policy=on-request',
+                    '-c', 'approvals_reviewer=auto_review')
+            } elseif ($swArg -in @('-s', '--sandbox')) {
+                if ($swHasValue) { $swI++; $swServerOpts += @('-c', "sandbox_mode=$($swArgs[$swI])") }
+            } elseif ($swArg -like '--sandbox=*') {
+                $swServerOpts += @('-c', "sandbox_mode=$($swArg.Substring(10))")
+            } elseif ($swArg -in @('-a', '--ask-for-approval')) {
+                if ($swHasValue) { $swI++; $swServerOpts += @('-c', "approval_policy=$($swArgs[$swI])") }
+            } elseif ($swArg -like '--ask-for-approval=*') {
+                $swServerOpts += @('-c', "approval_policy=$($swArg.Substring(19))")
+            } else {
+                $swClientArgs += $swArg
+            }
+        }
+        $swArgs = $swClientArgs
         $swId = [guid]::NewGuid().ToString('N')
         $swBase = Join-Path $swDir $swId
         $swMarker = "$swBase.session"
@@ -66,9 +99,8 @@ function global:codex {
         [System.IO.File]::WriteAllText("$swBase.token", $swToken)
         $swServer = $null
         try {
-            $swServer = Start-Process -FilePath $swExecutable -ArgumentList @(
-                'app-server', '--listen', $swUrl, '--ws-auth', 'capability-token',
-                '--ws-token-sha256', $swHash) -WorkingDirectory (Get-Location).Path -WindowStyle Hidden -PassThru
+            $swServer = Start-Process -FilePath $swExecutable -ArgumentList (@('app-server') + $swServerOpts + @(
+                '--listen', $swUrl, '--ws-auth', 'capability-token', '--ws-token-sha256', $swHash)) -WorkingDirectory (Get-Location).Path -WindowStyle Hidden -PassThru
             $swReady = $false
             for ($swTry = 0; $swTry -lt 150; $swTry++) {
                 if ($swServer.HasExited) { break }
@@ -81,7 +113,7 @@ function global:codex {
                 } catch { Start-Sleep -Milliseconds 100 }
             }
             if (-not $swReady) {
-                & $swExecutable @swArgs
+                & $swExecutable @swAll
                 return
             }
             $swVersion = (& $swExecutable --version 2>$null | Select-Object -First 1)
