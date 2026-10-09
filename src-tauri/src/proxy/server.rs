@@ -289,6 +289,9 @@ impl ProxyServer {
             // Health check
             .route("/health", get(handlers::health_check))
             .route("/status", get(handlers::get_status))
+            // Control: see and switch accounts in the running app
+            .route("/switchy/accounts", get(super::control::accounts))
+            .route("/switchy/switch", post(super::control::switch))
             // Claude API (with or without prefix)
             .route("/v1/messages", post(handlers::handle_messages))
             .route("/claude/v1/messages", post(handlers::handle_messages))

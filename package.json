@@ -1,6 +1,6 @@
 {
   "name": "switchy",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "description": "All-in-One Assistant for Claude Code, Codex & Gemini CLI",
   "type": "module",
   "scripts": {

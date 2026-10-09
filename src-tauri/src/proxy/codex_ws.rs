@@ -10,7 +10,10 @@
 //!
 //! As on the HTTP path, an account that refuses the connection, or refuses a
 //! turn for usage before any of the turn reached Codex, is passed over for the
-//! next one; the turn is sent again there and Codex sees no error.
+//! next one and Codex sees no error. A turn carrying the whole conversation is
+//! sent again on the next account; one that continues an earlier turn names a
+//! response only the refusing connection holds, so the relay closes the
+//! connection instead, and Codex retries it in full on a new one.
 //!
 //! Anything the relay cannot serve (a provider that is not a ChatGPT login, or
 //! no account accepting the connection) is answered 426, which makes Codex use
@@ -328,6 +331,18 @@ fn event_type(text: &str) -> Option<String> {
     value.get("type")?.as_str().map(str::to_string)
 }
 
+/// Whether a `response.create` continues an earlier turn of this connection
+/// (`previous_response_id`) rather than carrying the whole conversation.
+fn continues_earlier_turn(create: &Message) -> bool {
+    let Message::Text(text) = create else {
+        return false;
+    };
+    serde_json::from_str::<Value>(text.as_str())
+        .ok()
+        .and_then(|v| v.get("previous_response_id")?.as_str().map(|s| !s.is_empty()))
+        .unwrap_or(false)
+}
+
 /// Whether an upstream event ends the turn in flight.
 fn ends_turn(kind: &str) -> bool {
     matches!(
@@ -559,6 +574,13 @@ async fn relay(
                     }
                     let limit = matches!(error, Some((429, _)));
                     if turn.is_some() && !streaming {
+                        if limit && turn.as_ref().is_some_and(continues_earlier_turn) {
+                            // The turn names a response only this connection holds, so another
+                            // account cannot take it as is. Closing makes Codex retry the turn
+                            // on a new connection with the full conversation, and the router
+                            // passes this account over there.
+                            break 'relay "turn refused for usage; Codex resends it in full".to_string();
+                        }
                         if limit {
                             let others: Vec<Provider> = chosen_accounts(&state)
                                 .await
@@ -670,6 +692,18 @@ mod tests {
         for kind in ["response.output_text.delta", "codex.rate_limits", "response.created"] {
             assert!(!ends_turn(kind));
         }
+    }
+
+    #[test]
+    fn a_turn_that_names_an_earlier_response_continues_it() {
+        let create = |body: &str| Message::Text(body.to_string().into());
+        assert!(continues_earlier_turn(&create(
+            r#"{"type":"response.create","previous_response_id":"resp_1","input":[]}"#
+        )));
+        assert!(!continues_earlier_turn(&create(
+            r#"{"type":"response.create","previous_response_id":null,"input":[]}"#
+        )));
+        assert!(!continues_earlier_turn(&create(r#"{"type":"response.create","input":[]}"#)));
     }
 
     #[test]

@@ -8,6 +8,29 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.26] — 2026-10-09 — Codex survives a usage limit mid-session; control routes
+
+Windows installer: download `Switchy_1.0.26_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+### Fixed
+
+- **Codex no longer stops with "Invalid `previous_response_id`" when an account
+  hits its limit.** In an open session Codex sends each later turn as a
+  continuation of the previous answer, which only the connection that
+  produced it can resolve. When the account refused such a turn for usage,
+  the proxy resent it to the next account, which rejected it, and the error
+  ended Codex's turn. The proxy now closes the connection instead, and Codex
+  retries the turn with the whole conversation on the next account without
+  an error.
+
+### Added
+
+- **Control routes on the proxy's port.** `GET /switchy/accounts` shows, for
+  Claude and Codex, the current account, the pool's order and each account's
+  quota; `POST /switchy/switch` enables an account as its card's *Enable*
+  does. A script or an agent can see and change the running app without the
+  window.
+
 ## [1.0.25] — 2026-10-09 — Rotation uses up the account whose week ends first
 
 Windows installer: download `Switchy_1.0.25_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

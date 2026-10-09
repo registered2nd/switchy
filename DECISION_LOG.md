@@ -2,6 +2,20 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-10-09 — A Codex turn refused for usage that continues an earlier one is handed back to Codex by closing the connection, refining point 1 of 2026-10-04
+
+- Context: live, an account refused a turn for usage and the relay sent the same `response.create` to the next account; it carried `previous_response_id`, which names a response held only by the refusing connection, so the next account answered 400 "Invalid `previous_response_id`" and Codex's turn ended on it.
+- Decision: a refused turn without `previous_response_id` is still sent again on the next account; one with it is not resent. The relay closes the connection to Codex without passing the refusal on; Codex treats the close as a dropped stream, reconnects, and sends the turn with the whole conversation, which the router serves from the next account.
+- Why: the relay holds only increments and cannot rebuild the full input itself; Codex already does so on every new connection (its websocket session resets on reconnect).
+- Files: `continues_earlier_turn` and the usage branch of `relay` in `src-tauri/src/proxy/codex_ws.rs`.
+
+## 2026-10-09 — The running app is controlled over HTTP routes on the proxy's port
+
+- Context: the user wanted a way to inspect and act on the live app from an agent without the window or a reinstall.
+- Decision: `/switchy/accounts` (read) and `/switchy/switch` (enable an account through `ProviderService::switch`, the card's own path) are served by the proxy's axum router (`proxy/control.rs`), not a second server; they are reachable only where the proxy listens, and they exist only while the proxy runs.
+- Why: the proxy already listens on loopback with the app's state in reach, and an agent reaching Switchy already reaches this port; a separate port or auth would add a surface without changing who can call it.
+- Files: `src-tauri/src/proxy/control.rs`, routes in `proxy/server.rs`.
+
 ## 2026-10-08 — Rotation serves first the account whose weekly window resets soonest, refining point 4 of 2026-09-21
 
 - Context: the switching order lists the current provider first. When the account in use reached its five-hour limit, rotation moved to the next one, which became current; once the first account's five-hour window reset it stayed behind the new current account, and its weekly quota could expire unused. the user: switch back to it, to finish using it before its weekly reset.
