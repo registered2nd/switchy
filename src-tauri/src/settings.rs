@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 #[cfg(unix)]
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
 
 use crate::app_config::AppType;
@@ -373,6 +373,42 @@ fn resolve_override_path(raw: &str) -> PathBuf {
     PathBuf::from(raw)
 }
 
+const WSL_PREFIXES: [&str; 2] = [r"\\wsl$\", r"\\wsl.localhost\"];
+
+/// Windows serves each WSL distro under two prefixes, `\\wsl$\` and
+/// `\\wsl.localhost\`, and one can stop answering while the other keeps
+/// working. A WSL path whose distro does not answer under its own prefix is
+/// switched to the other prefix when the distro answers there; any other path
+/// comes back unchanged.
+pub fn reachable_wsl_path(path: PathBuf) -> PathBuf {
+    let Some((prefix, rest)) = split_wsl_prefix(&path) else {
+        return path;
+    };
+    let Some(other) = WSL_PREFIXES.iter().find(|p| **p != prefix) else {
+        return path;
+    };
+    let distro = rest.split('\\').next().unwrap_or_default();
+    if distro.is_empty() {
+        return path;
+    }
+    let answers = |prefix: &str| Path::new(&format!("{prefix}{distro}")).exists();
+    if answers(prefix) || !answers(other) {
+        return path;
+    }
+    PathBuf::from(format!("{other}{rest}"))
+}
+
+/// The WSL prefix a path starts with (matched without regard to case, as
+/// Windows does) and the rest of the path after it.
+fn split_wsl_prefix(path: &Path) -> Option<(&'static str, String)> {
+    let text = path.to_str()?;
+    WSL_PREFIXES.iter().find_map(|prefix| {
+        let head = text.get(..prefix.len())?;
+        head.eq_ignore_ascii_case(prefix)
+            .then(|| (*prefix, text[prefix.len()..].to_string()))
+    })
+}
+
 pub fn get_settings() -> AppSettings {
     settings_store()
         .read()
@@ -445,7 +481,7 @@ pub fn set_claude_mirror_config_dir(value: Option<PathBuf>) -> Result<(), AppErr
 pub fn get_claude_mirror_override_dir() -> Option<PathBuf> {
     let settings = settings_store().read().ok()?;
     if let Some(p) = settings.claude_mirror_config_dir.as_ref() {
-        return Some(resolve_override_path(p));
+        return Some(reachable_wsl_path(resolve_override_path(p)));
     }
     drop(settings);
     // The auto-detected WSL default is a machine-global side-channel that the
@@ -461,6 +497,7 @@ pub fn get_claude_mirror_override_dir() -> Option<PathBuf> {
         .get_or_init(crate::commands::config::build_default_claude_mirror_dir)
         .as_ref()
         .map(PathBuf::from)
+        .map(reachable_wsl_path)
 }
 
 /// The second `~/.codex` a switch keeps in step (typically WSL). Same
@@ -468,7 +505,7 @@ pub fn get_claude_mirror_override_dir() -> Option<PathBuf> {
 pub fn get_codex_mirror_override_dir() -> Option<PathBuf> {
     let settings = settings_store().read().ok()?;
     if let Some(p) = settings.codex_mirror_config_dir.as_ref() {
-        return Some(resolve_override_path(p));
+        return Some(reachable_wsl_path(resolve_override_path(p)));
     }
     drop(settings);
     if crate::config::is_test_sandbox() {
@@ -479,6 +516,7 @@ pub fn get_codex_mirror_override_dir() -> Option<PathBuf> {
         .get_or_init(crate::commands::config::build_default_codex_mirror_dir)
         .as_ref()
         .map(PathBuf::from)
+        .map(reachable_wsl_path)
 }
 
 pub fn get_codex_override_dir() -> Option<PathBuf> {
@@ -629,4 +667,28 @@ pub fn get_preferred_terminal() -> Option<String> {
         })
         .preferred_terminal
         .clone()
+}
+
+#[cfg(test)]
+mod wsl_path_tests {
+    use super::*;
+
+    #[test]
+    fn both_wsl_prefixes_are_recognised_without_regard_to_case() {
+        assert_eq!(
+            split_wsl_prefix(Path::new(r"\\wsl$\Ubuntu\home\me\.claude")),
+            Some((r"\\wsl$\", r"Ubuntu\home\me\.claude".to_string()))
+        );
+        assert_eq!(
+            split_wsl_prefix(Path::new(r"\\WSL.LOCALHOST\Ubuntu\home")),
+            Some((r"\\wsl.localhost\", r"Ubuntu\home".to_string()))
+        );
+        assert_eq!(split_wsl_prefix(Path::new(r"C:\Users\me\.claude")), None);
+    }
+
+    #[test]
+    fn a_path_outside_wsl_comes_back_unchanged() {
+        let path = PathBuf::from(r"C:\Users\me\.claude");
+        assert_eq!(reachable_wsl_path(path.clone()), path);
+    }
 }

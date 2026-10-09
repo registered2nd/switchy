@@ -217,7 +217,7 @@ fn reconcile() {
 /// Read the `claudeAiOauth` block from a target file, replace it with `oauth`,
 /// and write the result back atomically — preserving every other top-level key
 /// (notably the per-machine `mcpOAuth`).
-fn propagate(oauth: &Value, to_path: &Path) -> Result<(), AppError> {
+pub(crate) fn propagate(oauth: &Value, to_path: &Path) -> Result<(), AppError> {
     let mut root = match fs::read(to_path) {
         Ok(b) => serde_json::from_slice::<Value>(&b)
             .unwrap_or_else(|_| Value::Object(serde_json::Map::new())),
@@ -235,7 +235,7 @@ fn propagate(oauth: &Value, to_path: &Path) -> Result<(), AppError> {
     store::write_snapshot_atomic(to_path, &bytes)
 }
 
-fn read_account_uuid(path: &Path) -> Option<String> {
+pub(crate) fn read_account_uuid(path: &Path) -> Option<String> {
     let bytes = fs::read(path).ok()?;
     let root: Value = serde_json::from_slice(&bytes).ok()?;
     root.get("oauthAccount")?

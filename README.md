@@ -133,6 +133,10 @@ Claude Code and Codex both rotate the refresh token on every renewal, and the se
 
 Switchy reconciles the two sides in the background, moving the surviving login to whichever side lost, so this heals on its own. It needs the mirror directory configured and reachable (one per tool, under Settings → Advanced → Configuration Directory); while WSL is shut down, a rotation that happens on the Windows side cannot be propagated until it comes back. For Codex, an install that is on an API key rather than a ChatGPT login is left alone.
 
+Windows reaches a WSL distro under two names, `\\wsl$\` and `\\wsl.localhost\`, and one can stop answering while the other still works. When the configured one does not answer, Switchy uses the other.
+
+The proxy is a third holder of each captured Claude login, and WSL can be signed in to any captured account, not only the one in use: a switch made while WSL was out of reach leaves it on the earlier account. Before renewing an account's login, the proxy takes a newer login of that account from WSL when WSL has renewed it; a login the proxy renews is written to WSL when WSL is signed in to that account. An account whose renewal was refused comes back by itself once WSL holds a newer login of it.
+
 ### What a Gemini or Kimi card can show
 
 Usage badges and account switching both come from signing a tool in with an account. Claude Code, Codex and Kimi Code keep that login in a file Switchy stores with each provider, so switching providers switches accounts.

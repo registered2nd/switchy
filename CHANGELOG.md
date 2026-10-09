@@ -8,6 +8,25 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.27] — 2026-10-09 — Claude accounts no longer signed out by WSL
+
+Windows installer: download `Switchy_1.0.27_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+### Fixed
+
+- **A Claude account WSL was signed in to no longer ends up signed out.**
+  When a switch could not reach WSL, WSL stayed on the earlier account and
+  renewed its login on its own, spending the refresh token Switchy held, so
+  the account showed "Signed out" and needed `claude /login` again. Switchy
+  now takes the newer login from WSL before renewing an account, writes the
+  logins it renews to WSL when WSL is signed in to that account, and brings
+  back an account already marked signed out once WSL holds a newer login of
+  it.
+- **WSL stays reachable when `\\wsl$\` stops answering.** Windows reaches a
+  WSL distro under two names, `\\wsl$\` and `\\wsl.localhost\`, and one can
+  fail while the other still works; switches then left WSL on the old account
+  with only a log warning. Switchy now uses whichever of the two answers.
+
 ## [1.0.26] — 2026-10-09 — Codex survives a usage limit mid-session; control routes
 
 Windows installer: download `Switchy_1.0.26_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

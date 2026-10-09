@@ -367,13 +367,13 @@ fn selected_catalog(install: &Install, session: &Session) -> Option<PathBuf> {
 
 fn wsl_path(distro: &str, path: &str) -> PathBuf {
     if path.starts_with(r"\\wsl$\") || path.starts_with(r"\\wsl.localhost\") {
-        return PathBuf::from(path);
+        return crate::settings::reachable_wsl_path(PathBuf::from(path));
     }
     let mut result = PathBuf::from(format!(r"\\wsl$\{distro}"));
     for part in path.split('/').filter(|part| !part.is_empty()) {
         result.push(part);
     }
-    result
+    crate::settings::reachable_wsl_path(result)
 }
 
 /// Open windows whose server predates the installed CLI or selected catalog.

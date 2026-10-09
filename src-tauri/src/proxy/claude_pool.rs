@@ -14,7 +14,9 @@
 //! switch-away sync and the WSL reconciler already apply: it takes a newer
 //! login for the same account from the live store before using a stored one,
 //! and hands a login it renewed back to the live store when the recorded
-//! owner says the live login is that account's.
+//! owner says the live login is that account's. WSL's Claude Code is held to
+//! the same rules by account: a newer login of the account WSL is signed in
+//! to is taken from there before renewing, and a renewed one is written there.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -131,6 +133,65 @@ fn adopt_newer_live_login(provider: &Provider, stored: Value) -> Value {
     live
 }
 
+/// The WSL install's credentials file, when WSL is signed in to `provider`'s
+/// account. The account is read from WSL's `.claude.json`, so a switch that
+/// could not reach WSL and left it on an earlier account is still matched.
+fn mirror_credentials_of(provider: &Provider) -> Option<std::path::PathBuf> {
+    let uuid = account_uuid(provider)?;
+    let dir = crate::settings::get_claude_mirror_override_dir()?;
+    let signed_in = crate::services::credential_mirror::read_account_uuid(
+        &paths::mirror_claude_config_path(&dir),
+    )?;
+    (signed_in == uuid).then(|| dir.join(".credentials.json"))
+}
+
+/// If WSL's Claude Code is signed in to this provider's account and has
+/// renewed the login since it was stored, the stored refresh token is spent.
+/// Take WSL's login, keeping this machine's own keys. Returns the login to use
+/// and whether it came from WSL.
+fn adopt_newer_mirror_login(provider: &Provider, current: Value) -> (Value, bool) {
+    let Some(path) = mirror_credentials_of(provider) else {
+        return (current, false);
+    };
+    let Some(mirror) = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+    else {
+        return (current, false);
+    };
+    let (mirror_alive, mirror_expires) = credential_health(&mirror);
+    let (_, current_expires) = credential_health(&current);
+    if !mirror_alive
+        || mirror_expires <= current_expires
+        || refresh_token(&mirror) == refresh_token(&current)
+    {
+        return (current, false);
+    }
+    let Some(oauth) = mirror.get("claudeAiOauth") else {
+        return (current, false);
+    };
+    let mut adopted = current.clone();
+    adopted["claudeAiOauth"] = oauth.clone();
+    let stored = serde_json::to_vec_pretty(&adopted)
+        .map_err(|e| e.to_string())
+        .and_then(|bytes| {
+            store::write_snapshot_atomic(&paths::snapshot_credentials_path(&provider.id), &bytes)
+                .map_err(|e| e.to_string())
+        });
+    if let Err(e) = stored {
+        log::warn!(
+            "[claude_pool] could not store the newer WSL login for provider={}: {e}",
+            provider.id
+        );
+        return (current, false);
+    }
+    log::info!(
+        "[claude_pool] provider={} took the newer login from WSL",
+        provider.id
+    );
+    (adopted, true)
+}
+
 // ── Keeping a login usable ──────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -145,10 +206,20 @@ static REFRESH_STATE: Lazy<Mutex<HashMap<String, RefreshState>>> =
 /// Whether Anthropic has refused `provider`'s captured refresh token, so the
 /// account stays unusable until it is signed in and captured again.
 pub fn needs_sign_in(provider: &Provider) -> bool {
-    let Some(refresh_token) = read_stored(&provider.id)
-        .map(|stored| adopt_newer_live_login(provider, stored))
-        .and_then(|current| refresh_token(&current))
+    let Some(current) = read_stored(&provider.id).map(|stored| adopt_newer_live_login(provider, stored))
     else {
+        return false;
+    };
+    if !refresh_token_refused(provider, &current) {
+        return false;
+    }
+    // WSL may have renewed the account since; its login replaces the refused one.
+    let (current, _) = adopt_newer_mirror_login(provider, current);
+    refresh_token_refused(provider, &current)
+}
+
+fn refresh_token_refused(provider: &Provider, login: &Value) -> bool {
+    let Some(refresh_token) = refresh_token(login) else {
         return false;
     };
     let state = REFRESH_STATE.lock().unwrap_or_else(|e| e.into_inner());
@@ -191,10 +262,18 @@ pub async fn access_token_for(provider: &Provider, force: bool) -> Result<String
     };
 
     if expiring || (force && !recently_refreshed) {
-        match refresh_login(provider, &current).await {
-            Ok(renewed) => current = renewed,
-            Err(e) if expiring => return Err(e),
-            Err(e) => log::warn!("[claude_pool] forced refresh failed: {e}"),
+        // A login WSL renewed already is the renewal; refreshing the stored
+        // token would be refused, and would spend WSL's if it were not.
+        let (adopted, from_mirror) = adopt_newer_mirror_login(provider, current);
+        current = adopted;
+        let (_, expires_at) = credential_health(&current);
+        let expiring = expires_at - now_ms < REFRESH_WINDOW_MS;
+        if !from_mirror || expiring {
+            match refresh_login(provider, &current).await {
+                Ok(renewed) => current = renewed,
+                Err(e) if expiring => return Err(e),
+                Err(e) => log::warn!("[claude_pool] forced refresh failed: {e}"),
+            }
         }
     }
 
@@ -325,15 +404,22 @@ fn apply_refresh_response(root: &Value, data: &Value, now_ms: i64) -> Option<Val
 /// A refresh spends the old refresh token everywhere it is held. When the
 /// recorded owner says the live login is this account's, give the live store
 /// the renewed one — only its `claudeAiOauth` block, so the machine's own
-/// `mcpOAuth` keys stay — and move the marker's expiry with it. The WSL
-/// reconciler carries it on from there.
+/// `mcpOAuth` keys stay — and move the marker's expiry with it. WSL gets it
+/// too when it is signed in to the account, even when that is not the
+/// account in use.
 fn propagate_refreshed_login(provider: &Provider, renewed: &Value) {
-    if !live_is_owned_by(provider) {
-        return;
-    }
     let Some(oauth) = renewed.get("claudeAiOauth") else {
         return;
     };
+    if let Some(path) = mirror_credentials_of(provider) {
+        match crate::services::credential_mirror::propagate(oauth, &path) {
+            Ok(()) => log::info!("[claude_pool] wrote the refreshed login through to WSL"),
+            Err(e) => log::warn!("[claude_pool] could not update the WSL login: {e}"),
+        }
+    }
+    if !live_is_owned_by(provider) {
+        return;
+    }
     let mut live = match claude_account::read_live_credentials() {
         Ok(Some(bytes)) => serde_json::from_slice::<Value>(&bytes).unwrap_or(json!({})),
         _ => json!({}),
@@ -671,5 +757,147 @@ mod tests {
         ]));
         assert_eq!(report.limited_until, Some(4_102_444_800));
         assert!(report.scoped_limits.is_empty());
+    }
+
+    // ── WSL holding the same account ────────────────────────────────────────
+
+    struct WslHome {
+        dir: tempfile::TempDir,
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl WslHome {
+        /// A sandboxed home with a WSL `.claude` folder configured as the mirror.
+        fn new() -> Self {
+            let dir = tempfile::TempDir::new().expect("temp home");
+            let saved = ["HOME", "USERPROFILE", "SWITCHY_TEST_HOME"]
+                .into_iter()
+                .map(|key| {
+                    let old = std::env::var(key).ok();
+                    std::env::set_var(key, dir.path());
+                    (key, old)
+                })
+                .collect();
+            crate::settings::reload_settings().expect("reload settings");
+            let home = Self { dir, saved };
+            std::fs::create_dir_all(home.mirror_dir()).expect("mirror dir");
+            crate::settings::set_claude_mirror_config_dir(Some(home.mirror_dir()))
+                .expect("set mirror dir");
+            home
+        }
+
+        fn mirror_dir(&self) -> std::path::PathBuf {
+            self.dir.path().join("wsl").join(".claude")
+        }
+
+        fn sign_wsl_in(&self, uuid: &str, login: &Value) {
+            let dir = self.mirror_dir();
+            std::fs::write(
+                paths::mirror_claude_config_path(&dir),
+                json!({ "oauthAccount": { "accountUuid": uuid } }).to_string(),
+            )
+            .expect("wsl identity");
+            std::fs::write(dir.join(".credentials.json"), login.to_string()).expect("wsl login");
+        }
+
+        fn wsl_login(&self) -> Value {
+            let bytes = std::fs::read(self.mirror_dir().join(".credentials.json")).expect("read");
+            serde_json::from_slice(&bytes).expect("parse")
+        }
+    }
+
+    impl Drop for WslHome {
+        fn drop(&mut self) {
+            for (key, old) in &self.saved {
+                match old {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+            let _ = crate::settings::reload_settings();
+        }
+    }
+
+    fn store_login(provider: &Provider, login: &Value) {
+        let path = paths::snapshot_credentials_path(&provider.id);
+        std::fs::create_dir_all(path.parent().unwrap()).expect("snapshot dir");
+        std::fs::write(path, login.to_string()).expect("store login");
+    }
+
+    fn refuse(provider: &Provider, refresh: &str) {
+        REFRESH_STATE
+            .lock()
+            .unwrap()
+            .entry(provider.id.clone())
+            .or_default()
+            .dead_refresh_token = Some(refresh.to_string());
+    }
+
+    fn official_with_id(id: &str, uuid: &str) -> Provider {
+        let mut p = official(Some(uuid));
+        p.id = id.to_string();
+        p
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_refused_login_is_replaced_by_a_newer_one_wsl_renewed() {
+        let home = WslHome::new();
+        let provider = official_with_id("wsl-heal", "u-1");
+        store_login(&provider, &root("a-old", "r-old", 1_000));
+        refuse(&provider, "r-old");
+        let mut wsl = root("a-new", "r-new", 2_000);
+        wsl["mcpOAuth"] = json!({ "wsl": true });
+        home.sign_wsl_in("u-1", &wsl);
+
+        assert!(!needs_sign_in(&provider));
+        let stored = read_stored(&provider.id).expect("stored");
+        assert_eq!(refresh_token(&stored).as_deref(), Some("r-new"));
+        assert_eq!(stored["mcpOAuth"], json!({ "keep": true }));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn wsl_signed_in_to_another_account_is_not_taken() {
+        let home = WslHome::new();
+        let provider = official_with_id("wsl-other", "u-1");
+        store_login(&provider, &root("a-old", "r-old", 1_000));
+        refuse(&provider, "r-old");
+        home.sign_wsl_in("u-2", &root("a-new", "r-new", 2_000));
+
+        assert!(needs_sign_in(&provider));
+        let stored = read_stored(&provider.id).expect("stored");
+        assert_eq!(refresh_token(&stored).as_deref(), Some("r-old"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_renewed_login_reaches_wsl_signed_in_to_that_account() {
+        let home = WslHome::new();
+        let provider = official_with_id("wsl-write", "u-1");
+        let mut wsl = root("a-old", "r-old", 1_000);
+        wsl["mcpOAuth"] = json!({ "wsl": true });
+        home.sign_wsl_in("u-1", &wsl);
+
+        propagate_refreshed_login(&provider, &root("a-new", "r-new", 2_000));
+
+        let written = home.wsl_login();
+        assert_eq!(refresh_token(&written).as_deref(), Some("r-new"));
+        assert_eq!(written["mcpOAuth"], json!({ "wsl": true }));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_renewed_login_leaves_wsl_on_another_account_alone() {
+        let home = WslHome::new();
+        let provider = official_with_id("wsl-keep", "u-1");
+        home.sign_wsl_in("u-2", &root("a-other", "r-other", 1_000));
+
+        propagate_refreshed_login(&provider, &root("a-new", "r-new", 2_000));
+
+        assert_eq!(
+            refresh_token(&home.wsl_login()).as_deref(),
+            Some("r-other")
+        );
     }
 }
