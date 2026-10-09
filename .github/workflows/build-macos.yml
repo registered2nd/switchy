@@ -5,7 +5,7 @@ name: Build macOS DMG (unsigned)
 # artifact. Borrowed from Vtype's hdiutil approach because Tauri's
 # built-in DMG styling is unreliable on CI runners.
 #
-# Trigger: Actions tab -> "Build macOS DMG (unsigned)" -> Run workflow.
+# Trigger: gh workflow run build-macos.yml -R registered2nd/switchy
 #
 # NOTE: the produced app is unsigned/un-notarized. On first launch macOS
 # Gatekeeper will block it; right-click the .app -> Open, or run

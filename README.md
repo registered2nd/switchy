@@ -92,7 +92,7 @@ The proxy's port also answers two routes for a script or an agent to see and act
 
 **Windows.** Download the installer from the [latest release](https://github.com/registered2nd/switchy/releases/latest) and run it; it is not code-signed, so SmartScreen asks you to confirm (More info → Run anyway). A clone has the same installers in `installers/`, or build from source (below).
 
-**macOS (Apple Silicon).** Download the `.dmg` from the [latest release](https://github.com/registered2nd/switchy/releases/latest), open it and drag Switchy into Applications. It is not signed, so macOS blocks the first launch: right-click the app and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`. The `.dmg` is built by [.github/workflows/build-macos.yml](.github/workflows/build-macos.yml), run by hand from the Actions tab; a clone has it in `installers/`.
+**macOS (Apple Silicon).** Download the `.dmg` from the [latest release](https://github.com/registered2nd/switchy/releases/latest), open it and drag Switchy into Applications. It is not signed, so macOS blocks the first launch: right-click the app and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`. The `.dmg` is built by [.github/workflows/build-macos.yml](.github/workflows/build-macos.yml) as part of each release; a clone has it in `installers/`.
 
 **Data** lives in `~/.switchy/`:
 
