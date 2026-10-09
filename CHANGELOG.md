@@ -8,7 +8,7 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
-## [1.0.25] — 2026-10-08 — Rotation uses up the account whose week ends first
+## [1.0.25] — 2026-10-09 — Rotation uses up the account whose week ends first
 
 Windows installer: download `Switchy_1.0.25_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
 
