@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "base": {
+    "context_generated_at": "2026-10-09T08:15:09.151075Z",
+    "context_source_revision": "workstate:handoff/switchy/session_19@sha256:b7f3639e5ff783811d58fd11b4061a69cdfc70f9845186764cfbe06bc3d32ce1",
+    "publication_token": 1887
+  },
+  "session": {
+    "id": "session_20",
+    "title": "Switchy 1.0.27-1.0.29: Claude logins kept in step with WSL; codex resume with permission flags; start at login while routed",
+    "started_at": "2026-10-10T16:29:52Z",
+    "ended_at": "2026-10-10T16:29:52Z",
+    "purpose": "the user: find why the Claude account yt453218073@gmail.com needed a new sign-in (his wife's sign-in suspected) and whether another account's browser could sign it in; copy WSL's login back and judge whether it is a bug; fix it so it does not come back; after a Windows restart all agents failed on the dead proxy, which was supposed to be fixed; codex resume failed with a permission-override error; investigate and fix; push, release and hand off.",
+    "outcomes": [
+      "Signed-out Claude account (provider 8d160b0e, yt453218073@gmail.com): not his wife. From 2026-10-08 21:16 every write to \\\\wsl$\\Ubuntu-22.04 failed (os error 31) while \\\\wsl.localhost worked, so a rotation off that account left WSL holding its login; WSL's Claude Code renewed it at ~03:27 and the proxy's renewal at 03:57 got invalid_grant 'Refresh token not found or invalid'. Healed by hand: WSL's login (same account uuid e1d0af9c) copied into ~/.switchy/accounts/8d160b0e.../credentials.json; the old copy is in the session temp dir.",
+      "1.0.27 (commit a36f8232): mirror paths fall back between \\\\wsl$\\ and \\\\wsl.localhost\\ (settings::reachable_wsl_path, also codex_engine::wsl_path); the Claude proxy takes a newer login of an account from WSL before renewing, writes logins it renews to WSL when WSL's .claude.json names that account, and clears a signed-out mark once WSL holds a newer login (claude_pool.rs). Four unit tests cover it; not yet seen on a live renewal. After install the log showed WSL reached through \\\\wsl.localhost. Decision log 2026-10-09.",
+      "codex resume failure: codex-cli 0.160 refuses permission overrides from a --remote client that resumes ('Permission overrides are not supported when resuming a remote task'); the user's WSL alias cod passes --dangerously-bypass-approvals-and-sandbox. 1.0.28 (commit c78ff21d): both shell wrappers give --dangerously-bypass-approvals-and-sandbox, --approve-for-me, -s and -a to the window's app-server as -c config; reproduced the error with the old form against a real WSL app-server and confirmed the new form resumes. Terminals opened before 1.0.28 keep the old wrapper. Decision log 2026-10-09.",
+      "Dead proxy after the 2026-10-09 11:02:55 Windows Update restart: the session-end hand-back logged its start at 11:03:10 and nothing after; launch at login was off, so Claude and Codex pointed at 127.0.0.1:15721 until Switchy was opened at 11:06:22. Which wait stalled the hand-back (the database std Mutex or WSL file I/O, both blocking past the tokio timeout) is not known. 1.0.29 (commit 28d682c0): while any app is routed Switchy registers HKCU Run 'switchy.exe --autostart' (tray start; verified registered and StartupApproved enabled after install); with nothing routed the entry is removed unless Launch on startup is on. The hand-back runs on its own thread under recv_timeout(4s), Windows configs first, logging '[session-end] <app> handed back' per step. Not yet seen on a real restart. Decision log 2026-10-10.",
+      "Released 1.0.27, 1.0.28 and 1.0.29 on registered2nd/switchy with exe, msi and dmg; 1.0.29 is Latest and installed on this workstation. The first v1.0.27 release was cut before scripts/publish_public.sh ran, so its tag and DMG were 1.0.26; that release and tag were deleted and recreated. The README and build-macos.yml no longer describe the macOS build as run by hand; README no longer says the proxy must be turned on again after a reinstall (it comes back on start).",
+      "A reinstall whose Stop-Process did not wait for switchy.exe to exit left the old binary in place with the installer reporting success; reinstalls now wait for the process to be gone before /S.",
+      "The port-15721 test update_current_claude_provider_syncs_live_when_proxy_takeover_detected_without_backup still fails whenever the installed Switchy runs; the other 732 lib tests pass."
+    ],
+    "pickup": null,
+    "task_ids": [],
+    "artifact_ids": [],
+    "decision_pointers": [
+      "C:/Projects/Switchy/DECISION_LOG.md"
+    ],
+    "finding_pointers": [],
+    "evidence_pointers": [
+      "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+      "C:/Projects/Switchy/src-tauri/src/settings.rs",
+      "C:/Projects/Switchy/src-tauri/src/proxy/codex_engine.rs",
+      "C:/Projects/Switchy/src-tauri/src/proxy/codex_windows.ps1",
+      "C:/Projects/Switchy/src-tauri/src/auto_launch.rs",
+      "C:/Projects/Switchy/src-tauri/src/lib.rs",
+      "C:/Projects/Switchy/src-tauri/src/services/proxy.rs",
+      "C:/Projects/Switchy/CHANGELOG.md",
+      "C:/Projects/Switchy/README.md"
+    ],
+    "attention": false,
+    "attention_note": null,
+    "latest_summary": "1.0.29 released and installed: Claude logins kept in step with WSL (1.0.27), codex resume with permission flags (1.0.28), Switchy starts at login while any tool is routed and the restart hand-back is bounded and logged (1.0.29)."
+  },
+  "context": {
+    "current_focus": {
+      "source": "C:/Projects/Switchy/CHANGELOG.md",
+      "summary": "1.0.29 is released and installed here: confirm on the next Windows restart that agents keep working (Switchy starts at login and the hand-back finishes), and on live renewals that Claude accounts WSL holds are no longer signed out."
+    },
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/lib.rs",
+        "summary": "CONFIRM THE RESTART PATH ON STEPHEN'S NEXT WINDOWS RESTART (1.0.29). In C:/Users/Administrator/.switchy/logs/switchy.prev.log after 'Session ending; handing the live configs back': '[session-end] claude/codex/gemini handed back', '[session-end] ... in WSL handed back', then 'Live configs handed back for the session end'. 'did not finish in 4 seconds' with the last [session-end] line shows which step stalls (Windows step = database lock, WSL step = WSL I/O); fix that step. In switchy.log: Switchy started within seconds of login (window hidden, launched with --autostart from HKCU Run), '[auto_launch] start at login on', proxy on 15721, and Claude Code / Codex answer without ECONNREFUSED."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+        "summary": "CONFIRM CLAUDE LOGINS STAY IN STEP WITH WSL (1.0.27). In switchy.log, when an account WSL is signed in to renews: '[claude_pool] provider=... took the newer login from WSL' or 'wrote the refreshed login through to WSL', and no new 'invalid_grant' 'Refresh token not found or invalid' in account_switches/provider_health. WSL's ~/.claude/.credentials.json and ~/.switchy/accounts/<id>/credentials.json for that account should carry the same refreshToken after each renewal."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/codex_ws.rs",
+        "summary": "CONFIRM ROTATION AND CODEX FAILOVER ON LIVE TRAFFIC (1.0.25/1.0.26). In C:/Users/Administrator/.switchy/logs/switchy.log and the switchy.db account_switches table: (a) when an account's five-hour window resets while another serves, a switch back to it with reason 'recovered' and detail \"Another account's weekly limit resets sooner\"; (b) a Codex turn refused for usage that continues an earlier one logs '[CodexWS] provider=... websocket closed (turn refused for usage; Codex resends it in full)' and the turn then completes on the next account with no error in Codex. GET http://127.0.0.1:15721/switchy/accounts shows current account, pool order, quota and atLimit per account."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "INSTALL ON CHELSEA'S MACBOOK when reachable (ssh chelsea-mac; doorway 20722 refused all of 2026-10-01). Copy installers/Switchy_<latest>_aarch64.dmg over, hdiutil attach, copy Switchy.app into /Applications, xattr -dr com.apple.quarantine /Applications/Switchy.app, open it. She signs in to each account herself; never copy a login from the user's machines. The latest is installers/Switchy_1.0.29_aarch64.dmg (also on the v1.0.29 release)."
+      },
+      {
+        "source": "C:/Projects/Switchy/CHANGELOG.md",
+        "summary": "Wait for the user's feedback on 1.0.29 (start at login, restart hand-back), 1.0.28 (codex resume with permission flags; terminals need reopening), 1.0.27 (WSL login sync, \\\\wsl.localhost fallback) and 1.0.22-1.0.26. A release is: bump the four version files, changelog section, CI=true pnpm build, commit, push origin, run scripts/publish_public.sh BEFORE the macOS build (the workflow builds the public repo), run build-macos.yml (gh workflow run build-macos.yml -R registered2nd/switchy --ref main), download its DMG into installers/ (git mv the old one to the new name, then copy over it) with the macOS line in the changelog section, commit, push, publish again, then gh release create on registered2nd/switchy with the exe, msi and dmg as a draft and edit to --draft=false --latest; retry on 'error connecting to api.github.com'. Reinstall here: stop switchy, wait until the process is gone, /S, relaunch, wait for 15721, all in one command."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      }
+    ],
+    "initiative_focus": []
+  },
+  "task_completions": []
+}
