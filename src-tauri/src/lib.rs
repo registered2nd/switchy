@@ -410,6 +410,9 @@ pub fn run() {
 
                 // Restore the proxy from the proxy state saved in the settings table
                 restore_proxy_state_on_startup(&state).await;
+                crate::auto_launch::sync_with_proxy(
+                    state.db.is_live_takeover_active().await.unwrap_or(false),
+                );
 
                 // Keep pooled subscription accounts' session windows open, if
                 // the user has asked for it. Off by default; the sweep reads
@@ -464,8 +467,10 @@ pub fn run() {
 
             // Silent start: show the main window or not, per the setting
             let settings = crate::settings::get_settings();
+            let autostarted =
+                std::env::args().any(|arg| arg == crate::auto_launch::AUTOSTART_ARG);
             if let Some(window) = app.get_webview_window("main") {
-                if settings.silent_startup {
+                if settings.silent_startup || autostarted {
                     // Silent start: keep the window hidden
                     let _ = window.hide();
                     #[cfg(target_os = "windows")]
@@ -746,17 +751,23 @@ pub fn run() {
         if let RunEvent::Exit = &event {
             if let Some(state) = app_handle.try_state::<store::AppState>() {
                 log::info!("Session ending; handing the live configs back");
-                let result = tauri::async_runtime::block_on(async {
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(4),
-                        state.proxy_service.hand_back_for_session_end(),
-                    )
-                    .await
-                });
-                match result {
+                log::logger().flush();
+                // On a thread of its own: a wait that blocks the thread (the
+                // database lock, a WSL share whose VM is stopping) would keep
+                // a timeout on this one from ever firing.
+                let service = state.proxy_service.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                let _ = std::thread::Builder::new()
+                    .name("session-end".to_string())
+                    .spawn(move || {
+                        let result =
+                            tauri::async_runtime::block_on(service.hand_back_for_session_end());
+                        let _ = tx.send(result);
+                    });
+                match rx.recv_timeout(std::time::Duration::from_secs(4)) {
                     Ok(Ok(())) => log::info!("Live configs handed back for the session end"),
                     Ok(Err(e)) => log::error!("Could not hand the live configs back: {e}"),
-                    Err(_) => log::error!("Handing the live configs back timed out"),
+                    Err(_) => log::error!("Handing the live configs back did not finish in 4 seconds"),
                 }
                 log::logger().flush();
             }

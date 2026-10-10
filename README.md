@@ -69,7 +69,7 @@ While an app is routed through the proxy, its WSL install is pointed at the prox
 
 ## Handing configs back
 
-Routing an app through the proxy edits its config — Claude Code's `settings.json`, Codex's `config.toml` — to point at the proxy. When the proxy lets go, whether it is turned off, Switchy quits, Windows shuts down or restarts, or Switchy starts again after a crash, only what the proxy changed is put back; after a Windows restart the proxy takes the configs over again when Switchy starts. Hooks, plugins and settings that another tool or you added in the meantime stay, such as the status hooks Orca writes. Switching the Claude account while the proxy is on keeps them too.
+Routing an app through the proxy edits its config — Claude Code's `settings.json`, Codex's `config.toml` — to point at the proxy. When the proxy lets go, whether it is turned off, Switchy quits, Windows shuts down or restarts, or Switchy starts again after a crash, only what the proxy changed is put back; after a Windows restart the proxy takes the configs over again when Switchy starts. While any tool is routed through the proxy, Switchy starts at login, in the tray, so a restart, a crash or a power cut leaves the tools without a listener only until it is up again; with nothing routed, it starts at login only when *Launch on startup* is on. The hand-back at a Windows restart has 4 seconds and logs each step. Hooks, plugins and settings that another tool or you added in the meantime stay, such as the status hooks Orca writes. Switching the Claude account while the proxy is on keeps them too.
 
 ## Control routes
 
@@ -115,7 +115,7 @@ cd src-tauri && cargo test   # backend tests
 
 `CI=true pnpm build` builds the app and copies the current version's `-setup.exe` and `.msi` into `installers/`. `CI=true` stops pnpm from prompting mid-build, which fails when no terminal is attached. Under pnpm 11 a fresh checkout may also need `CI=true pnpm install --force` so the `esbuild` and `msw` build scripts allowed in `pnpm-workspace.yaml` actually run; [LEARNINGS.md](LEARNINGS.md) has this and the other build notes.
 
-After reinstalling a running copy, turn Local proxy on again in Settings → Pool. The listener does not start automatically when Switchy relaunches; verify port 15721 before using routed sessions.
+After reinstalling a running copy, verify port 15721 before using routed sessions; Switchy turns the proxy back on when it starts.
 
 The frontend is React and TypeScript (`src/`), the backend Tauri and Rust (`src-tauri/`). The SQLite database is the store; switching writes the selected provider into each tool's own config files.
 

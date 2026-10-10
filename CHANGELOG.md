@@ -8,6 +8,26 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.29] — 2026-10-10 — Tools keep working after a restart
+
+Windows installer: download `Switchy_1.0.29_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+### Fixed
+
+- **Claude Code and Codex no longer stop working after Windows restarts.**
+  A tool routed through the proxy has its settings pointing at Switchy, and
+  Switchy did not start at login, so after a restart every agent failed until
+  Switchy was opened by hand. While any tool is routed through the proxy,
+  Switchy now starts at login, in the tray, and takes the tools over again;
+  this also covers a crash or a power cut. With nothing routed, it starts at
+  login only when *Launch on startup* is on.
+- **The hand-back at a Windows restart can no longer hang without a trace.**
+  It could stall on the database or on WSL files while WSL was stopping, past
+  the point where its time limit could act, and Windows ended Switchy with the
+  tools still pointed at it. It now runs on its own thread with a hard
+  4-second limit, hands the Windows settings back before WSL's, and logs each
+  step.
+
 ## [1.0.28] — 2026-10-09 — `codex resume` with permission flags
 
 Windows installer: download `Switchy_1.0.28_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

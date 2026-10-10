@@ -494,6 +494,7 @@ impl ProxyService {
 
             // 7) Legacy compatibility: write the any-of flag (a failure does not affect functionality)
             let _ = self.db.set_live_takeover_active(true).await;
+            crate::auto_launch::sync_with_proxy(true);
             return Ok(());
         }
 
@@ -553,6 +554,7 @@ impl ProxyService {
             // listener for the sessions opened under it
             self.release().await;
         }
+        crate::auto_launch::sync_with_proxy(any_enabled);
 
         Ok(())
     }
@@ -1363,16 +1365,20 @@ impl ProxyService {
         let mut errors = Vec::new();
         for app_type in [AppType::Claude, AppType::Codex, AppType::Gemini] {
             let _guard = self.switch_locks.lock_for_app(app_type.as_str()).await;
-            if let Err(e) = self
+            match self
                 .restore_live_config_for_app_with_fallback_inner(&app_type)
                 .await
             {
-                errors.push(e);
+                Ok(()) => log::info!("[session-end] {} handed back", app_type.as_str()),
+                Err(e) => errors.push(e),
             }
+            log::logger().flush();
         }
         for app_type in [AppType::Claude, AppType::Codex, AppType::Gemini] {
             let _guard = self.switch_locks.lock_for_app(app_type.as_str()).await;
             self.restore_mirror(&app_type).await;
+            log::info!("[session-end] {} in WSL handed back", app_type.as_str());
+            log::logger().flush();
         }
         if !errors.is_empty() {
             return Err(errors.join("; "));

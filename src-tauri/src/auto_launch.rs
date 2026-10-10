@@ -15,8 +15,48 @@ fn get_macos_app_bundle_path(exe_path: &std::path::Path) -> Option<std::path::Pa
     }
 }
 
+/// Passed by the login entry the proxy registers: Switchy starts in the tray.
+pub const AUTOSTART_ARG: &str = "--autostart";
+
+/// A tool routed through the proxy has its config pointing at Switchy's port,
+/// so after a restart, a crash or a power cut it works only once Switchy is
+/// running again. While any tool is routed, Switchy therefore starts at login,
+/// in the tray. When none is, the entry is removed unless launch at login was
+/// turned on in Settings.
+pub fn sync_with_proxy(routed: bool) {
+    if crate::config::is_test_sandbox() {
+        return;
+    }
+    let result = if routed {
+        get_auto_launch_with(&[AUTOSTART_ARG]).and_then(|launch| {
+            launch.enable().map_err(|e| {
+                AppError::Message(format!("Failed to enable launch at login: {e}"))
+            })
+        })
+    } else if crate::settings::get_settings().launch_on_startup {
+        Ok(())
+    } else {
+        match is_auto_launch_enabled() {
+            Ok(true) => disable_auto_launch(),
+            _ => Ok(()),
+        }
+    };
+    match result {
+        Ok(()) => log::info!(
+            "[auto_launch] start at login {} (a tool is {}routed through the proxy)",
+            if routed { "on" } else { "left to the setting" },
+            if routed { "" } else { "not " }
+        ),
+        Err(e) => log::warn!("[auto_launch] could not update start at login: {e}"),
+    }
+}
+
 /// Initialise the AutoLaunch instance
 fn get_auto_launch() -> Result<AutoLaunch, AppError> {
+    get_auto_launch_with(&[] as &[&str])
+}
+
+fn get_auto_launch_with(args: &[&str]) -> Result<AutoLaunch, AppError> {
     let app_name = "Switchy";
     let exe_path = std::env::current_exe()
         .map_err(|e| AppError::Message(format!("Failed to get the application path: {e}")))?;
@@ -34,6 +74,7 @@ fn get_auto_launch() -> Result<AutoLaunch, AppError> {
     let auto_launch = AutoLaunchBuilder::new()
         .set_app_name(app_name)
         .set_app_path(&app_path.to_string_lossy())
+        .set_args(args)
         .build()
         .map_err(|e| AppError::Message(format!("Failed to create AutoLaunch: {e}")))?;
 
