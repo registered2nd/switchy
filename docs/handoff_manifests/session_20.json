@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "base": {
     "context_generated_at": "2026-10-09T08:15:09.151075Z",
     "context_source_revision": "workstate:handoff/switchy/session_19@sha256:b7f3639e5ff783811d58fd11b4061a69cdfc70f9845186764cfbe06bc3d32ce1",
