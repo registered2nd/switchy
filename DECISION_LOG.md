@@ -2,6 +2,26 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-10-10 — While any tool is routed through the proxy, Switchy starts at login; the session-end hand-back is bounded on its own thread
+
+- Context: after a Windows Update restart (2026-10-09 11:03) Claude Code and Codex still pointed at `127.0.0.1:15721` and failed until Switchy was opened by hand. Launch at login was off, and the session-end hand-back logged its start and nothing after: it ran `block_on` with a tokio timeout, which a blocking wait (the database's `std::sync::Mutex`, a WSL share whose VM is stopping) outlasts, so Windows killed the process mid-hand-back.
+- Decision: while any app is taken over, Switchy registers its login entry with `--autostart` (start in the tray); when none is, the entry is removed unless the user's *Launch on startup* is on. The hand-back runs on a dedicated thread and the event handler waits on it with `recv_timeout(4s)`; Windows configs go first and each step is logged and flushed.
+- Why: a hand-back at shutdown cannot cover a crash or a power cut, so the routed configs need Switchy running after any restart; the hand-back only narrows the window between login and Switchy's start.
+- Files: `sync_with_proxy` in `src-tauri/src/auto_launch.rs`, its calls in `services/proxy.rs` (`set_takeover_for_app`) and `lib.rs` (startup, `--autostart` hides the window, the `RunEvent::Exit` hand-back).
+
+## 2026-10-09 — Codex permission flags go to the window's app-server as config, not to the `--remote` client
+
+- Context: a window started with `--dangerously-bypass-approvals-and-sandbox` (the user's WSL `cod` alias) failed on `codex resume` and after a refresh with "Permission overrides are not supported when resuming a remote task"; codex-cli 0.160 refuses permission overrides from a remote client that resumes or forks.
+- Decision: both shell wrappers turn `--dangerously-bypass-approvals-and-sandbox`, `--approve-for-me`, `-s/--sandbox` and `-a/--ask-for-approval` into `-c sandbox_mode=…`, `-c approval_policy=…` (and `approvals_reviewer=auto_review` for `--approve-for-me`) on the window's `codex app-server`; every other argument stays with the client. The plain-Codex fallback keeps the original arguments.
+- Files: `CODEX_SHELL` in `src-tauri/src/proxy/codex_engine.rs`, `src-tauri/src/proxy/codex_windows.ps1`.
+
+## 2026-10-09 — The proxy treats WSL's Claude login as another holder of the same account, matched by account, not by the current provider
+
+- Context: a switch that could not reach WSL (`\wsl$` stopped answering while `\wsl.localhost` worked) left WSL on an earlier account. WSL's Claude Code renewed that account's login itself, spending the refresh token the proxy held, and the account was marked signed out (`invalid_grant`, "not found or invalid"). The background reconciler only compares the two installs' live files, so a login stored with a provider that is not current was outside it.
+- Decision: before renewing a provider's login, the proxy takes WSL's when WSL's `.claude.json` names that account and WSL's login is newer; a login the proxy renews is written to WSL when WSL is signed in to that account; an account marked signed out is cleared once WSL holds a newer login of it. Mirror paths fall back between `\wsl$\` and `\wsl.localhost\` when the configured prefix does not answer.
+- Why: one refresh token, three holders (Windows live, WSL live, the provider's stored login); the holder that renews must hand the result to the others or the next renewal elsewhere is refused.
+- Files: `adopt_newer_mirror_login`, `mirror_credentials_of`, `propagate_refreshed_login` in `src-tauri/src/proxy/claude_pool.rs`; `reachable_wsl_path` in `src-tauri/src/settings.rs`.
+
 ## 2026-10-09 — A Codex turn refused for usage that continues an earlier one is handed back to Codex by closing the connection, refining point 1 of 2026-10-04
 
 - Context: live, an account refused a turn for usage and the relay sent the same `response.create` to the next account; it carried `previous_response_id`, which names a response held only by the refusing connection, so the next account answered 400 "Invalid `previous_response_id`" and Codex's turn ended on it.
