@@ -1,0 +1,89 @@
+{
+  "schema_version": 2,
+  "base": {
+    "context_generated_at": "2026-10-11T14:41:42.360094Z",
+    "context_source_revision": "workstate:handoff/switchy/session_21@sha256:bfe6d3bdf40e41016857b431bb5b6184e05f81e9dafd258681de56540011c5c6",
+    "publication_token": 1933
+  },
+  "session": {
+    "id": "session_22",
+    "title": "Switchy 1.0.31: an account's own proxy carries all its traffic; 1.0.30 on another user's Mac and PC and the laptop",
+    "started_at": "2026-10-11T20:22:56Z",
+    "ended_at": "2026-10-11T20:22:56Z",
+    "purpose": "the user: check why another user's Claude showed connection dropped, build the latest macOS DMG and install Switchy on her Mac, then her PC and his laptop; create a Claude account whose proxy is AdsPower profile 18 (Owen Hartley UK); fix unsigned accounts showing another account's usage; make the account's proxy carry Claude Code's own traffic, not only API requests.",
+    "outcomes": [
+      "another user's Mac: no lasting fault found and not Switchy's proxy (off there; Claude goes direct). Network exits US, 10/10 probes clean; her Claude login (yt453218073@gmail.com, her own sign-in, refresh token distinct from the pool's and WSL's) was valid and her session was working. Her logs show one earlier drop on 2026-10-09 04:03Z: 'Connection lost mid-response' then '403 Request not allowed'.",
+      "Pushed the 1.0.30 commits to switchy-private and the public repo, built the macOS DMG (run 38148300613), committed it as installers/Switchy_1.0.30_aarch64.dmg (9b06d15d). Installed 1.0.30 on another user's Mac (replacing 1.0.24, quarantine cleared, normal start), another user's PC and the laptop (both from 1.0.24, via the windows-mcp mesh). No GitHub release was cut; public latest is still 1.0.29.",
+      "Laptop finding: its Switchy mirror directories point at the WSL distro Ubuntu-22.04 (home agentcode), but the laptop's distro is named Ubuntu; Switchy logs 'could not turn on per-window Codex servers ... os error 67' every few seconds (switchy.prev.log reached 10 MB). Told the user; not changed.",
+      "Created Claude provider 98e00f12 'Claude Official (Owen Hartley UK)' with proxyConfig socks5 82.26.163.142:45001 (AdsPower profile 18's exit) by inserting a copy of provider ccb19499's row without its captured login; database backup at %TEMP%/switchy_before_owen.db. the user signed it in and captured ohartley.1990@gmail.com at 12:13 local, before the tunnel existed, so that sign-in's code exchange left from the US exit. It is now current and first in order; the other three accounts were at 100% weekly. Recorded in VideoGenAI_Related/network/exits_and_profiles.md (101354b).",
+      "1.0.31 usage fix (1d2f8f23, 61fa2805): a non-current Official card with no login of its own shows no usage; a current Claude card with no captured login shows the live login's usage only when no other card has captured that account (live_quota_unless_another_account in services/subscription.rs).",
+      "1.0.31 tunnel (0244f63d): while Claude is taken over its settings get HTTPS_PROXY = the proxy address and NO_PROXY; the proxy port answers CONNECT from loopback peers by tunnelling through the current Claude account's own proxy (hand-written SOCKS5 and HTTP CONNECT), else the global proxy, else direct, refusing when the account proxy is unreachable. Claude and Codex renewals use each account's own proxy. Hand-back strips both keys and keeps a proxy of the user's own. Verified live: keys in Windows and WSL settings, curl through the tunnel exits 82.26.163.142 GB, Claude Code telemetry tunnelled via the UK proxy. All lib tests pass except the known port-15721 test that fails while the installed Switchy runs. Installed here as 1.0.31.",
+      "Declined by the user: making a normal quit or proxy-off leave tools failing instead of handing back; he wants a normal quit to return them to normal (DECISION_LOG 2026-10-11).",
+      "Error to avoid repeating: I told the user his sessions were leaking through the UK proxy because I assumed the UK account was still unsigned from how I had created it; it had been captured. Check provider state before warning."
+    ],
+    "pickup": null,
+    "task_ids": [],
+    "artifact_ids": [],
+    "decision_pointers": [
+      "C:/Projects/Switchy/DECISION_LOG.md"
+    ],
+    "finding_pointers": [
+      "C:/Projects/Switchy/README.md",
+      "C:/Projects/VideoGenAI_Related/network/exits_and_profiles.md"
+    ],
+    "evidence_pointers": [
+      "git:9b06d15d",
+      "git:1d2f8f23",
+      "git:61fa2805",
+      "git:0244f63d",
+      "git:09d73182",
+      "C:/Projects/Switchy/src-tauri/src/proxy/connect_tunnel.rs",
+      "C:/Projects/Switchy/CHANGELOG.md"
+    ],
+    "attention": false,
+    "attention_note": null,
+    "latest_summary": "1.0.31 installed here: an account's own proxy carries Claude Code's own traffic while Claude is routed; the UK account ohartley.1990@gmail.com is in use through AdsPower profile 18's exit. 1.0.30 is on another user's Mac and PC and the laptop. Nothing released publicly since 1.0.29."
+  },
+  "context": {
+    "current_focus": {
+      "summary": "1.0.31 is installed on the workstation with the UK account (ohartley.1990@gmail.com, AdsPower profile 18's exit) in use; confirm Claude Code's own sign-in and renewals leave through the account's proxy, and the earlier restart, WSL login and rotation checks remain pending. Nothing is released publicly past 1.0.29.",
+      "source": "C:/Projects/Switchy/CHANGELOG.md"
+    },
+    "initiative_focus": [],
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/connect_tunnel.rs",
+        "summary": "CONFIRM THE ACCOUNT PROXY COVERS CLAUDE CODE'S OWN SIGN-IN AND RENEWALS (1.0.31). Seen live 2026-10-11: settings.json (Windows and WSL) carry HTTPS_PROXY=http://127.0.0.1:15721 and NO_PROXY=127.0.0.1,localhost,::1, a curl through the tunnel left from 82.26.163.142 GB, and Claude Code telemetry logged '[connect_tunnel] http-intake.logs.us5.datadoghq.com:443 via socks5://82.26.163.142:45001'. Not yet seen: in C:/Users/Administrator/.switchy/logs/switchy.log, '[connect_tunnel] platform.claude.com:443 via socks5://82.26.163.142:45001' when Claude Code renews or signs in while the UK account (provider 98e00f12, ohartley.1990@gmail.com) is current, and '[claude_pool] refreshing login for provider=98e00f12...' followed by '[ProviderProxy] Client built with proxy: socks5://82.26.163.142:45001'. A '[connect_tunnel] ... failed' line means the tunnel refused rather than went direct."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/lib.rs",
+        "summary": "CONFIRM THE RESTART PATH ON STEPHEN'S NEXT WINDOWS RESTART (1.0.29). In C:/Users/Administrator/.switchy/logs/switchy.prev.log after 'Session ending; handing the live configs back': '[session-end] claude/codex/gemini handed back', '[session-end] ... in WSL handed back', then 'Live configs handed back for the session end'. 'did not finish in 4 seconds' with the last [session-end] line shows which step stalls (Windows step = database lock, WSL step = WSL I/O); fix that step. In switchy.log: Switchy started within seconds of login (window hidden, launched with --autostart from HKCU Run), '[auto_launch] start at login on', proxy on 15721, and Claude Code / Codex answer without ECONNREFUSED."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+        "summary": "CONFIRM CLAUDE LOGINS STAY IN STEP WITH WSL (1.0.27). In switchy.log, when an account WSL is signed in to renews: '[claude_pool] provider=... took the newer login from WSL' or 'wrote the refreshed login through to WSL', and no new 'invalid_grant' 'Refresh token not found or invalid' in account_switches/provider_health. WSL's ~/.claude/.credentials.json and ~/.switchy/accounts/<id>/credentials.json for that account should carry the same refreshToken after each renewal."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/codex_ws.rs",
+        "summary": "CONFIRM ROTATION AND CODEX FAILOVER ON LIVE TRAFFIC (1.0.25/1.0.26). In C:/Users/Administrator/.switchy/logs/switchy.log and the switchy.db account_switches table: (a) when an account's five-hour window resets while another serves, a switch back to it with reason 'recovered' and detail \"Another account's weekly limit resets sooner\"; (b) a Codex turn refused for usage that continues an earlier one logs '[CodexWS] provider=... websocket closed (turn refused for usage; Codex resends it in full)' and the turn then completes on the next account with no error in Codex. GET http://127.0.0.1:15721/switchy/accounts shows current account, pool order, quota and atLimit per account."
+      },
+      {
+        "source": "C:/Projects/Switchy/CHANGELOG.md",
+        "summary": "1.0.30 (manual sign-in) and 1.0.31 (an account's own proxy carries Claude Code's own traffic; unsigned accounts show no usage) are unreleased: the public release is still 1.0.29, installers/ holds the 1.0.31 Windows installers and the 1.0.30 DMG, and the CHANGELOG [Unreleased] section has no version heading yet. Release only when the user asks. Wait for the user's feedback on 1.0.29 (start at login, restart hand-back), 1.0.28 (codex resume with permission flags; terminals need reopening), 1.0.27 (WSL login sync, \\\\wsl.localhost fallback) and 1.0.22-1.0.26. A release is: bump the four version files, changelog section, CI=true pnpm build, commit, push origin, run scripts/publish_public.sh BEFORE the macOS build (the workflow builds the public repo), run build-macos.yml (gh workflow run build-macos.yml -R registered2nd/switchy --ref main), download its DMG into installers/ (git mv the old one to the new name, then copy over it) with the macOS line in the changelog section, commit, push, publish again, then gh release create on registered2nd/switchy with the exe, msi and dmg as a draft and edit to --draft=false --latest; retry on 'error connecting to api.github.com'. Reinstall here: stop switchy, wait until the process is gone, /S, relaunch, wait for 15721, all in one command."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      }
+    ]
+  },
+  "task_completions": []
+}
