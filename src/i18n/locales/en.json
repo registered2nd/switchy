@@ -149,7 +149,7 @@
     },
     "failover": {
       "title": "Turn on Switch automatically",
-      "message": "With Switch automatically on, an app is served from its switching order instead of the one provider you picked, and moves down the list when a request fails.\n\nSet up the switching order first.",
+      "message": "Claude switches accounts according to your quota settings. Connection, login and service errors stay on the selected account. Other apps try providers in switching order when requests fail.\n\nSet up the switching order first.",
       "confirm": "I understand, enable"
     },
     "usage": {
@@ -1192,7 +1192,7 @@
       "codexUpdatesOpenPool": "Open Pool settings"
     },
     "autoFailover": {
-      "info": "Providers in the switching order are tried in turn when a request fails. A provider that fails too many times in a row is skipped for a while.",
+      "info": "Claude switches for quota, using the configured rotation threshold. Connection, login and service errors do not switch accounts or restrict later requests. Other apps try providers in order and temporarily skip providers that repeatedly fail.",
       "configSaved": "Switching settings saved",
       "configSaveFailed": "Failed to save",
       "validationFailed": "Out of range: {{fields}}",
@@ -1491,7 +1491,7 @@
     "route": "Route through the proxy",
     "routeDescription": "The apps whose requests go through the proxy.",
     "failover": "Switch automatically",
-    "failoverDescription": "Serve the app from its switching order instead of the one provider you picked: start at the top, and move to the next when a request fails."
+    "failoverDescription": "Claude switches for quota: at the configured rotation threshold or when its quota is exhausted. Connection, login and service errors stay on the selected account. Other apps try the next provider when a request fails."
   },
   "tray": {
     "showMain": "Open main window",

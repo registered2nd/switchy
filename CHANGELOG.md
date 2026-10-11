@@ -20,6 +20,13 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ### Fixed
 
+- **Request errors keep Claude on the same account.**
+  Connection failures, login errors and service errors no longer move Claude
+  to another account or restrict its later requests. A passing connection
+  fault is retried once on the same route. Quota rotation keeps using your
+  configured threshold and visibly selects the next account; an exhausted
+  account or model quota can also trigger a switch.
+
 - **An account's own proxy now carries all of that account's traffic while
   Claude is routed.** Claude Code's sign-in, its own login renewals and its
   telemetry go through Switchy's port and leave through the proxy of the

@@ -2,6 +2,12 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-10-11 — Claude request errors stay on the serving account; quota drives switching
+
+- Decision: Claude request failures do not open a circuit breaker, reduce concurrency or try another account. Quota rotation uses the configured percentage, and exhausted account or model quota can trigger fallback; both continue to update the selected account, saved login, window and tray.
+- Why: the user wants a network failure to remain a network failure on the selected account, rather than send work to other accounts and show their quota errors.
+- Files: `src-tauri/src/proxy/provider_router.rs`, `src-tauri/src/proxy/forwarder.rs`.
+
 ## 2026-10-11 — An account's own proxy carries Claude Code's own traffic through a `CONNECT` tunnel on the proxy port; a normal quit still hands back to direct
 
 - Context: an Official Claude account given its own proxy (AdsPower profile 18's UK SOCKS5) still had its sign-in code exchange, Claude Code's own login renewals and its telemetry leave from the machine's own exit: Claude Code calls `platform.claude.com` and its telemetry hosts directly, never through `ANTHROPIC_BASE_URL`. Switchy's own renewals used the global proxy.

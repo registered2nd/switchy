@@ -731,7 +731,12 @@ impl RequestForwarder {
                     }
 
                     // Classify the error
-                    let category = self.categorize_proxy_error(&e);
+                    let category = categorize_proxy_error(
+                        app_type,
+                        provider,
+                        body.get("model").and_then(Value::as_str),
+                        &e,
+                    );
 
                     match category {
                         ErrorCategory::Retryable => {
@@ -1594,28 +1599,64 @@ impl RequestForwarder {
             }
         }
     }
+}
 
-    fn categorize_proxy_error(&self, error: &ProxyError) -> ErrorCategory {
-        match error {
-            // Network and upstream errors: always try the next provider
-            ProxyError::Timeout(_) => ErrorCategory::Retryable,
-            ProxyError::ForwardFailed(_) => ErrorCategory::Retryable,
-            ProxyError::ProviderUnhealthy(_) => ErrorCategory::Retryable,
-            // Upstream HTTP error: try the next provider whatever the status code
-            // Reason: providers have different limits and auth, so a 4xx from one provider
-            // does not mean the others will fail
-            ProxyError::UpstreamError { .. } => ErrorCategory::Retryable,
-            // Provider-level config/transform problem: another provider may well succeed
-            ProxyError::ConfigError(_) => ErrorCategory::Retryable,
-            ProxyError::TransformError(_) => ErrorCategory::Retryable,
-            ProxyError::AuthError(_) => ErrorCategory::Retryable,
-            ProxyError::StreamIdleTimeout(_) => ErrorCategory::Retryable,
-            // No available provider: every provider has been tried; cannot retry
-            ProxyError::NoAvailableProvider => ErrorCategory::NonRetryable,
-            // Other errors (database/internal, etc.): switching provider will not fix them
-            _ => ErrorCategory::NonRetryable,
-        }
+/// Claude changes accounts only for exhausted quota. A connection, login,
+/// request or service error is returned from the account that was selected.
+fn categorize_proxy_error(
+    app_type: &AppType,
+    provider: &Provider,
+    model: Option<&str>,
+    error: &ProxyError,
+) -> ErrorCategory {
+    if matches!(app_type, AppType::Claude) {
+        return if is_claude_quota_refusal(provider, model, error) {
+            ErrorCategory::Retryable
+        } else {
+            ErrorCategory::NonRetryable
+        };
     }
+    match error {
+        // Network and upstream errors: always try the next provider
+        ProxyError::Timeout(_) => ErrorCategory::Retryable,
+        ProxyError::ForwardFailed(_) => ErrorCategory::Retryable,
+        ProxyError::ProviderUnhealthy(_) => ErrorCategory::Retryable,
+        // Upstream HTTP error: try the next provider whatever the status code
+        // Reason: providers have different limits and auth, so a 4xx from one provider
+        // does not mean the others will fail
+        ProxyError::UpstreamError { .. } => ErrorCategory::Retryable,
+        // Provider-level config/transform problem: another provider may well succeed
+        ProxyError::ConfigError(_) => ErrorCategory::Retryable,
+        ProxyError::TransformError(_) => ErrorCategory::Retryable,
+        ProxyError::AuthError(_) => ErrorCategory::Retryable,
+        ProxyError::StreamIdleTimeout(_) => ErrorCategory::Retryable,
+        // No available provider: every provider has been tried; cannot retry
+        ProxyError::NoAvailableProvider => ErrorCategory::NonRetryable,
+        // Other errors (database/internal, etc.): switching provider will not fix them
+        _ => ErrorCategory::NonRetryable,
+    }
+}
+
+fn is_claude_quota_refusal(provider: &Provider, model: Option<&str>, error: &ProxyError) -> bool {
+    let ProxyError::UpstreamError { status: 429, body } = error else {
+        return false;
+    };
+    // Unified quota headers have already been recorded by the single-request
+    // forwarder. Use the actual limit, not the early-rotation threshold.
+    if super::account_pool::is_spent(&provider.id, model, 100, chrono::Utc::now().timestamp()) {
+        return true;
+    }
+    // Anthropic sometimes omits quota headers on this account-level refusal.
+    // A generic per-minute 429 is left on the selected account.
+    body.as_deref()
+        .and_then(|s| serde_json::from_str::<Value>(s).ok())
+        .and_then(|v| v.get("error")?.get("message")?.as_str().map(str::to_owned))
+        .is_some_and(|message| {
+            let message = message.to_lowercase();
+            message.contains("account's rate limit")
+                || message.contains("usage limit")
+                || message.contains("quota")
+        })
 }
 
 /// Extracts the error message from a ProxyError
@@ -1946,6 +1987,148 @@ fn summarize_text_for_log(text: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_fails_over_only_for_exhausted_quota() {
+        let mut provider = pooled_claude_account(true);
+        provider.id = "claude-quota-classification".into();
+        let quota = ProxyError::UpstreamError {
+            status: 429,
+            body: Some(r#"{"error":{"type":"rate_limit_error","message":"This request would exceed your account's rate limit. Please try again later."}}"#.into()),
+        };
+        assert_eq!(
+            categorize_proxy_error(&AppType::Claude, &provider, None, &quota),
+            ErrorCategory::Retryable
+        );
+        for error in [
+            ProxyError::ForwardFailed("connection refused".into()),
+            ProxyError::Timeout("timed out".into()),
+            ProxyError::AuthError("needs sign-in".into()),
+            ProxyError::ConfigError("bad config".into()),
+            ProxyError::StreamIdleTimeout(90),
+            ProxyError::UpstreamError { status: 429, body: Some(r#"{"error":{"type":"rate_limit_error","message":"Too many requests per minute"}}"#.into()) },
+            ProxyError::UpstreamError { status: 429, body: None },
+        ] {
+            assert_eq!(categorize_proxy_error(&AppType::Claude, &provider, None, &error), ErrorCategory::NonRetryable, "{error}");
+        }
+        for status in [400, 401, 403, 413, 500, 502, 503, 504, 529] {
+            let error = ProxyError::UpstreamError { status, body: None };
+            assert_eq!(
+                categorize_proxy_error(&AppType::Claude, &provider, None, &error),
+                ErrorCategory::NonRetryable
+            );
+        }
+        let error = ProxyError::ForwardFailed("connection refused".into());
+        assert_eq!(
+            categorize_proxy_error(&AppType::Codex, &provider, None, &error),
+            ErrorCategory::Retryable
+        );
+
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            "anthropic-ratelimit-unified-status",
+            "rejected".parse().unwrap(),
+        );
+        super::super::claude_pool::record_quota(&provider.id, None, &headers);
+        assert!(is_claude_quota_refusal(
+            &provider,
+            None,
+            &ProxyError::UpstreamError {
+                status: 429,
+                body: None
+            }
+        ));
+        assert!(!is_claude_quota_refusal(&provider, None, &error));
+    }
+
+    // Real HTTP requests to two independent local endpoints verify that an
+    // error does not contact the fallback, while a quota refusal does.
+    #[tokio::test]
+    async fn claude_http_failover_requires_quota_and_retries_the_same_route() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        async fn upstream(
+            status: u16,
+            message: &'static str,
+        ) -> (String, Arc<AtomicUsize>, tokio::task::JoinHandle<()>) {
+            let hits = Arc::new(AtomicUsize::new(0));
+            let counter = hits.clone();
+            let app = axum::Router::new().fallback(axum::routing::post(move || {
+                let counter = counter.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    (http::StatusCode::from_u16(status).unwrap(), axum::Json(serde_json::json!({"error":{"type":"rate_limit_error","message":message}})))
+                }
+            }));
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let task = tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            (url, hits, task)
+        }
+        for (status_code, message, failover, expected_hits) in [
+            (502, "gateway unavailable", false, 2),
+            (401, "login refused", false, 1),
+            (429, "Too many requests per minute", false, 1),
+            (
+                429,
+                "This request would exceed your account's rate limit.",
+                true,
+                1,
+            ),
+        ] {
+            let (primary_url, primary_hits, primary_task) = upstream(status_code, message).await;
+            let (fallback_url, fallback_hits, fallback_task) = upstream(200, "ok").await;
+            let db = Arc::new(crate::database::Database::memory().unwrap());
+            let providers: Vec<_> = [("http-selected", primary_url), ("http-fallback", fallback_url)]
+                .into_iter()
+                .map(|(id, url)| Provider::with_id(id.into(), id.into(), serde_json::json!({"env":{"ANTHROPIC_BASE_URL":url,"ANTHROPIC_AUTH_TOKEN":"test"}}), None))
+                .collect();
+            for p in &providers {
+                db.save_provider("claude", p).unwrap();
+            }
+            let forwarder = RequestForwarder::new(
+                Arc::new(ProviderRouter::new(db.clone())),
+                5,
+                Arc::new(RwLock::new(ProxyStatus::default())),
+                Arc::new(RwLock::new(std::collections::HashMap::new())),
+                Arc::new(FailoverSwitchManager::new(db)),
+                None,
+                "http-selected".into(),
+                5,
+                5,
+                RectifierConfig::default(),
+                OptimizerConfig::default(),
+                CopilotOptimizerConfig::default(),
+            );
+            let result = forwarder.forward_with_retry(
+                &AppType::Claude, "/v1/messages", serde_json::json!({"model":"test-model","messages":[{"role":"user","content":"test"}],"max_tokens":1}),
+                http::HeaderMap::new(), http::Extensions::new(), providers.clone(),
+            ).await;
+            primary_task.abort();
+            fallback_task.abort();
+            assert_eq!(primary_hits.load(Ordering::SeqCst), expected_hits);
+            assert_eq!(fallback_hits.load(Ordering::SeqCst), usize::from(failover));
+            if failover {
+                assert_eq!(
+                    result
+                        .ok()
+                        .expect("quota refusal should reach fallback")
+                        .provider
+                        .id,
+                    "http-fallback"
+                );
+            } else {
+                let error = result
+                    .err()
+                    .expect("other failures stay on selected account");
+                assert_eq!(error.provider.unwrap().id, "http-selected");
+                assert!(
+                    matches!(error.error, ProxyError::UpstreamError { status, .. } if status == status_code)
+                );
+            }
+        }
+    }
 
     fn test_provider(
         meta: Option<crate::provider::ProviderMeta>,

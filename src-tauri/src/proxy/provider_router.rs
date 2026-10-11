@@ -93,6 +93,13 @@ impl ProviderRouter {
                     continue;
                 };
 
+                // Claude keeps the selected account through request failures;
+                // only a quota refusal in the forwarder may try another one.
+                if app_type == "claude" {
+                    result.push(provider);
+                    continue;
+                }
+
                 let circuit_key = format!("{app_type}:{}", provider.id);
                 let breaker = self.get_or_create_circuit_breaker(&circuit_key).await;
 
@@ -121,7 +128,7 @@ impl ProviderRouter {
             }
         }
 
-        // Quota-driven rotation: accounts at their limit go to the back of the queue.
+        // Quota-driven rotation uses the user's configured threshold.
         if matches!(app_type, "codex" | "claude") && result.len() > 1 {
             let pool = self.db.get_account_pool_config().unwrap_or_default();
             if pool.enabled {
@@ -151,6 +158,12 @@ impl ProviderRouter {
     /// The caller must release the HalfOpen slot with `record_result()` after the request,
     /// or the provider can stay unable to enter the probe state for a long time.
     pub async fn allow_provider_request(&self, provider_id: &str, app_type: &str) -> AllowResult {
+        if app_type == "claude" {
+            return AllowResult {
+                allowed: true,
+                used_half_open_permit: false,
+            };
+        }
         let circuit_key = format!("{app_type}:{provider_id}");
         let breaker = self.get_or_create_circuit_breaker(&circuit_key).await;
         breaker.allow_request().await
@@ -165,6 +178,16 @@ impl ProviderRouter {
         success: bool,
         error_msg: Option<String>,
     ) -> Result<(), AppError> {
+        if app_type == "claude" {
+            // A failed Claude request does not restrict later requests or
+            // reduce concurrency. Successful requests clear old health flags.
+            if success {
+                self.db
+                    .update_provider_health_with_threshold(provider_id, app_type, true, None, 1)
+                    .await?;
+            }
+            return Ok(());
+        }
         // 1. Get this app's circuit breaker config
         let failure_threshold = match self.db.get_proxy_config_for_app(app_type).await {
             Ok(app_config) => app_config.circuit_failure_threshold,
@@ -487,6 +510,80 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn claude_errors_do_not_restrict_requests_and_rotation_uses_configured_threshold() {
+        let _home = TempHome::new();
+        let db = Arc::new(Database::memory().unwrap());
+        for id in ["claude-selected", "claude-fallback"] {
+            db.save_provider(
+                "claude",
+                &Provider::with_id(id.into(), id.into(), json!({}), None),
+            )
+            .unwrap();
+            db.add_to_failover_queue("claude", id).unwrap();
+        }
+        db.set_current_provider("claude", "claude-selected")
+            .unwrap();
+        let mut config = db.get_proxy_config_for_app("claude").await.unwrap();
+        config.auto_failover_enabled = true;
+        config.circuit_failure_threshold = 1;
+        db.update_proxy_config_for_app(config).await.unwrap();
+        db.set_account_pool_config(&super::super::account_pool::AccountPoolConfig {
+            enabled: true,
+            threshold_percent: 80,
+            ..Default::default()
+        })
+        .unwrap();
+        super::super::account_pool::record_windows(
+            "claude-selected",
+            None,
+            vec![super::super::account_pool::QuotaWindow {
+                limit_name: None,
+                window_minutes: 300,
+                used_percent: 88.0,
+                reset_at: Some(chrono::Utc::now().timestamp() + 3600),
+            }],
+        );
+        let router = ProviderRouter::new(db.clone());
+        // Even a breaker left open by an older version cannot exclude it.
+        router
+            .get_or_create_circuit_breaker("claude:claude-selected")
+            .await
+            .record_failure(false)
+            .await;
+        router
+            .record_result(
+                "claude-selected",
+                "claude",
+                false,
+                false,
+                Some("connection failed".into()),
+            )
+            .await
+            .unwrap();
+        let providers = router.select_providers("claude", None).await.unwrap();
+        assert_eq!(
+            providers.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(),
+            vec!["claude-fallback", "claude-selected"]
+        );
+        db.set_account_pool_config(&super::super::account_pool::AccountPoolConfig {
+            enabled: true,
+            threshold_percent: 95,
+            ..Default::default()
+        })
+        .unwrap();
+        let providers = router.select_providers("claude", None).await.unwrap();
+        assert_eq!(providers[0].id, "claude-selected");
+        for _ in 0..4 {
+            let permit = router
+                .allow_provider_request("claude-selected", "claude")
+                .await;
+            assert!(permit.allowed);
+            assert!(!permit.used_half_open_permit);
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_select_providers_does_not_consume_half_open_permit() {
         let _home = TempHome::new();
         let db = Arc::new(Database::memory().unwrap());
@@ -504,28 +601,28 @@ mod tests {
         let provider_b =
             Provider::with_id("b".to_string(), "Provider B".to_string(), json!({}), None);
 
-        db.save_provider("claude", &provider_a).unwrap();
-        db.save_provider("claude", &provider_b).unwrap();
+        db.save_provider("codex", &provider_a).unwrap();
+        db.save_provider("codex", &provider_b).unwrap();
 
-        db.add_to_failover_queue("claude", "a").unwrap();
-        db.add_to_failover_queue("claude", "b").unwrap();
+        db.add_to_failover_queue("codex", "a").unwrap();
+        db.add_to_failover_queue("codex", "b").unwrap();
 
         // Enable auto failover (via the new proxy_config API)
-        let mut config = db.get_proxy_config_for_app("claude").await.unwrap();
+        let mut config = db.get_proxy_config_for_app("codex").await.unwrap();
         config.auto_failover_enabled = true;
         db.update_proxy_config_for_app(config).await.unwrap();
 
         let router = ProviderRouter::new(db.clone());
 
         router
-            .record_result("b", "claude", false, false, Some("fail".to_string()))
+            .record_result("b", "codex", false, false, Some("fail".to_string()))
             .await
             .unwrap();
 
-        let providers = router.select_providers("claude", None).await.unwrap();
+        let providers = router.select_providers("codex", None).await.unwrap();
         assert_eq!(providers.len(), 2);
 
-        assert!(router.allow_provider_request("b", "claude").await.allowed);
+        assert!(router.allow_provider_request("b", "codex").await.allowed);
     }
 
     #[tokio::test]
@@ -545,11 +642,11 @@ mod tests {
 
         let provider_a =
             Provider::with_id("a".to_string(), "Provider A".to_string(), json!({}), None);
-        db.save_provider("claude", &provider_a).unwrap();
-        db.add_to_failover_queue("claude", "a").unwrap();
+        db.save_provider("codex", &provider_a).unwrap();
+        db.add_to_failover_queue("codex", "a").unwrap();
 
         // Enable auto failover
-        let mut config = db.get_proxy_config_for_app("claude").await.unwrap();
+        let mut config = db.get_proxy_config_for_app("codex").await.unwrap();
         config.auto_failover_enabled = true;
         db.update_proxy_config_for_app(config).await.unwrap();
 
@@ -557,26 +654,26 @@ mod tests {
 
         // Trip the breaker: 1 failure
         router
-            .record_result("a", "claude", false, false, Some("fail".to_string()))
+            .record_result("a", "codex", false, false, Some("fail".to_string()))
             .await
             .unwrap();
 
         // First request: takes the HalfOpen probe slot
-        let first = router.allow_provider_request("a", "claude").await;
+        let first = router.allow_provider_request("a", "codex").await;
         assert!(first.allowed);
         assert!(first.used_half_open_permit);
 
         // Second request should be rejected (slot taken)
-        let second = router.allow_provider_request("a", "claude").await;
+        let second = router.allow_provider_request("a", "codex").await;
         assert!(!second.allowed);
 
         // Release the slot with release_permit_neutral (does not affect health stats)
         router
-            .release_permit_neutral("a", "claude", first.used_half_open_permit)
+            .release_permit_neutral("a", "codex", first.used_half_open_permit)
             .await;
 
         // Third request should be allowed (slot released)
-        let third = router.allow_provider_request("a", "claude").await;
+        let third = router.allow_provider_request("a", "codex").await;
         assert!(third.allowed);
         assert!(third.used_half_open_permit);
     }

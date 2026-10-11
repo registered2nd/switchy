@@ -238,62 +238,70 @@ export function AutoFailoverConfigPanel({
         </Alert>
 
         {/* Retry and timeout settings */}
-        <div className="space-y-4 rounded-lg border border-white/10 bg-muted/30 p-4">
-          <h4 className="text-sm font-semibold">
-            {t("proxy.autoFailover.retrySettings", "Retry & Timeout Settings")}
-          </h4>
+        {appType !== "claude" && (
+          <div className="space-y-4 rounded-lg border border-white/10 bg-muted/30 p-4">
+            <h4 className="text-sm font-semibold">
+              {t(
+                "proxy.autoFailover.retrySettings",
+                "Retry & Timeout Settings",
+              )}
+            </h4>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor={`maxRetries-${appType}`}>
-                {t("proxy.autoFailover.maxRetries", "Max Retries")}
-              </Label>
-              <Input
-                id={`maxRetries-${appType}`}
-                type="number"
-                min="0"
-                max="10"
-                value={formData.maxRetries}
-                onChange={(e) =>
-                  setFormData({ ...formData, maxRetries: e.target.value })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "proxy.autoFailover.maxRetriesHint",
-                  "Number of retries on request failure (0-10)",
-                )}
-              </p>
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor={`maxRetries-${appType}`}>
+                  {t("proxy.autoFailover.maxRetries", "Max Retries")}
+                </Label>
+                <Input
+                  id={`maxRetries-${appType}`}
+                  type="number"
+                  min="0"
+                  max="10"
+                  value={formData.maxRetries}
+                  onChange={(e) =>
+                    setFormData({ ...formData, maxRetries: e.target.value })
+                  }
+                  disabled={isDisabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "proxy.autoFailover.maxRetriesHint",
+                    "Number of retries on request failure (0-10)",
+                  )}
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor={`failureThreshold-${appType}`}>
-                {t("proxy.autoFailover.failureThreshold", "Failure Threshold")}
-              </Label>
-              <Input
-                id={`failureThreshold-${appType}`}
-                type="number"
-                min="1"
-                max="20"
-                value={formData.circuitFailureThreshold}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    circuitFailureThreshold: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "proxy.autoFailover.failureThresholdHint",
-                  "Open circuit breaker after this many consecutive failures (recommended: 3-10)",
-                )}
-              </p>
+              <div className="space-y-2">
+                <Label htmlFor={`failureThreshold-${appType}`}>
+                  {t(
+                    "proxy.autoFailover.failureThreshold",
+                    "Failure Threshold",
+                  )}
+                </Label>
+                <Input
+                  id={`failureThreshold-${appType}`}
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={formData.circuitFailureThreshold}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      circuitFailureThreshold: e.target.value,
+                    })
+                  }
+                  disabled={isDisabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "proxy.autoFailover.failureThresholdHint",
+                    "Open circuit breaker after this many consecutive failures (recommended: 3-10)",
+                  )}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Timeout settings */}
         <div className="space-y-4 rounded-lg border border-white/10 bg-muted/30 p-4">
@@ -389,127 +397,132 @@ export function AutoFailoverConfigPanel({
         </div>
 
         {/* Circuit breaker settings */}
-        <div className="space-y-4 rounded-lg border border-white/10 bg-muted/30 p-4">
-          <h4 className="text-sm font-semibold">
-            {t(
-              "proxy.autoFailover.circuitBreakerSettings",
-              "Circuit Breaker Settings",
-            )}
-          </h4>
+        {appType !== "claude" && (
+          <div className="space-y-4 rounded-lg border border-white/10 bg-muted/30 p-4">
+            <h4 className="text-sm font-semibold">
+              {t(
+                "proxy.autoFailover.circuitBreakerSettings",
+                "Circuit Breaker Settings",
+              )}
+            </h4>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor={`successThreshold-${appType}`}>
-                {t(
-                  "proxy.autoFailover.successThreshold",
-                  "Recovery Success Threshold",
-                )}
-              </Label>
-              <Input
-                id={`successThreshold-${appType}`}
-                type="number"
-                min="1"
-                max="10"
-                value={formData.circuitSuccessThreshold}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    circuitSuccessThreshold: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "proxy.autoFailover.successThresholdHint",
-                  "Close circuit breaker after this many successes in half-open state",
-                )}
-              </p>
-            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor={`successThreshold-${appType}`}>
+                  {t(
+                    "proxy.autoFailover.successThreshold",
+                    "Recovery Success Threshold",
+                  )}
+                </Label>
+                <Input
+                  id={`successThreshold-${appType}`}
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={formData.circuitSuccessThreshold}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      circuitSuccessThreshold: e.target.value,
+                    })
+                  }
+                  disabled={isDisabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "proxy.autoFailover.successThresholdHint",
+                    "Close circuit breaker after this many successes in half-open state",
+                  )}
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor={`timeoutSeconds-${appType}`}>
-                {t(
-                  "proxy.autoFailover.timeout",
-                  "Recovery Wait Time (seconds)",
-                )}
-              </Label>
-              <Input
-                id={`timeoutSeconds-${appType}`}
-                type="number"
-                min="0"
-                max="300"
-                value={formData.circuitTimeoutSeconds}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    circuitTimeoutSeconds: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "proxy.autoFailover.timeoutHint",
-                  "Wait this long before trying to recover after circuit opens (recommended: 30-120)",
-                )}
-              </p>
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor={`timeoutSeconds-${appType}`}>
+                  {t(
+                    "proxy.autoFailover.timeout",
+                    "Recovery Wait Time (seconds)",
+                  )}
+                </Label>
+                <Input
+                  id={`timeoutSeconds-${appType}`}
+                  type="number"
+                  min="0"
+                  max="300"
+                  value={formData.circuitTimeoutSeconds}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      circuitTimeoutSeconds: e.target.value,
+                    })
+                  }
+                  disabled={isDisabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "proxy.autoFailover.timeoutHint",
+                    "Wait this long before trying to recover after circuit opens (recommended: 30-120)",
+                  )}
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor={`errorRateThreshold-${appType}`}>
-                {t("proxy.autoFailover.errorRate", "Error Rate Threshold (%)")}
-              </Label>
-              <Input
-                id={`errorRateThreshold-${appType}`}
-                type="number"
-                min="0"
-                max="100"
-                step="5"
-                value={formData.circuitErrorRateThreshold}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    circuitErrorRateThreshold: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "proxy.autoFailover.errorRateHint",
-                  "Open circuit breaker when error rate exceeds this value",
-                )}
-              </p>
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor={`errorRateThreshold-${appType}`}>
+                  {t(
+                    "proxy.autoFailover.errorRate",
+                    "Error Rate Threshold (%)",
+                  )}
+                </Label>
+                <Input
+                  id={`errorRateThreshold-${appType}`}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={formData.circuitErrorRateThreshold}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      circuitErrorRateThreshold: e.target.value,
+                    })
+                  }
+                  disabled={isDisabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "proxy.autoFailover.errorRateHint",
+                    "Open circuit breaker when error rate exceeds this value",
+                  )}
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor={`minRequests-${appType}`}>
-                {t("proxy.autoFailover.minRequests", "Minimum Requests")}
-              </Label>
-              <Input
-                id={`minRequests-${appType}`}
-                type="number"
-                min="5"
-                max="100"
-                value={formData.circuitMinRequests}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    circuitMinRequests: e.target.value,
-                  })
-                }
-                disabled={isDisabled}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  "proxy.autoFailover.minRequestsHint",
-                  "Minimum requests before calculating error rate",
-                )}
-              </p>
+              <div className="space-y-2">
+                <Label htmlFor={`minRequests-${appType}`}>
+                  {t("proxy.autoFailover.minRequests", "Minimum Requests")}
+                </Label>
+                <Input
+                  id={`minRequests-${appType}`}
+                  type="number"
+                  min="5"
+                  max="100"
+                  value={formData.circuitMinRequests}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      circuitMinRequests: e.target.value,
+                    })
+                  }
+                  disabled={isDisabled}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    "proxy.autoFailover.minRequestsHint",
+                    "Minimum requests before calculating error rate",
+                  )}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Action buttons */}
         <div className="flex justify-end gap-3 pt-2">
