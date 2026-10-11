@@ -1482,6 +1482,13 @@ async fn get_claude_quota_for_provider_uncached(
         if crate::proxy::claude_pool::needs_sign_in(provider) {
             return Ok(SubscriptionQuota::signed_out("claude"));
         }
+        let captured = provider
+            .meta
+            .as_ref()
+            .is_some_and(|m| m.captured_claude_account.is_some());
+        if !captured {
+            return live_quota_unless_another_account(state, provider_id).await;
+        }
     }
     let quota = read_claude_snapshot_quota(provider_id).await?;
     if quota.success || !matches!(quota.credential_status, CredentialStatus::Expired) {
@@ -1499,6 +1506,34 @@ async fn get_claude_quota_for_provider_uncached(
         Ok(token) => Ok(query_claude_quota(&token).await),
         Err(_) => Ok(quota),
     }
+}
+
+/// Usage of a card with no captured login: Claude Code's saved login, unless
+/// another card has captured that account, since then the figures are not
+/// this card's.
+async fn live_quota_unless_another_account(
+    state: &crate::store::AppState,
+    provider_id: &str,
+) -> Result<SubscriptionQuota, String> {
+    let Some(live_uuid) = crate::services::claude_account::live_account_uuid() else {
+        return Ok(SubscriptionQuota::not_found("claude"));
+    };
+    let held_by_another = state
+        .db
+        .get_all_providers("claude")
+        .map_err(|e| e.to_string())?
+        .values()
+        .any(|p| {
+            p.id != provider_id
+                && p.meta
+                    .as_ref()
+                    .and_then(|m| m.captured_claude_account.as_ref())
+                    .is_some_and(|a| a.account_uuid == live_uuid)
+        });
+    if held_by_another {
+        return Ok(SubscriptionQuota::not_found("claude"));
+    }
+    get_subscription_quota_uncached("claude").await
 }
 
 /// The captured snapshot's usage, as read from its stored access token.

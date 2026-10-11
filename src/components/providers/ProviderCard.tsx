@@ -200,12 +200,17 @@ export function ProviderCard({
   // So does the current card while the proxy serves the app: the proxy
   // presents the card's login, not the one the CLI has saved. A non-current
   // card with no login of its own shows no usage: the live login belongs to
-  // another account.
+  // another account. A current Claude card with none asks the backend, which
+  // shows the live login's usage unless another card holds that account.
   const hasOwnLogin =
     (appId === "claude" && !!provider.meta?.capturedClaudeAccount) ||
     (appId === "codex" && !!codexAccount);
   const quotaProviderId =
-    (isCurrent && !isProxyTakeover) || !hasOwnLogin ? undefined : provider.id;
+    appId === "claude" && isCurrent && !hasOwnLogin
+      ? provider.id
+      : (isCurrent && !isProxyTakeover) || !hasOwnLogin
+        ? undefined
+        : provider.id;
   const showQuota = isCurrent || hasOwnLogin;
 
   // Fetch usage to tell whether there are multiple plans

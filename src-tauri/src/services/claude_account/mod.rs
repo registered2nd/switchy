@@ -243,6 +243,13 @@ struct LiveIdentity {
     email_address: String,
 }
 
+/// The account Claude Code is signed in to now, if any.
+pub fn live_account_uuid() -> Option<String> {
+    read_oauth_from_live(&paths::live_claude_config_path())
+        .ok()
+        .map(|live| live.account_uuid)
+}
+
 fn read_oauth_from_live(path: &Path) -> Result<LiveIdentity, AppError> {
     let bytes = match fs::read(path) {
         Ok(b) => b,
