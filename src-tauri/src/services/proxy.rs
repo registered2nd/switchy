@@ -37,6 +37,12 @@ const CLAUDE_MODEL_OVERRIDE_ENV_KEYS: [&str; 6] = [
     "ANTHROPIC_SMALL_FAST_MODEL",
 ];
 
+/// Claude `env` keys that send Claude Code's own traffic (sign-in, its login
+/// renewals, telemetry) through the proxy's `CONNECT` tunnel, so it leaves by
+/// the current account's route.
+const CLAUDE_TUNNEL_ENV_KEYS: [&str; 2] = ["HTTPS_PROXY", "NO_PROXY"];
+const CLAUDE_TUNNEL_NO_PROXY: &str = "127.0.0.1,localhost,::1";
+
 /// Claude `env` token keys the takeover replaces with the placeholder or removes.
 const CLAUDE_TOKEN_ENV_KEYS: [&str; 4] = [
     "ANTHROPIC_AUTH_TOKEN",
@@ -158,6 +164,8 @@ impl ProxyService {
             .as_object_mut()
             .expect("Claude env should be normalized to an object");
         env.insert("ANTHROPIC_BASE_URL".to_string(), json!(proxy_url));
+        env.insert("HTTPS_PROXY".to_string(), json!(proxy_url));
+        env.insert("NO_PROXY".to_string(), json!(CLAUDE_TUNNEL_NO_PROXY));
 
         for key in CLAUDE_MODEL_OVERRIDE_ENV_KEYS {
             env.remove(key);
@@ -1588,6 +1596,17 @@ impl ProxyService {
         }
 
         if env
+            .get("HTTPS_PROXY")
+            .and_then(|v| v.as_str())
+            .is_some_and(Self::is_local_proxy_url)
+        {
+            env.remove("HTTPS_PROXY");
+        }
+        if env.get("NO_PROXY").and_then(|v| v.as_str()) == Some(CLAUDE_TUNNEL_NO_PROXY) {
+            env.remove("NO_PROXY");
+        }
+
+        if env
             .get("ANTHROPIC_BASE_URL")
             .and_then(|v| v.as_str())
             .map(Self::is_local_proxy_url)
@@ -2044,6 +2063,7 @@ impl ProxyService {
                 .as_object_mut()
             {
                 let keys = std::iter::once("ANTHROPIC_BASE_URL")
+                    .chain(CLAUDE_TUNNEL_ENV_KEYS)
                     .chain(CLAUDE_TOKEN_ENV_KEYS)
                     .chain(CLAUDE_MODEL_OVERRIDE_ENV_KEYS);
                 for key in keys {
@@ -2874,6 +2894,32 @@ mod tests {
             },
             "config": config
         })
+    }
+
+    #[test]
+    fn claude_takeover_tunnels_claude_codes_own_traffic_and_hand_back_removes_it() {
+        let mut live = json!({ "env": { "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000" } });
+        ProxyService::apply_claude_takeover_fields(&mut live, "http://127.0.0.1:15721", true);
+        assert_eq!(live["env"]["HTTPS_PROXY"], "http://127.0.0.1:15721");
+        assert_eq!(live["env"]["NO_PROXY"], CLAUDE_TUNNEL_NO_PROXY);
+
+        ProxyService::strip_claude_takeover(&mut live);
+        let env = live["env"].as_object().unwrap();
+        assert!(env.get("HTTPS_PROXY").is_none());
+        assert!(env.get("NO_PROXY").is_none());
+        assert_eq!(env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"], "64000");
+    }
+
+    #[test]
+    fn hand_back_keeps_a_proxy_of_the_users_own() {
+        let mut live = json!({ "env": {
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:15721",
+            "HTTPS_PROXY": "http://10.0.0.5:8080",
+            "NO_PROXY": "corp.local"
+        } });
+        ProxyService::strip_claude_takeover(&mut live);
+        assert_eq!(live["env"]["HTTPS_PROXY"], "http://10.0.0.5:8080");
+        assert_eq!(live["env"]["NO_PROXY"], "corp.local");
     }
 
     #[test]

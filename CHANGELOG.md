@@ -20,6 +20,13 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ### Fixed
 
+- **An account's own proxy now carries all of that account's traffic while
+  Claude is routed.** Claude Code's sign-in, its own login renewals and its
+  telemetry go through Switchy's port and leave through the proxy of the
+  account in use, and Switchy renews Claude and Codex logins through each
+  account's own proxy. If that proxy is down, the connection fails instead of
+  going out directly. Restart Claude Code after updating.
+
 - **A Claude or Codex account that is not signed in no longer shows another
   account's usage.** An Official card with no login of its own showed the
   figures of the account in use, and kept showing them after you enabled it;

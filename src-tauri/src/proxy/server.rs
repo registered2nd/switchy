@@ -129,7 +129,7 @@ impl ProxyServer {
             loop {
                 tokio::select! {
                     result = listener.accept() => {
-                        let (stream, _remote_addr) = match result {
+                        let (stream, remote_addr) = match result {
                             Ok(v) => v,
                             Err(e) => {
                                 log::error!("[{SRV}] accept failed: {e}", SRV = log_srv::ACCEPT_ERR);
@@ -139,7 +139,18 @@ impl ProxyServer {
                         };
 
                         let app = app.clone();
+                        let db = state.db.clone();
                         tokio::spawn(async move {
+                            // Claude Code's own traffic, sent through HTTPS_PROXY
+                            // while it is routed; only from this machine.
+                            let mut first = [0u8; 8];
+                            if remote_addr.ip().is_loopback()
+                                && matches!(stream.peek(&mut first).await, Ok(8))
+                                && super::connect_tunnel::is_connect(&first)
+                            {
+                                super::connect_tunnel::serve(stream, db).await;
+                                return;
+                            }
                             // Peek raw TCP bytes to capture original header casing
                             // before hyper parses (and lowercases) the header names.
                             let original_cases = {
