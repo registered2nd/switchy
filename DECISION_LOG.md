@@ -2,6 +2,14 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-10-11 — An account's own proxy carries Claude Code's own traffic through a `CONNECT` tunnel on the proxy port; a normal quit still hands back to direct
+
+- Context: an Official Claude account given its own proxy (AdsPower profile 18's UK SOCKS5) still had its sign-in code exchange, Claude Code's own login renewals and its telemetry leave from the machine's own exit: Claude Code calls `platform.claude.com` and its telemetry hosts directly, never through `ANTHROPIC_BASE_URL`. Switchy's own renewals used the global proxy.
+- Decision: while Claude is taken over, its settings get `HTTPS_PROXY` = the proxy's own address and `NO_PROXY=127.0.0.1,localhost,::1`; the proxy port answers `CONNECT` from loopback peers by tunnelling through the current Claude account's own proxy, else the global proxy, else direct. A tunnel whose account proxy cannot be reached is refused, not opened directly. Claude and Codex login renewals use each account's own proxy. Hand-back removes both keys and keeps a proxy of the user's own.
+- Declined: making a normal quit or turning the proxy off leave the tools failing instead of handing back; the user wants a normal quit to return them to normal.
+- Why: one port keeps the fail-closed behaviour of the API path (Switchy down means connection errors, not a different exit) without a second listener.
+- Files: `src-tauri/src/proxy/connect_tunnel.rs`, the `CONNECT` branch of the accept loop in `src-tauri/src/proxy/server.rs`, `CLAUDE_TUNNEL_ENV_KEYS` in `src-tauri/src/services/proxy.rs`, the renewal clients in `claude_pool.rs` and `codex_pool.rs`.
+
 ## 2026-10-10 — While any tool is routed through the proxy, Switchy starts at login; the session-end hand-back is bounded on its own thread
 
 - Context: after a Windows Update restart (2026-10-09 11:03) Claude Code and Codex still pointed at `127.0.0.1:15721` and failed until Switchy was opened by hand. Launch at login was off, and the session-end hand-back logged its start and nothing after: it ran `block_on` with a tokio timeout, which a blocking wait (the database's `std::sync::Mutex`, a WSL share whose VM is stopping) outlasts, so Windows killed the process mid-hand-back.

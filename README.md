@@ -38,6 +38,7 @@ Settings → Pool holds everything the pool runs on:
 - **Rotate accounts before the limit.** Moves an account whose usage has reached the threshold to the back of the order until its limit resets, and serves first the account whose weekly limit resets soonest, so its quota is used before it expires.
 - **Keep accounts warm.** Opens each account's session window in advance.
 - **Global Outbound Proxy.** The proxy Switchy itself uses to reach the services.
+- **An account's own proxy.** A provider's advanced settings can give it a proxy of its own (HTTP or SOCKS5). While its app is routed, requests served from that account, and Switchy's renewals of its login, leave through it. For Claude, Switchy also points Claude Code's `HTTPS_PROXY` at the local proxy, so Claude Code's own traffic (its sign-in code exchange, its own login renewals and its telemetry, which do not use the API address) leaves through the proxy of the account in use. If that proxy cannot be reached the connection fails rather than going out directly. With the proxy off, or after Switchy quits normally, the tools connect directly again.
 
 ### Switching Codex accounts in an open session
 
