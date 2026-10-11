@@ -324,6 +324,8 @@
       "title": "Preferred Terminal",
       "description": "Terminal app opened by the terminal button",
       "fallbackHint": "Falls back to the system default if the selected terminal is unavailable",
+      "manualSignIn": "Open sign-in links manually",
+      "manualSignInDescription": "Claude Code keeps sign-in links in the terminal. In PowerShell, Bash or Zsh, codex login shows a link and one-time code; enable device-code sign-in in ChatGPT security settings first. Open a new terminal and restart Claude after enabling. On Codex's initial sign-in screen, choose Device Code.",
       "options": {
         "macos": {
           "terminal": "Terminal.app",

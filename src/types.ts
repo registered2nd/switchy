@@ -270,6 +270,8 @@ export interface Settings {
   // Windows: "cmd" | "powershell" | "wt"
   // Linux: "gnome-terminal" | "konsole" | "xfce4-terminal" | "alacritty" | "kitty" | "ghostty"
   preferredTerminal?: string;
+  // Show Claude Code and Codex CLI sign-in links without opening a browser
+  manualSignIn?: boolean;
 }
 
 // MCP server connection parameters (loose: extra fields allowed)

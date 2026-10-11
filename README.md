@@ -20,6 +20,14 @@ An Official provider holds a subscription login instead of an API key, so switch
 - **Codex and Kimi Code.** Each Official card keeps the login you signed in with while it was current; there is nothing to capture. To add a Codex account, add an OpenAI Official provider, enable it, and run `codex login`.
 - **Usage badges.** An Official card shows the subscription's quota: how much of each window is used and when it resets. What Gemini and Kimi cards can show is under [Known limitations](#what-a-gemini-or-kimi-card-can-show).
 
+### Choosing the browser for sign-in
+
+Settings → General → **Open sign-in links manually** keeps Claude Code's sign-in URL in the terminal and makes plain `codex login` show a link and one-time code. Copy the link into the browser profile for that account. Open a new terminal and restart existing Claude Code sessions after turning it on. Turning it off restores Claude's previous browser setting and ordinary Codex login.
+
+Codex device-code sign-in must be enabled in your ChatGPT account's security settings or workspace permissions. If it is unavailable, login reports an error and leaves the browser closed. On Codex's initial sign-in screen, choose **Device Code**. The setting covers Claude Code and the Codex terminal commands in PowerShell, Bash and Zsh; the Codex desktop app, IDE extension and direct executable launches use their own sign-in controls.
+
+Windows and native macOS/Linux installs are configured by Switchy. WSL follows the configured Claude and Codex mirror directories under Settings → Advanced → Configuration Directory. The option starts off on each installation and continues working while Switchy is closed.
+
 ## The pool
 
 Settings → Pool holds everything the pool runs on:

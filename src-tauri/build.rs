@@ -1,4 +1,28 @@
 fn main() {
+    // Embed a small Windows launcher so manual sign-in needs no installed compiler.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        let source = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap())
+            .join("no_browser.rs");
+        let output =
+            std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("no_browser.exe");
+        let status = std::process::Command::new(std::env::var_os("RUSTC").unwrap())
+            .arg(&source)
+            .args([
+                "--edition=2021",
+                "--crate-name=switchy_no_browser",
+                "--target",
+            ])
+            .arg(std::env::var("TARGET").unwrap())
+            .args(["-C", "opt-level=s", "-C", "panic=abort", "-o"])
+            .arg(&output)
+            .status()
+            .expect("could not compile the manual sign-in browser launcher");
+        assert!(
+            status.success(),
+            "manual sign-in browser launcher compilation failed"
+        );
+        println!("cargo:rerun-if-changed={}", source.display());
+    }
     tauri_build::build();
 
     // Windows: Embed Common Controls v6 manifest for test binaries

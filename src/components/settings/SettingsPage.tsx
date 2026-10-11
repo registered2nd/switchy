@@ -223,6 +223,10 @@ export function SettingsPage({
               onChange={(terminal) =>
                 handleAutoSave({ preferredTerminal: terminal })
               }
+              manualSignIn={settings.manualSignIn}
+              onManualSignInChange={(manualSignIn) =>
+                handleAutoSave({ manualSignIn })
+              }
             />
           </div>
         );

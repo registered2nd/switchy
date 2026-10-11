@@ -11,7 +11,33 @@ pub async fn get_settings() -> Result<crate::settings::AppSettings, String> {
 /// Save the settings
 #[tauri::command]
 pub async fn save_settings(settings: crate::settings::AppSettings) -> Result<bool, String> {
-    crate::settings::update_settings(settings).map_err(|e| e.to_string())?;
+    let previous = crate::settings::get_settings();
+    crate::settings::update_settings(settings.clone()).map_err(|e| e.to_string())?;
+    let directories_changed = previous.claude_config_dir != settings.claude_config_dir
+        || previous.claude_mirror_config_dir != settings.claude_mirror_config_dir
+        || previous.codex_config_dir != settings.codex_config_dir
+        || previous.codex_mirror_config_dir != settings.codex_mirror_config_dir;
+    if previous.manual_sign_in == settings.manual_sign_in
+        && !(directories_changed && settings.manual_sign_in)
+    {
+        return Ok(true);
+    }
+    if let Err(error) = crate::services::manual_sign_in::reconfigure(&previous, &settings) {
+        let mut off = settings.clone();
+        off.manual_sign_in = false;
+        if let Err(cleanup) = crate::services::manual_sign_in::apply(&off) {
+            log::warn!("Could not undo a partial manual sign-in change: {cleanup}");
+        }
+        crate::settings::update_settings(previous.clone()).map_err(|rollback| {
+            format!("{error}; restoring the previous settings also failed: {rollback}")
+        })?;
+        if let Err(rollback) = crate::services::manual_sign_in::apply(&previous) {
+            return Err(format!(
+                "{error}; restoring the previous sign-in setting also failed: {rollback}"
+            ));
+        }
+        return Err(error.to_string());
+    }
     Ok(true)
 }
 

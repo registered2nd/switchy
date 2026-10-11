@@ -5,6 +5,7 @@ pub mod credential_mirror;
 pub mod env_checker;
 pub mod env_manager;
 pub mod live_merge;
+pub mod manual_sign_in;
 pub mod model_fetch;
 pub mod omo;
 pub mod provider;

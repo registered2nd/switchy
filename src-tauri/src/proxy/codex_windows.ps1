@@ -11,6 +11,11 @@ function global:codex {
         $swBatch = [System.IO.Path]::ChangeExtension($swExecutable, '.cmd')
         if (Test-Path -LiteralPath $swBatch) { $swExecutable = $swBatch }
     }
+    if ($swArgs.Count -eq 1 -and $swArgs[0] -ceq 'login' -and
+        (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'manual_sign_in'))) {
+        & $swExecutable login --device-auth
+        return
+    }
     $swDir = Join-Path (Split-Path $PSScriptRoot -Parent) 'switchy-sessions'
     $swBypass = @('exec', 'e', 'review', 'login', 'logout', 'mcp', 'mcp-server',
         'app-server', 'app', 'completion', 'sandbox', 'debug', 'apply', 'a',

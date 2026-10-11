@@ -53,8 +53,10 @@ type WsRx = Pin<Box<dyn futures::Stream<Item = Result<Message, WsError>> + Send>
 const SESSIONS_DIR: &str = "switchy-sessions";
 const ENABLED_FILE: &str = "enabled";
 const SHELL_FILE: &str = "switchy/codex.sh";
-const BASHRC_LINE: &str =
+const POSIX_PROFILE_TAG: &str = "# Switchy Codex shell";
+const LEGACY_BASHRC_LINE: &str =
     "[ -r \"$HOME/.codex/switchy/codex.sh\" ] && . \"$HOME/.codex/switchy/codex.sh\"  # Switchy";
+const MANUAL_SIGN_IN_FILE: &str = "switchy/manual_sign_in";
 const WINDOWS_SHELL_FILE: &str = "switchy/codex.ps1";
 const WINDOWS_PROFILE_TAG: &str = "# Switchy Codex Windows";
 const CODEX_WINDOWS_SHELL: &str = include_str!("codex_windows.ps1");
@@ -68,7 +70,11 @@ const CODEX_SHELL: &str = r#"# Written by Switchy; replaced on each start. Gives
 # this terminal's environment. Plain codex while
 # ~/.codex/switchy-sessions/enabled is missing (Settings -> Pool in Switchy).
 codex() {
-  _sw_dir="$HOME/.codex/switchy-sessions"
+  _sw_config_dir=__SWITCHY_CODEX_CONFIG_DIR__
+  if [ "$#" -eq 1 ] && [ "$1" = login ] && [ -e "$_sw_config_dir/switchy/manual_sign_in" ]; then
+    command codex login --device-auth; return
+  fi
+  _sw_dir="$_sw_config_dir/switchy-sessions"
   if [ ! -e "$_sw_dir/enabled" ]; then command codex "$@"; return; fi
   case "${1:-}" in
     exec|e|review|login|logout|mcp|mcp-server|app-server|app|completion|sandbox|debug|apply|a|cloud|features|help|doctor|plugin|marketplace|queue|remote-control|agents|update|-h|--help|-V|--version)
@@ -154,6 +160,133 @@ codex() {
 }
 "#;
 
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn posix_config_path(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    if text.starts_with("//wsl$/") || text.starts_with("//wsl.localhost/") {
+        return format!("/{}", text.split('/').skip(4).collect::<Vec<_>>().join("/"));
+    }
+    text
+}
+
+fn posix_shell(config_dir: &str) -> String {
+    CODEX_SHELL.replace("__SWITCHY_CODEX_CONFIG_DIR__", &shell_quote(config_dir))
+}
+
+fn profile_text(path: &Path) -> std::io::Result<String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(error) => Err(error),
+    }
+}
+
+fn install_posix_shell(
+    codex_dir: &Path,
+    home: &Path,
+    config_dir: &str,
+    include_zsh: bool,
+) -> std::io::Result<()> {
+    let path = codex_dir.join(SHELL_FILE);
+    let script = posix_shell(config_dir);
+    if std::fs::read_to_string(&path).ok().as_deref() != Some(script.as_str()) {
+        std::fs::create_dir_all(path.parent().unwrap())?;
+        std::fs::write(&path, script)?;
+    }
+    let quoted = shell_quote(&format!("{config_dir}/{SHELL_FILE}"));
+    let line = format!("[ -r {quoted} ] && . {quoted}  {POSIX_PROFILE_TAG}");
+    for profile_name in if include_zsh {
+        &[".bashrc", ".zshrc"][..]
+    } else {
+        &[".bashrc"][..]
+    } {
+        let profile = home.join(profile_name);
+        let current = profile_text(&profile)?;
+        let mut lines: Vec<&str> = current
+            .lines()
+            .filter(|line| !line.ends_with(POSIX_PROFILE_TAG) && *line != LEGACY_BASHRC_LINE)
+            .collect();
+        if lines.last().is_some_and(|line| !line.is_empty()) {
+            lines.push("");
+        }
+        let next = format!("{}{}\n", lines.join("\n"), line);
+        if current != next {
+            std::fs::create_dir_all(home)?;
+            std::fs::write(&profile, next)?;
+        }
+    }
+    Ok(())
+}
+
+/// Controls plain `codex login` in the shells installed for this machine.
+pub fn configure_manual_sign_in(
+    settings: &crate::settings::AppSettings,
+) -> Result<(), crate::error::AppError> {
+    let home = crate::config::get_home_dir();
+    let native_dir = settings
+        .codex_config_dir
+        .as_deref()
+        .filter(|path| !path.trim().is_empty())
+        .map(crate::settings::resolve_override_path)
+        .unwrap_or_else(|| home.join(".codex"));
+    #[allow(unused_mut)]
+    let mut directories: Vec<(PathBuf, Option<String>)> = vec![(native_dir, None)];
+    #[cfg(windows)]
+    {
+        let mirror = settings
+            .codex_mirror_config_dir
+            .as_deref()
+            .filter(|path| !path.trim().is_empty())
+            .map(crate::settings::resolve_override_path)
+            .or_else(|| {
+                if crate::config::is_test_sandbox() {
+                    None
+                } else {
+                    crate::commands::config::build_default_codex_mirror_dir().map(PathBuf::from)
+                }
+            })
+            .map(crate::settings::reachable_wsl_path);
+        if let Some(mirror) = mirror {
+            if let Some(distro) = wsl_distro(&mirror) {
+                if !directories.iter().any(|(path, _)| *path == mirror) {
+                    directories.push((mirror, Some(distro)));
+                }
+            }
+        }
+    }
+    for (codex_dir, distro) in directories {
+        let marker = codex_dir.join(MANUAL_SIGN_IN_FILE);
+        if !settings.manual_sign_in {
+            if !marker.exists() {
+                continue;
+            }
+            match std::fs::remove_file(&marker) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(crate::error::AppError::io(&marker, error)),
+            }
+            continue;
+        }
+        #[cfg(windows)]
+        let installed = Install {
+            kind: distro.map(InstallKind::Wsl).unwrap_or(InstallKind::Windows),
+            codex_dir: codex_dir.clone(),
+        }
+        .install_shell();
+        #[cfg(not(windows))]
+        let installed = {
+            let _ = distro;
+            install_posix_shell(&codex_dir, &home, &posix_config_path(&codex_dir), true)
+        };
+        installed.map_err(|error| crate::error::AppError::io(&codex_dir, error))?;
+        std::fs::write(&marker, "").map_err(|error| crate::error::AppError::io(&marker, error))?;
+    }
+    Ok(())
+}
+
 /// Wakes the connections at once (a switch, a sign-in, a setting).
 static WAKE: Lazy<tokio::sync::watch::Sender<u64>> = Lazy::new(|| tokio::sync::watch::channel(0).0);
 
@@ -235,32 +368,51 @@ impl Install {
         if matches!(self.kind, InstallKind::Windows) {
             return self.install_windows_shell();
         }
-        let path = self.codex_dir.join(SHELL_FILE);
-        if std::fs::read_to_string(&path).ok().as_deref() != Some(CODEX_SHELL) {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(&path, CODEX_SHELL)?;
-        }
-        let Some(home) = self.codex_dir.parent() else {
-            return Ok(());
+        let home = self.posix_home()?;
+        install_posix_shell(
+            &self.codex_dir,
+            &home,
+            &posix_config_path(&self.codex_dir),
+            true,
+        )
+    }
+
+    fn posix_home(&self) -> std::io::Result<PathBuf> {
+        let InstallKind::Wsl(distro) = &self.kind else {
+            unreachable!()
         };
-        let bashrc = home.join(".bashrc");
-        let current = std::fs::read_to_string(&bashrc).unwrap_or_default();
-        if !current.contains(BASHRC_LINE) {
-            let mut next = current;
-            if !next.is_empty() && !next.ends_with('\n') {
-                next.push('\n');
+        // Default and custom directories inside the user's home need no subprocess.
+        let path = posix_config_path(&self.codex_dir);
+        if path.starts_with("/home/") {
+            if let Some(user) = path.split('/').nth(2).filter(|name| !name.is_empty()) {
+                return Ok(wsl_path(distro, &format!("/home/{user}")));
             }
-            next.push_str(BASHRC_LINE);
-            next.push('\n');
-            std::fs::write(&bashrc, next)?;
-            log::info!(
-                "[codex_engine] WSL {}: added the Codex shell function to ~/.bashrc",
-                self.name()
-            );
+        } else if path == "/root" || path.starts_with("/root/") {
+            return Ok(wsl_path(distro, "/root"));
+        } else if wsl_distro(&self.codex_dir).is_none() {
+            return self
+                .codex_dir
+                .parent()
+                .map(Path::to_path_buf)
+                .ok_or_else(|| {
+                    std::io::Error::other("Codex configuration directory has no parent")
+                });
         }
-        Ok(())
+        let mut command = std::process::Command::new("wsl.exe");
+        command.args(["-d", distro, "--", "sh", "-c", "printf '%s' \"$HOME\""]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        let output = command.output()?;
+        let home = String::from_utf8_lossy(&output.stdout);
+        if !output.status.success() || !home.starts_with('/') {
+            return Err(std::io::Error::other(format!(
+                "Could not read the home directory in WSL {distro}"
+            )));
+        }
+        Ok(wsl_path(distro, home.trim()))
     }
 
     fn install_windows_shell(&self) -> std::io::Result<()> {
@@ -281,7 +433,7 @@ impl Install {
         );
         for shell in ["WindowsPowerShell", "PowerShell"] {
             let profile = home.join("Documents").join(shell).join("profile.ps1");
-            let current = std::fs::read_to_string(&profile).unwrap_or_default();
+            let current = profile_text(&profile)?;
             let mut lines: Vec<&str> = current
                 .lines()
                 .filter(|line| !line.contains(WINDOWS_PROFILE_TAG))
@@ -754,8 +906,7 @@ async fn serve(
                     let fingerprint = (provider.id.clone(), creds.access_token.clone());
                     let busy = if signed.as_ref() == Some(&fingerprint) {
                         false
-                    } else if deferred.as_ref() == Some(&fingerprint)
-                        && checked_at.elapsed() < TICK
+                    } else if deferred.as_ref() == Some(&fingerprint) && checked_at.elapsed() < TICK
                     {
                         true
                     } else {
@@ -764,7 +915,9 @@ async fn serve(
                             Ok(Some(busy)) => busy,
                             Ok(None) => return Ok(()),
                             Err(e) => {
-                                log::debug!("[codex_engine] {socket}: could not read its turns: {e}");
+                                log::debug!(
+                                    "[codex_engine] {socket}: could not read its turns: {e}"
+                                );
                                 false
                             }
                         }
@@ -850,7 +1003,11 @@ async fn window_busy(
         let Some(read) = call(tx, rx, db, next_id, "thread/read", params).await? else {
             return Ok(None);
         };
-        if read.pointer("/result/thread/status/type").and_then(Value::as_str) == Some("active") {
+        if read
+            .pointer("/result/thread/status/type")
+            .and_then(Value::as_str)
+            == Some("active")
+        {
             return Ok(Some(true));
         }
     }
@@ -965,11 +1122,11 @@ mod tests {
         install.install_shell().expect("install");
         install.install_shell().expect("install again");
         let bashrc = std::fs::read_to_string(home.path().join(".bashrc")).expect("read");
-        assert_eq!(bashrc.matches(BASHRC_LINE).count(), 1);
+        assert_eq!(bashrc.matches(POSIX_PROFILE_TAG).count(), 1);
         assert!(bashrc.starts_with("export A=1\n"));
         assert_eq!(
             std::fs::read_to_string(codex_dir.join(SHELL_FILE)).expect("shell"),
-            CODEX_SHELL
+            posix_shell(&posix_config_path(&codex_dir))
         );
 
         install.set_enabled(true);
@@ -1001,6 +1158,38 @@ mod tests {
         assert!(new.refresh_on_exit);
         install.set_enabled(false);
         assert!(!install.sessions_dir().join(ENABLED_FILE).exists());
+    }
+
+    #[test]
+    fn posix_profiles_preserve_user_content_and_quote_custom_paths() {
+        let home = tempfile::TempDir::new().expect("temp home");
+        let codex_dir = home.path().join("custom codex's config");
+        std::fs::write(
+            home.path().join(".bashrc"),
+            format!("export KEPT=1\n{LEGACY_BASHRC_LINE}\n"),
+        )
+        .unwrap();
+        std::fs::write(home.path().join(".zshrc"), "export ALSO_KEPT=1\n").unwrap();
+        let config_dir = posix_config_path(&codex_dir);
+        install_posix_shell(&codex_dir, home.path(), &config_dir, true).unwrap();
+        install_posix_shell(&codex_dir, home.path(), &config_dir, true).unwrap();
+        for (name, prefix) in [
+            (".bashrc", "export KEPT=1\n"),
+            (".zshrc", "export ALSO_KEPT=1\n"),
+        ] {
+            let profile = std::fs::read_to_string(home.path().join(name)).unwrap();
+            assert!(profile.starts_with(prefix));
+            assert_eq!(profile.matches(POSIX_PROFILE_TAG).count(), 1);
+            assert!(profile.contains(&shell_quote(&format!("{config_dir}/{SHELL_FILE}"))));
+            assert!(!profile.contains(LEGACY_BASHRC_LINE));
+        }
+        assert!(std::fs::read_to_string(codex_dir.join(SHELL_FILE))
+            .unwrap()
+            .contains(&format!("_sw_config_dir={}", shell_quote(&config_dir))));
+        assert_eq!(
+            posix_config_path(Path::new(r"\\wsl.localhost\Ubuntu\home\me\custom config")),
+            "/home/me/custom config"
+        );
     }
 
     #[test]
@@ -1073,7 +1262,9 @@ mod tests {
         let mut stream = Vec::new();
         for reply in replies {
             stream.push(Ok(Message::Text(
-                json!({ "method": "thread/tokenUsage/updated", "params": {} }).to_string().into(),
+                json!({ "method": "thread/tokenUsage/updated", "params": {} })
+                    .to_string()
+                    .into(),
             )));
             stream.push(Ok(Message::Text(reply.to_string().into())));
         }
@@ -1118,9 +1309,14 @@ mod tests {
             json!({ "id": 2, "error": { "code": -32601, "message": "unknown method" } }),
         ]);
         let mut next_id = 2;
-        assert!(window_busy(&mut tx, &mut rx, &db, &mut next_id).await.is_err());
+        assert!(window_busy(&mut tx, &mut rx, &db, &mut next_id)
+            .await
+            .is_err());
 
         let (mut tx, mut rx) = scripted_server(Vec::new());
-        assert_eq!(window_busy(&mut tx, &mut rx, &db, &mut next_id).await, Ok(None));
+        assert_eq!(
+            window_busy(&mut tx, &mut rx, &db, &mut next_id).await,
+            Ok(None)
+        );
     }
 }

@@ -7,6 +7,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { isMac, isWindows, isLinux } from "@/lib/platform";
+import { ToggleRow } from "@/components/ui/toggle-row";
+import { LogIn } from "lucide-react";
 
 // Terminal options per platform
 const MACOS_TERMINALS = [
@@ -74,9 +76,16 @@ function getDefaultTerminal(): string {
 export interface TerminalSettingsProps {
   value?: string;
   onChange: (value: string) => void;
+  manualSignIn?: boolean;
+  onManualSignInChange: (value: boolean) => void;
 }
 
-export function TerminalSettings({ value, onChange }: TerminalSettingsProps) {
+export function TerminalSettings({
+  value,
+  onChange,
+  manualSignIn = false,
+  onManualSignInChange,
+}: TerminalSettingsProps) {
   const { t } = useTranslation();
   const terminals = getTerminalOptions();
   const defaultTerminal = getDefaultTerminal();
@@ -107,6 +116,13 @@ export function TerminalSettings({ value, onChange }: TerminalSettingsProps) {
       <p className="text-xs text-muted-foreground">
         {t("settings.terminal.fallbackHint")}
       </p>
+      <ToggleRow
+        icon={<LogIn className="h-4 w-4" />}
+        title={t("settings.terminal.manualSignIn")}
+        description={t("settings.terminal.manualSignInDescription")}
+        checked={manualSignIn}
+        onCheckedChange={onManualSignInChange}
+      />
     </section>
   );
 }

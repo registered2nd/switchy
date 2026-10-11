@@ -445,6 +445,9 @@ pub fn run() {
             // dir on every change. Keeps WSL (or any mirror target) downstream
             // of the rotating live refresh-token chain so the two sides don't
             // race each other to invalidate the shared refresh_token.
+            if let Err(error) = services::manual_sign_in::apply(&settings::get_settings()) {
+                log::warn!("Could not apply manual sign-in settings: {error}");
+            }
             services::credential_mirror::start();
             crate::proxy::codex_pool::set_app_handle(app.handle().clone());
             crate::proxy::codex_engine::start(app.handle().clone());

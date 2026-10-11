@@ -8,6 +8,16 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+### Added
+
+- **Choose the browser profile for Claude Code and Codex sign-in.** Settings →
+  General → *Open sign-in links manually* keeps Claude's link in the terminal
+  and makes `codex login` use a link and one-time code in PowerShell, Bash and
+  Zsh. Open a new terminal and restart Claude after enabling. Codex requires
+  device-code sign-in enabled in ChatGPT security settings; on its initial
+  sign-in screen, choose Device Code. Windows, native macOS/Linux and configured
+  WSL mirrors are supported. Turning the setting off restores ordinary login.
+
 ## [1.0.29] — 2026-10-10 — Tools keep working after a restart
 
 Windows installer: download `Switchy_1.0.29_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

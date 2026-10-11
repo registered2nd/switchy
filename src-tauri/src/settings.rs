@@ -86,6 +86,9 @@ pub struct AppSettings {
     /// Silent start (no main window at startup; run in the tray only)
     #[serde(default)]
     pub silent_startup: bool,
+    /// Keep Claude sign-in links in the terminal and use Codex device-code login.
+    #[serde(default)]
+    pub manual_sign_in: bool,
     /// Enable the local proxy on the main page (off by default)
     #[serde(default)]
     pub enable_local_proxy: bool,
@@ -181,6 +184,7 @@ impl Default for AppSettings {
             minimize_to_tray_on_close: true,
             launch_on_startup: false,
             silent_startup: false,
+            manual_sign_in: false,
             enable_local_proxy: false,
             proxy_confirmed: None,
             usage_confirmed: None,
@@ -355,7 +359,7 @@ fn settings_store() -> &'static RwLock<AppSettings> {
     SETTINGS_STORE.get_or_init(|| RwLock::new(AppSettings::load_from_file()))
 }
 
-fn resolve_override_path(raw: &str) -> PathBuf {
+pub(crate) fn resolve_override_path(raw: &str) -> PathBuf {
     if raw == "~" {
         if let Some(home) = dirs::home_dir() {
             return home;
