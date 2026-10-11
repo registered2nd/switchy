@@ -1,0 +1,98 @@
+{
+  "schema_version": 2,
+  "base": {
+    "context_generated_at": "2026-10-11T20:24:31.542011Z",
+    "context_source_revision": "workstate:handoff/switchy/session_22@sha256:59f0fab433bce240b9b76a91753b2b82a25794ae8d6ecde15f808a8f942e5b83",
+    "publication_token": 1941
+  },
+  "session": {
+    "id": "session_23",
+    "title": "Switchy 1.0.32: Claude errors stay on the serving account; configured quota rotation preserved",
+    "started_at": "2026-10-11T22:23:36Z",
+    "ended_at": "2026-10-11T22:23:36Z",
+    "purpose": "Diagnose the user's current Claude 429 and its proxy route, then remove error-triggered account failover and recovery throttling while preserving his configured quota rotation and visible account switching; build and install the fix locally.",
+    "outcomes": [
+      "Diagnosed the misleading 429: Owen still had quota (88% five-hour, 11% weekly). Repeated connection failures tripped its breaker after 8 failures; recovery admitted only one request at a time while other requests tried the three accounts already at 100% weekly usage. Those accounts returned Anthropic's 429, so the displayed error did not establish that Owen was exhausted.",
+      "Confirmed route ownership: Owen has its own SOCKS5 proxy at 82.26.163.142:45001. The other three Claude providers have no own proxy, and the global outbound proxy is unset, so their API attempts connect directly. Failover API requests do not inherit Owen's proxy. Claude's separate CONNECT login/telemetry traffic follows the currently selected account; the user agreed this design is correct.",
+      "the user's final direction: preserve configured quota rotation and its visible account changes; remove error-triggered hidden fallback and restrictions on the selected account. The threshold is user-configurable, currently 99%, not a hardcoded 99% rule. An initial interpretation that removed proactive rotation was corrected before installation. Existing manual-pick holds and the visible account/login/window/tray switching path are preserved.",
+      "Implemented Claude-only behavior in a6b260738b7d6f672fc231b3797536bd6d4035a3: selection and admission ignore Claude circuit breakers, failed requests do not restrict later requests or concurrency, and connection/login/service/config/request errors stay on the account serving the request. Passing connection faults retry once on that route. Exhausted account/model quota can still try a fallback; quota ordering still uses AccountPoolConfig.threshold_percent. Codex and the other tools retain their behavior.",
+      "Updated settings text in English, Chinese and Japanese; hid retry/circuit-breaker controls that no longer apply to Claude. Updated README, DECISION_LOG and Unreleased changelog. Version files and Windows installers are 1.0.32. The build procedure pruned superseded 1.0.31 Windows installers and bundles; the 1.0.30 macOS DMG remains.",
+      "Verification: local HTTP regressions proved 502 retries the same endpoint twice without contacting fallback, 401 and per-minute 429 stay there, and an account-quota 429 contacts the next endpoint. Router regression proved an old open breaker does not exclude/throttle Claude and changing the configured threshold from 80% to 95% changes rotation for an account at 88% usage. Initial full lib run passed 744 tests with the known port-15721 test excluded; after the threshold correction, cargo test --lib proxy:: -- --test-threads=1 passed 492 tests. pnpm typecheck and CI=true pnpm build passed.",
+      "Installed 1.0.32 on this workstation with stop, /S install, explorer relaunch and the port-15721 wait in one command. Installed executable reports 1.0.32; control route confirmed rotation enabled, configured threshold 99, Owen selected and first. Native Claude traffic recorded HTTP 200 on Owen at 2026-10-11 22:18:22 UTC. A synthetic request using an outdated claude-cli/2.1.2 user-agent was refused with HTTP 400 and stayed on Owen, with no fallback. The installed Claude CLI is 2.1.296; that synthetic rejection was a client-version check, not a routing fault.",
+      "SW106 is done and accepted in Workstate. Implementation/installers are committed on main as a6b26073; nothing pushed, no public release, and no installs on other machines this session. The live configured threshold was not changed. Previously pending checks from session_22 were not claimed complete."
+    ],
+    "pickup": null,
+    "task_ids": [
+      "SW106"
+    ],
+    "artifact_ids": [],
+    "decision_pointers": [
+      "C:/Projects/Switchy/DECISION_LOG.md"
+    ],
+    "finding_pointers": [
+      "C:/Projects/Switchy/README.md"
+    ],
+    "evidence_pointers": [
+      "git:a6b260738b7d6f672fc231b3797536bd6d4035a3",
+      "C:/Projects/Switchy/src-tauri/src/proxy/provider_router.rs",
+      "C:/Projects/Switchy/src-tauri/src/proxy/forwarder.rs",
+      "C:/Projects/Switchy/CHANGELOG.md",
+      "C:/Projects/Switchy/installers/Switchy_1.0.32_x64-setup.exe",
+      "C:/Users/Administrator/.switchy/logs/switchy.log"
+    ],
+    "attention": false,
+    "attention_note": null,
+    "latest_summary": "1.0.32 installed locally: Claude errors stay on the serving account, without breaker exclusion or throttling. Configured quota rotation and visible switching are retained; threshold remains 99%, Owen selected, live HTTP 200 verified. Commit a6b26073, SW106 done; no push or public release."
+  },
+  "context": {
+    "current_focus": {
+      "summary": "1.0.32 is installed on the workstation; Claude connection, login and service errors stay on the serving account without circuit-breaker exclusion or recovery throttling. Quota rotation and visible selection changes still use the percentage configured in Pool settings (currently 99%). Owen remains selected through its UK proxy and live Claude requests answered successfully. The requested change is complete; await the user's feedback. Earlier sign-in/renewal, restart, WSL and rotation checks remain pending under their existing triggers. Nothing was pushed or publicly released this session; public latest remains 1.0.29.",
+      "source": "C:/Projects/Switchy/README.md"
+    },
+    "initiative_focus": [],
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/connect_tunnel.rs",
+        "summary": "CONFIRM THE ACCOUNT PROXY COVERS CLAUDE CODE'S OWN SIGN-IN AND RENEWALS (1.0.31). Seen live 2026-10-11: settings.json (Windows and WSL) carry HTTPS_PROXY=http://127.0.0.1:15721 and NO_PROXY=127.0.0.1,localhost,::1, a curl through the tunnel left from 82.26.163.142 GB, and Claude Code telemetry logged '[connect_tunnel] http-intake.logs.us5.datadoghq.com:443 via socks5://82.26.163.142:45001'. Not yet seen: in C:/Users/Administrator/.switchy/logs/switchy.log, '[connect_tunnel] platform.claude.com:443 via socks5://82.26.163.142:45001' when Claude Code renews or signs in while the UK account (provider 98e00f12, ohartley.1990@gmail.com) is current, and '[claude_pool] refreshing login for provider=98e00f12...' followed by '[ProviderProxy] Client built with proxy: socks5://82.26.163.142:45001'. A '[connect_tunnel] ... failed' line means the tunnel refused rather than went direct."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/lib.rs",
+        "summary": "CONFIRM THE RESTART PATH ON STEPHEN'S NEXT WINDOWS RESTART (1.0.29). In C:/Users/Administrator/.switchy/logs/switchy.prev.log after 'Session ending; handing the live configs back': '[session-end] claude/codex/gemini handed back', '[session-end] ... in WSL handed back', then 'Live configs handed back for the session end'. 'did not finish in 4 seconds' with the last [session-end] line shows which step stalls (Windows step = database lock, WSL step = WSL I/O); fix that step. In switchy.log: Switchy started within seconds of login (window hidden, launched with --autostart from HKCU Run), '[auto_launch] start at login on', proxy on 15721, and Claude Code / Codex answer without ECONNREFUSED."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+        "summary": "CONFIRM CLAUDE LOGINS STAY IN STEP WITH WSL (1.0.27). In switchy.log, when an account WSL is signed in to renews: '[claude_pool] provider=... took the newer login from WSL' or 'wrote the refreshed login through to WSL', and no new 'invalid_grant' 'Refresh token not found or invalid' in account_switches/provider_health. WSL's ~/.claude/.credentials.json and ~/.switchy/accounts/<id>/credentials.json for that account should carry the same refreshToken after each renewal."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/codex_ws.rs",
+        "summary": "CONFIRM ROTATION AND CODEX FAILOVER ON LIVE TRAFFIC (1.0.25/1.0.26). In C:/Users/Administrator/.switchy/logs/switchy.log and the switchy.db account_switches table: (a) when an account's five-hour window resets while another serves, a switch back to it with reason 'recovered' and detail \"Another account's weekly limit resets sooner\"; (b) a Codex turn refused for usage that continues an earlier one logs '[CodexWS] provider=... websocket closed (turn refused for usage; Codex resends it in full)' and the turn then completes on the next account with no error in Codex. GET http://127.0.0.1:15721/switchy/accounts shows current account, pool order, quota and atLimit per account."
+      },
+      {
+        "source": "C:/Projects/Switchy/CHANGELOG.md",
+        "summary": "1.0.30 (manual sign-in), 1.0.31 (account proxy and unsigned-account usage), and 1.0.32 (Claude errors stay on the serving account; configured quota rotation retained) are unreleased: the public release is still 1.0.29, installers/ holds the 1.0.32 Windows installers and the 1.0.30 DMG, and the CHANGELOG [Unreleased] section has no version heading yet. Release only when the user asks. Wait for the user's feedback on 1.0.32 (Claude request errors and quota switching), 1.0.29 (start at login, restart hand-back), 1.0.28 (codex resume with permission flags; terminals need reopening), 1.0.27 (WSL login sync, \\\\wsl.localhost fallback) and 1.0.22-1.0.26. A release is: bump the four version files, changelog section, CI=true pnpm build, commit, push origin, run scripts/publish_public.sh BEFORE the macOS build (the workflow builds the public repo), run build-macos.yml (gh workflow run build-macos.yml -R registered2nd/switchy --ref main), download its DMG into installers/ (git mv the old one to the new name, then copy over it) with the macOS line in the changelog section, commit, push, publish again, then gh release create on registered2nd/switchy with the exe, msi and dmg as a draft and edit to --draft=false --latest; retry on 'error connecting to api.github.com'. Reinstall here: stop switchy, wait until the process is gone, /S, relaunch, wait for 15721, all in one command."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      }
+    ]
+  },
+  "task_completions": [
+    {
+      "id": "SW106",
+      "refs": [
+        "git:a6b26073",
+        "C:/Projects/Switchy/README.md"
+      ],
+      "reason": "Removed Claude request-error failover and circuit restrictions while preserving configured quota rotation and visible switching. Backend regression checks passed (492 tests after threshold correction), typecheck passed, 1.0.32 built and installed, port 15721 restored, current Owen account and 99% configured threshold confirmed, live Claude traffic answered HTTP 200 and a rejected test request stayed on the same account."
+    }
+  ]
+}
