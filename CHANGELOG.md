@@ -18,6 +18,12 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   sign-in screen, choose Device Code. Windows, native macOS/Linux and configured
   WSL mirrors are supported. Turning the setting off restores ordinary login.
 
+### Fixed
+
+- **A Claude or Codex account that is not signed in no longer shows another
+  account's usage.** An Official card with no login of its own showed the
+  figures of the account in use; it now shows none until you sign it in.
+
 ## [1.0.29] — 2026-10-10 — Tools keep working after a restart
 
 Windows installer: download `Switchy_1.0.29_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

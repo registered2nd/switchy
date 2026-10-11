@@ -198,15 +198,15 @@ export function ProviderCard({
   );
   // Non-current Official cards read their own login rather than the live one.
   // So does the current card while the proxy serves the app: the proxy
-  // presents the card's login, not the one the CLI has saved.
+  // presents the card's login, not the one the CLI has saved. A non-current
+  // card with no login of its own shows no usage: the live login belongs to
+  // another account.
+  const hasOwnLogin =
+    (appId === "claude" && !!provider.meta?.capturedClaudeAccount) ||
+    (appId === "codex" && !!codexAccount);
   const quotaProviderId =
-    isCurrent && !isProxyTakeover
-      ? undefined
-      : appId === "claude" && provider.meta?.capturedClaudeAccount
-        ? provider.id
-        : appId === "codex" && codexAccount
-          ? provider.id
-          : undefined;
+    (isCurrent && !isProxyTakeover) || !hasOwnLogin ? undefined : provider.id;
+  const showQuota = isCurrent || hasOwnLogin;
 
   // Fetch usage to tell whether there are multiple plans
   // Additive-mode apps (OpenCode/OpenClaw): use isInConfig instead of isCurrent
@@ -404,12 +404,14 @@ export function ProviderCard({
           <div className="relative z-20 ml-auto">
             <div className="flex items-center gap-1">
               {isOfficial ? (
-                <SubscriptionQuotaFooter
-                  appId={appId}
-                  providerId={quotaProviderId}
-                  ownerId={provider.id}
-                  inline={true}
-                />
+                showQuota && (
+                  <SubscriptionQuotaFooter
+                    appId={appId}
+                    providerId={quotaProviderId}
+                    ownerId={provider.id}
+                    inline={true}
+                  />
+                )
               ) : hasMultiplePlans ? (
                 <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
                   <span className="font-medium">
