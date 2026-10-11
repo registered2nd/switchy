@@ -1,0 +1,89 @@
+{
+  "schema_version": 2,
+  "base": {
+    "context_generated_at": "2026-10-10T16:32:25.158362Z",
+    "context_source_revision": "workstate:handoff/switchy/session_20@sha256:9b4e2d805a0b342e07538b67c54b9264acb7cfee8e50146d6ac59bc494c6fdae",
+    "publication_token": 1909
+  },
+  "session": {
+    "id": "session_21",
+    "title": "Switchy 1.0.30: optional manual Claude Code and Codex sign-in, installed on Windows and WSL",
+    "started_at": "2026-10-11T14:41:05Z",
+    "ended_at": "2026-10-11T14:41:05Z",
+    "purpose": "the user wanted sign-in links to stay in the terminal so he could open them in the right browser profile without an unwanted default-browser popup. After a workstation-only Claude setup, he requested making manual sign-in available to every Switchy installation, including Codex, and confirmed reinstalling before requesting handoff.",
+    "outcomes": [
+      "Implemented Settings > General > Open sign-in links manually as a per-installation option, default off. It is a product feature rather than a workstation-only setup. Claude settings point BROWSER at a bundled Windows no-op executable or /usr/bin/true on native POSIX/WSL. A field-level backup preserves the prior override; disabling restores it while preserving other edits. Settings saves, startup, and configuration-directory changes apply the setting.",
+      "Plain codex login in the Switchy-managed PowerShell, Bash and Zsh functions becomes codex login --device-auth. Status/help, API-key/access-token login and explicit login options pass through; failures retain their exit status and never retry with a browser flow. The marker is independent of Codex account/status switching and works while Switchy is closed. Native POSIX and WSL profiles preserve user content and quote custom configuration paths.",
+      "Codex device-code sign-in needs to be enabled in ChatGPT security settings or workspace permissions. Its initial interactive sign-in screen still requires choosing Device Code. Direct executable launches, Cmd.exe, the desktop app and IDE extension retain their own login controls. This scope was explained to the user and is in the UI and README; it is not a guarantee against browser launch on those other surfaces.",
+      "Verified against installed Claude Code 2.1.296 on Windows and WSL that the user-settings BROWSER override suppresses launch while retaining the authorization URL. Checked upstream Codex 0.162.0/0.162.1 device-auth code and an isolated mock issuer returning 404: login failed without browser fallback or auth.json. No real sign-in was performed for verification.",
+      "Validation passed: cargo test --lib manual_sign_in (4 tests), cargo test --lib codex_engine (8 tests), pnpm typecheck, git diff --check, scoped Rust formatting, and scripts/test_codex_manual_sign_in.py --wsl-distro Ubuntu-22.04 (36 Windows PowerShell and 36 WSL Bash isolated invocations). CI=true pnpm build succeeded, producing the Windows setup.exe and MSI for 1.0.30. Native macOS/Linux runtime behavior was not exercised here.",
+      "Reinstalled 1.0.30 locally using one uninterrupted stop, silent /S install, explorer relaunch, and proxy-port wait. Verified the actual installed executable reports 1.0.30, port 15721 is listening, manualSignIn=true, both Claude overrides are installed, and both Codex device-login markers exist. Migrated the original temporary Claude backups into Switchy-owned restoration backups, preserving that neither side originally had BROWSER. New terminals and restarted Claude sessions are required.",
+      "Updated README and the Unreleased changelog entry. Updated C:/Projects/agent_environment_operations.md CLI sign-in section to the live Switchy-managed setup; that file is outside this repository. Removed the superseded temporary settings backups and C# source. Kept C:/Users/Administrator/.local/bin/claude_no_browser.exe for already-running Claude processes that still reference the earlier helper.",
+      "Committed code and Windows installers on main at a670543f41252c744c166b9590cf8acc034fd5a9. Working tree was clean after the commit. Version files are 1.0.30. No push, public publish, tag, GitHub release or macOS build was made; the existing macOS installer and public release remain 1.0.29. A future release must include the macOS build and final release notes before claiming all public release downloads contain the setting.",
+      "The earlier account-proxy and Playwright-routing discussion did not change proxy routing. In that investigation, token-refresh requests were found to use the global outbound proxy rather than the per-account override; this was disclosed and left outside the manual-sign-in task. Existing SW5 and the previous live restart, renewal, rotation and quit-path follow-ups remain unfinished."
+    ],
+    "pickup": null,
+    "task_ids": [],
+    "artifact_ids": [],
+    "decision_pointers": [],
+    "finding_pointers": [],
+    "evidence_pointers": [
+      "git:a670543f41252c744c166b9590cf8acc034fd5a9",
+      "C:/Projects/Switchy/README.md",
+      "C:/Projects/Switchy/CHANGELOG.md",
+      "C:/Projects/Switchy/src-tauri/src/services/manual_sign_in.rs",
+      "C:/Projects/Switchy/src-tauri/src/commands/settings.rs",
+      "C:/Projects/Switchy/src-tauri/src/proxy/codex_engine.rs",
+      "C:/Projects/Switchy/src-tauri/src/proxy/codex_windows.ps1",
+      "C:/Projects/Switchy/scripts/test_codex_manual_sign_in.py",
+      "C:/Projects/Switchy/installers/Switchy_1.0.30_x64-setup.exe",
+      "C:/Projects/Switchy/installers/Switchy_1.0.30_x64_en-US.msi",
+      "C:/Projects/agent_environment_operations.md#cli-sign-in"
+    ],
+    "attention": false,
+    "attention_note": null,
+    "latest_summary": "1.0.30 manual CLI sign-in is implemented, tested, committed locally and installed here, enabled on Windows/WSL. Public release remains 1.0.29. Restart Claude and open new terminals; Codex initial sign-in requires Device Code."
+  },
+  "context": {
+    "current_focus": {
+      "summary": "Manual CLI sign-in is complete and installed locally in 1.0.30, enabled for Windows/WSL. Await the user's next direction; earlier live restart, login-renewal and rotation checks remain pending. 1.0.30 has not been published as a public release.",
+      "source": "C:/Projects/Switchy/README.md"
+    },
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/lib.rs",
+        "summary": "CONFIRM THE RESTART PATH ON STEPHEN'S NEXT WINDOWS RESTART (1.0.29). In C:/Users/Administrator/.switchy/logs/switchy.prev.log after 'Session ending; handing the live configs back': '[session-end] claude/codex/gemini handed back', '[session-end] ... in WSL handed back', then 'Live configs handed back for the session end'. 'did not finish in 4 seconds' with the last [session-end] line shows which step stalls (Windows step = database lock, WSL step = WSL I/O); fix that step. In switchy.log: Switchy started within seconds of login (window hidden, launched with --autostart from HKCU Run), '[auto_launch] start at login on', proxy on 15721, and Claude Code / Codex answer without ECONNREFUSED."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+        "summary": "CONFIRM CLAUDE LOGINS STAY IN STEP WITH WSL (1.0.27). In switchy.log, when an account WSL is signed in to renews: '[claude_pool] provider=... took the newer login from WSL' or 'wrote the refreshed login through to WSL', and no new 'invalid_grant' 'Refresh token not found or invalid' in account_switches/provider_health. WSL's ~/.claude/.credentials.json and ~/.switchy/accounts/<id>/credentials.json for that account should carry the same refreshToken after each renewal."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/codex_ws.rs",
+        "summary": "CONFIRM ROTATION AND CODEX FAILOVER ON LIVE TRAFFIC (1.0.25/1.0.26). In C:/Users/Administrator/.switchy/logs/switchy.log and the switchy.db account_switches table: (a) when an account's five-hour window resets while another serves, a switch back to it with reason 'recovered' and detail \"Another account's weekly limit resets sooner\"; (b) a Codex turn refused for usage that continues an earlier one logs '[CodexWS] provider=... websocket closed (turn refused for usage; Codex resends it in full)' and the turn then completes on the next account with no error in Codex. GET http://127.0.0.1:15721/switchy/accounts shows current account, pool order, quota and atLimit per account."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "INSTALL ON CHELSEA'S MACBOOK when reachable (ssh chelsea-mac; doorway 20722 refused all of 2026-10-01). Copy installers/Switchy_<latest>_aarch64.dmg over, hdiutil attach, copy Switchy.app into /Applications, xattr -dr com.apple.quarantine /Applications/Switchy.app, open it. She signs in to each account herself; never copy a login from the user's machines. The latest is installers/Switchy_1.0.29_aarch64.dmg (also on the v1.0.29 release)."
+      },
+      {
+        "source": "C:/Projects/Switchy/CHANGELOG.md",
+        "summary": "Wait for the user's feedback on 1.0.29 (start at login, restart hand-back), 1.0.28 (codex resume with permission flags; terminals need reopening), 1.0.27 (WSL login sync, \\\\wsl.localhost fallback) and 1.0.22-1.0.26. A release is: bump the four version files, changelog section, CI=true pnpm build, commit, push origin, run scripts/publish_public.sh BEFORE the macOS build (the workflow builds the public repo), run build-macos.yml (gh workflow run build-macos.yml -R registered2nd/switchy --ref main), download its DMG into installers/ (git mv the old one to the new name, then copy over it) with the macOS line in the changelog section, commit, push, publish again, then gh release create on registered2nd/switchy with the exe, msi and dmg as a draft and edit to --draft=false --latest; retry on 'error connecting to api.github.com'. Reinstall here: stop switchy, wait until the process is gone, /S, relaunch, wait for 15721, all in one command."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      }
+    ],
+    "initiative_focus": []
+  },
+  "task_completions": []
+}
