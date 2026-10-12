@@ -111,7 +111,7 @@ pub async fn set_rectifier_config(
     Ok(true)
 }
 
-/// Account pool settings: quota-driven rotation, the Claude proxy path, the exit check.
+/// Account pool settings: quota rotation, required routes and region warnings.
 #[tauri::command]
 pub async fn get_account_pool_config(
     state: tauri::State<'_, crate::AppState>,
@@ -134,6 +134,7 @@ pub async fn set_account_pool_config(
         .db
         .set_account_pool_config(&config)
         .map_err(|e| e.to_string())?;
+    crate::proxy::http_client::set_require_proxy(config.require_proxy);
     crate::proxy::codex_engine::nudge();
     Ok(true)
 }
@@ -143,6 +144,11 @@ pub async fn set_account_pool_config(
 pub async fn get_account_pool_quota(
 ) -> Result<std::collections::HashMap<String, crate::proxy::account_pool::AccountQuota>, String> {
     Ok(crate::proxy::account_pool::quota_snapshot())
+}
+
+#[tauri::command]
+pub fn get_proxy_route_status() -> Vec<crate::proxy::account_pool::ProxyRouteStatus> {
+    crate::proxy::account_pool::proxy_route_status()
 }
 
 #[tauri::command]

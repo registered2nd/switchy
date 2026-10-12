@@ -1462,10 +1462,12 @@ impl RequestForwarder {
 
         // Resolve the upstream proxy URL (provider's own proxy > global proxy > none)
         let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
-        let upstream_proxy_url: Option<String> = proxy_config
-            .filter(|c| c.enabled)
-            .and_then(super::http_client::build_proxy_url_from_config)
-            .or_else(super::http_client::get_current_proxy_url);
+        let route =
+            super::http_client::resolve_route(proxy_config).map_err(ProxyError::ForwardFailed)?;
+        let upstream_proxy_url = match &route {
+            super::outbound_route::OutboundRoute::Proxy(url) => Some(url.as_str()),
+            _ => None,
+        };
 
         // SOCKS5 proxies do not support CONNECT tunnels, so reqwest is needed
         let is_socks_proxy = upstream_proxy_url
@@ -1478,41 +1480,43 @@ impl RequestForwarder {
             .map_err(|e| ProxyError::ForwardFailed(format!("Invalid URL '{url}': {e}")))?;
 
         // Send the request
-        let response = if is_socks_proxy {
-            // SOCKS5 proxy: reqwest only (header case is not preserved)
-            log::debug!("[Forwarder] Using reqwest for SOCKS5 proxy");
-            let client = super::http_client::get_for_provider(proxy_config);
-            let mut request = client.post(&url);
-            if !self.non_streaming_timeout.is_zero() {
-                request = request.timeout(self.non_streaming_timeout);
-            }
-            for (key, value) in &ordered_headers {
-                request = request.header(key, value);
-            }
-            let reqwest_resp = request.body(body_bytes).send().await.map_err(|e| {
-                if e.is_timeout() {
-                    ProxyError::Timeout(format!("The request timed out: {e}"))
-                } else if e.is_connect() {
-                    ProxyError::ForwardFailed(format!("Could not connect: {e}"))
-                } else {
-                    ProxyError::ForwardFailed(e.to_string())
+        let response =
+            if is_socks_proxy || matches!(route, super::outbound_route::OutboundRoute::Tun(_)) {
+                // SOCKS5 proxy: reqwest only (header case is not preserved)
+                log::debug!("[Forwarder] Using reqwest for SOCKS5 proxy");
+                let client = super::http_client::build_client_for_route(&route, false)
+                    .map_err(ProxyError::ForwardFailed)?;
+                let mut request = client.post(&url);
+                if !self.non_streaming_timeout.is_zero() {
+                    request = request.timeout(self.non_streaming_timeout);
                 }
-            })?;
-            ProxyResponse::Reqwest(reqwest_resp)
-        } else {
-            // HTTP proxy or direct: hyper raw write (preserves header case)
-            // With an HTTP proxy, hyper_client tunnels through it with CONNECT
-            super::hyper_client::send_request(
-                uri,
-                http::Method::POST,
-                ordered_headers,
-                extensions.clone(),
-                body_bytes,
-                timeout,
-                upstream_proxy_url.as_deref(),
-            )
-            .await?
-        };
+                for (key, value) in &ordered_headers {
+                    request = request.header(key, value);
+                }
+                let reqwest_resp = request.body(body_bytes).send().await.map_err(|e| {
+                    if e.is_timeout() {
+                        ProxyError::Timeout(format!("The request timed out: {e}"))
+                    } else if e.is_connect() {
+                        ProxyError::ForwardFailed(format!("Could not connect: {e}"))
+                    } else {
+                        ProxyError::ForwardFailed(e.to_string())
+                    }
+                })?;
+                ProxyResponse::Reqwest(reqwest_resp)
+            } else {
+                // HTTP proxy or direct: hyper raw write (preserves header case)
+                // With an HTTP proxy, hyper_client tunnels through it with CONNECT
+                super::hyper_client::send_request(
+                    uri,
+                    http::Method::POST,
+                    ordered_headers,
+                    extensions.clone(),
+                    body_bytes,
+                    timeout,
+                    upstream_proxy_url,
+                )
+                .await?
+            };
 
         // Check the response status
         let status = response.status();

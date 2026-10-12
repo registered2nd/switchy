@@ -533,10 +533,15 @@ pub async fn handle_codex_backend(
         .map_err(|e| ProxyError::Internal(format!("Failed to read request body: {e}")))?
         .to_bytes();
     // Image generation runs for minutes; a model-list GET does not.
-    let timeout_secs = if parts.method == axum::http::Method::GET { 60 } else { 600 };
+    let timeout_secs = if parts.method == axum::http::Method::GET {
+        60
+    } else {
+        600
+    };
 
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
     let mut upstream = super::http_client::get_for_provider(proxy_config)
+        .map_err(ProxyError::ForwardFailed)?
         .request(parts.method.clone(), &url)
         .body(body);
     for (name, value) in parts.headers.iter() {
@@ -646,6 +651,7 @@ pub async fn handle_claude_passthrough(
 
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
     let mut upstream = super::http_client::get_for_provider(proxy_config)
+        .map_err(ProxyError::ForwardFailed)?
         .request(parts.method.clone(), &url)
         .body(body_bytes);
     for (name, value) in &parts.headers {

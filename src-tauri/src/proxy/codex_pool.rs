@@ -583,6 +583,7 @@ async fn refresh_login(db: &Arc<Database>, provider: &mut Provider) -> Result<()
     log::info!("[codex_pool] refreshing login for provider={}", provider.id);
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
     let response = crate::proxy::http_client::get_for_provider(proxy_config)
+        .map_err(ProxyError::ForwardFailed)?
         .post(TOKEN_ENDPOINT)
         .header("Content-Type", "application/json")
         .json(&json!({

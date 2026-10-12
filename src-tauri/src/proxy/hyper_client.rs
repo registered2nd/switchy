@@ -2,14 +2,13 @@
 //!
 //! Uses raw TCP/TLS writes to preserve exact original header name casing.
 //! Supports HTTP CONNECT tunneling through upstream proxies.
-//! Falls back to hyper-util Client (title-case headers) when raw write is not feasible.
+//! Missing original header cases use the same enforced route.
 
+use super::outbound_route::OutboundRoute;
 use super::ProxyError;
 use bytes::Bytes;
 use futures::stream::Stream;
 use http_body_util::BodyExt;
-use hyper_rustls::HttpsConnectorBuilder;
-use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use std::sync::OnceLock;
 
 /// Our own header case map: maps lowercase header name → original wire-casing bytes.
@@ -48,29 +47,6 @@ impl OriginalHeaderCases {
 
         Self { cases }
     }
-}
-
-type HyperClient = Client<
-    hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>,
-    http_body_util::Full<Bytes>,
->;
-
-/// Lazily-initialized hyper client with header-case preservation enabled.
-fn global_hyper_client() -> &'static HyperClient {
-    static CLIENT: OnceLock<HyperClient> = OnceLock::new();
-    CLIENT.get_or_init(|| {
-        crate::proxy::http_client::install_rustls_provider();
-        let connector = HttpsConnectorBuilder::new()
-            .with_webpki_roots()
-            .https_or_http()
-            .enable_http1()
-            .build();
-
-        Client::builder(TokioExecutor::new())
-            .http1_preserve_header_case(true)
-            .http1_title_case_headers(true)
-            .build(connector)
-    })
 }
 
 /// Unified response wrapper that can hold either a hyper or reqwest response.
@@ -168,12 +144,8 @@ impl ProxyResponse {
 
 /// Send an HTTP request with header-case preservation.
 ///
-/// Uses a two-tier strategy:
-/// 1. Primary: raw HTTP/1.1 write via TLS stream with exact original header casing
-///    (from `OriginalHeaderCases` captured by peek in server.rs), then hand off to
-///    hyper for response parsing.
-/// 2. Fallback: hyper-util Client with `title_case_headers(true)` when raw write
-///    isn't feasible (e.g., missing original cases).
+/// Writes HTTP/1.1 with available original header casing, then uses hyper for
+/// response parsing. Header metadata and connection errors never alter the route.
 ///
 /// The caller is expected to include `Host` in the supplied `headers` at the
 /// correct position.
@@ -184,83 +156,55 @@ impl ProxyResponse {
 pub async fn send_request(
     uri: http::Uri,
     method: http::Method,
-    headers: http::HeaderMap,
+    mut headers: http::HeaderMap,
     original_extensions: http::Extensions,
     body: Vec<u8>,
     timeout: std::time::Duration,
     proxy_url: Option<&str>,
 ) -> Result<ProxyResponse, ProxyError> {
-    // Extract our own OriginalHeaderCases if available
-    let original_cases = original_extensions.get::<OriginalHeaderCases>().cloned();
-    let has_cases = original_cases
-        .as_ref()
-        .map(|c| !c.cases.is_empty())
-        .unwrap_or(false);
-
-    log::debug!(
-        "[HyperClient] Sending request: uri={uri}, header_count={}, \
-         has_host={}, has_original_cases={has_cases}, proxy={:?}",
-        headers.len(),
-        headers.contains_key(http::header::HOST),
-        proxy_url,
-    );
-
-    if has_cases {
-        // Primary path: use raw write + hyper handshake for exact header casing
-        let result = tokio::time::timeout(
-            timeout,
-            send_raw_request(
-                &uri,
-                &method,
-                &headers,
-                original_cases.as_ref().unwrap(),
-                &body,
-                proxy_url,
-            ),
-        )
-        .await
-        .map_err(|_| {
-            ProxyError::Timeout(format!(
-                "The request timed out after {}s",
-                timeout.as_secs()
-            ))
-        })?;
-
-        match result {
-            Ok(resp) => return Ok(resp),
-            Err(e) => {
-                if proxy_url.is_some() {
-                    // Don't bypass configured proxy with direct connect fallback
-                    return Err(e);
-                }
-                log::warn!("[HyperClient] Raw write failed, falling back to hyper-util: {e}");
-                // Fall through to hyper-util Client
-            }
+    let route = match proxy_url {
+        Some(url) => OutboundRoute::Proxy(
+            super::http_client::validate_proxy_url(url).map_err(ProxyError::ForwardFailed)?,
+        ),
+        None => super::http_client::resolve_route(None).map_err(ProxyError::ForwardFailed)?,
+    };
+    if !headers.contains_key(http::header::HOST) {
+        if let Some(authority) = uri.authority() {
+            headers.insert(
+                http::header::HOST,
+                http::HeaderValue::from_str(authority.as_str())
+                    .map_err(|e| ProxyError::ForwardFailed(e.to_string()))?,
+            );
         }
     }
-
-    // Fallback: hyper-util Client (title-case headers, no proxy support)
-    let mut req = http::Request::builder()
-        .method(method)
-        .uri(&uri)
-        .body(http_body_util::Full::new(Bytes::from(body)))
-        .map_err(|e| ProxyError::ForwardFailed(format!("Failed to build request: {e}")))?;
-
-    *req.headers_mut() = headers;
-    *req.extensions_mut() = original_extensions;
-
-    let client = global_hyper_client();
-    let resp = tokio::time::timeout(timeout, client.request(req))
-        .await
-        .map_err(|_| {
-            ProxyError::Timeout(format!(
-                "The request timed out after {}s",
-                timeout.as_secs()
-            ))
-        })?
-        .map_err(|e| ProxyError::ForwardFailed(format!("The upstream request failed: {e}")))?;
-
-    Ok(ProxyResponse::Hyper(resp))
+    if matches!(&route, OutboundRoute::Proxy(url) if url.starts_with("socks5")) {
+        let response = super::http_client::build_client_for_route(&route, false)
+            .map_err(ProxyError::ForwardFailed)?
+            .request(method, uri.to_string())
+            .headers(headers)
+            .body(body)
+            .timeout(timeout)
+            .send()
+            .await
+            .map_err(|e| ProxyError::ForwardFailed(e.to_string()))?;
+        return Ok(ProxyResponse::Reqwest(response));
+    }
+    // Missing original casing changes only header formatting, never the route.
+    let original_cases = original_extensions
+        .get::<OriginalHeaderCases>()
+        .cloned()
+        .unwrap_or_default();
+    tokio::time::timeout(
+        timeout,
+        send_raw_request(&uri, &method, &headers, &original_cases, &body, &route),
+    )
+    .await
+    .map_err(|_| {
+        ProxyError::Timeout(format!(
+            "The request timed out after {}s",
+            timeout.as_secs()
+        ))
+    })?
 }
 
 /// TCP or TLS stream returned by `connect_via_proxy`.
@@ -268,7 +212,7 @@ pub async fn send_request(
 /// When the proxy URL uses `https://`, the connection to the proxy itself is
 /// TLS-wrapped before sending the CONNECT request.  The enum lets
 /// `send_raw_request` work with either variant generically.
-enum ProxyStream {
+pub(crate) enum ProxyStream {
     Tcp(tokio::net::TcpStream),
     Tls(Box<tokio_rustls::client::TlsStream<tokio::net::TcpStream>>),
 }
@@ -330,7 +274,7 @@ async fn send_raw_request(
     headers: &http::HeaderMap,
     original_cases: &OriginalHeaderCases,
     body: &[u8],
-    proxy_url: Option<&str>,
+    route: &OutboundRoute,
 ) -> Result<ProxyResponse, ProxyError> {
     use tokio::io::AsyncWriteExt;
 
@@ -347,11 +291,11 @@ async fn send_raw_request(
     let raw = build_raw_request(method, path_and_query, headers, original_cases, body);
 
     // Establish TCP connection — either direct or through HTTP CONNECT proxy
-    let stream = if let Some(proxy) = proxy_url {
+    let stream = if let OutboundRoute::Proxy(proxy) = route {
         connect_via_proxy(proxy, host, port).await?
     } else {
         ProxyStream::Tcp(
-            tokio::net::TcpStream::connect((host, port))
+            super::outbound_route::connect_direct(host, port, route)
                 .await
                 .map_err(|e| ProxyError::ForwardFailed(format!("TCP connect failed: {e}")))?,
         )
@@ -399,7 +343,7 @@ async fn send_raw_request(
 /// 2. Send `CONNECT host:port HTTP/1.1` with optional `Proxy-Authorization`
 /// 3. Read the proxy's 200 response (407 → `AuthError`)
 /// 4. Return the tunneled stream (ready for target TLS handshake + raw write)
-async fn connect_via_proxy(
+pub(crate) async fn connect_via_proxy(
     proxy_url: &str,
     target_host: &str,
     target_port: u16,
@@ -419,8 +363,13 @@ async fn connect_via_proxy(
 
     // Build Proxy-Authorization header if credentials are present
     let proxy_auth = if !parsed.username().is_empty() {
-        let password = parsed.password().unwrap_or("");
-        let credentials = format!("{}:{}", parsed.username(), password);
+        let decode = |value: &str| {
+            percent_encoding::percent_decode_str(value)
+                .decode_utf8_lossy()
+                .into_owned()
+        };
+        let password = decode(parsed.password().unwrap_or(""));
+        let credentials = format!("{}:{}", decode(parsed.username()), password);
         let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
         Some(format!("Proxy-Authorization: Basic {encoded}\r\n"))
     } else {
@@ -705,5 +654,108 @@ impl<S: Unpin> tokio::io::AsyncWrite for WriteFilter<S> {
         _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
         std::task::Poll::Ready(Ok(()))
+    }
+}
+
+#[cfg(test)]
+mod route_tests {
+    use super::*;
+    use std::time::Duration;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn read_head(stream: &mut tokio::net::TcpStream) -> String {
+        let mut bytes = Vec::new();
+        while !bytes.ends_with(b"\r\n\r\n") {
+            bytes.push(stream.read_u8().await.unwrap());
+            assert!(bytes.len() < 8192);
+        }
+        String::from_utf8(bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn missing_header_cases_still_tunnel_through_configured_proxy() {
+        let target = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_addr = target.local_addr().unwrap();
+        let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_url = format!("http://{}", proxy.local_addr().unwrap());
+        let mock = tokio::spawn(async move {
+            let (mut stream, _) = proxy.accept().await.unwrap();
+            let connect = read_head(&mut stream).await;
+            assert!(connect.starts_with(&format!("CONNECT {target_addr} HTTP/1.1\r\n")));
+            stream
+                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                .await
+                .unwrap();
+            let request = read_head(&mut stream).await;
+            assert!(request.starts_with("POST /request HTTP/1.1\r\n"));
+            assert!(request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer test-secret\r\n"));
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .await
+                .unwrap();
+        });
+        let mut headers = http::HeaderMap::new();
+        headers.insert(
+            http::header::AUTHORIZATION,
+            http::HeaderValue::from_static("Bearer test-secret"),
+        );
+        let response = send_request(
+            format!("http://{target_addr}/request").parse().unwrap(),
+            http::Method::POST,
+            headers,
+            http::Extensions::new(),
+            vec![],
+            Duration::from_secs(2),
+            Some(&proxy_url),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.bytes().await.unwrap(), "ok");
+        mock.await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(80), target.accept())
+                .await
+                .is_err(),
+            "request must reach only the proxy, not the direct target"
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_header_cases_do_not_bypass_dead_or_malformed_proxy() {
+        let target = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let uri: http::Uri = format!("http://{}/request", target.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        let dead = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead_proxy = format!("http://{}", dead.local_addr().unwrap());
+        drop(dead);
+        for proxy in [dead_proxy.as_str(), "invalid-scheme://127.0.0.1:1234"] {
+            for has_cases in [false, true] {
+                let mut extensions = http::Extensions::new();
+                if has_cases {
+                    extensions.insert(OriginalHeaderCases::from_raw_bytes(
+                        b"POST /request HTTP/1.1\r\nHost: test\r\n\r\n",
+                    ));
+                }
+                assert!(send_request(
+                    uri.clone(),
+                    http::Method::POST,
+                    http::HeaderMap::new(),
+                    extensions,
+                    vec![],
+                    Duration::from_millis(500),
+                    Some(proxy)
+                )
+                .await
+                .is_err());
+            }
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(80), target.accept())
+                .await
+                .is_err()
+        );
     }
 }

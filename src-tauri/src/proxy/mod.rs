@@ -22,6 +22,7 @@ pub mod handler_context;
 mod handlers;
 mod health;
 pub mod http_client;
+mod outbound_route;
 pub mod hyper_client;
 pub mod keep_warm;
 pub mod log_codes;

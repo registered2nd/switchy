@@ -1,7 +1,7 @@
 //! What the proxy needs to serve several subscription logins of one CLI as a
 //! pool, whichever CLI it is: the settings, the quota each account last
-//! reported, and the check that a login is never presented from the wrong
-//! place. `codex_pool` and `claude_pool` hold what is specific to each login.
+//! reported, and advisory observations of their exit regions. `codex_pool`
+//! and `claude_pool` hold what is specific to each login.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, RwLock};
@@ -24,12 +24,14 @@ pub struct AccountPoolConfig {
     /// Used-percent at which an account is passed over.
     #[serde(default = "default_threshold")]
     pub threshold_percent: u8,
-    /// ISO country codes a ChatGPT login must never be presented from. The
-    /// exit is checked before every such request and the request is refused
-    /// when the exit is in one of these countries or cannot be established.
-    /// Empty turns the check off.
+    /// ISO country codes to warn about in background exit observations.
+    /// Empty turns the observations off. This field retains its saved name.
     #[serde(default = "default_blocked_exit_countries")]
     pub blocked_exit_countries: Vec<String>,
+    /// Require an enforceable proxy or local TUN route for accounts without
+    /// their own proxy. Router-proxied networks leave this off.
+    #[serde(default)]
+    pub require_proxy: bool,
     /// Open each pooled account's session window before it is needed by
     /// sending it one single-token request. Off by default: it spends quota
     /// with nobody present. See `keep_warm`.
@@ -69,6 +71,7 @@ impl Default for AccountPoolConfig {
             enabled: false,
             threshold_percent: default_threshold(),
             blocked_exit_countries: default_blocked_exit_countries(),
+            require_proxy: false,
             keep_warm_enabled: false,
             keep_warm_interval_minutes: default_keep_warm_interval(),
             codex_shared_session: default_codex_shared_session(),
@@ -78,33 +81,30 @@ impl Default for AccountPoolConfig {
 
 // ── Exit check ──────────────────────────────────────────────────────────────
 //
-// A subscription login presented from the wrong place is refused with a 403
-// that the CLI reads as a dead session, and the account has been seen there by then.
-// So the check comes before the request: the proxy asks the edge in front of
-// chatgpt.com where it sees this machine, over the same route the request will
-// take, and sends nothing when the answer is a blocked country — or when there
-// is no answer, which is what a fallen tunnel looks like from inside China.
+// Region observations never hold or refuse requests. Route enforcement belongs
+// to the outbound client.
+const EXIT_OBSERVATION_TTL_SECS: u64 = 300;
 
-const EXIT_OK_TTL_SECS: u64 = 30;
-/// A refusal is remembered this long so the other accounts in the queue are
-/// refused at once instead of each waiting out the hold.
-const EXIT_REFUSAL_TTL_SECS: u64 = 10;
-/// A tunnel that drops usually comes back within seconds; a held request looks
-/// like a slow response, a refused one ends the turn.
-const EXIT_HOLD_SECS: u64 = 30;
-const EXIT_RECHECK_SECS: u64 = 3;
-
-#[derive(Clone)]
-struct ExitVerdict {
-    allowed: bool,
-    detail: String,
-    checked_at: std::time::Instant,
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyRouteStatus {
+    pub route: String,
+    pub target: String,
+    pub country: Option<String>,
+    pub ip: Option<String>,
+    pub warning: Option<String>,
+    pub checked_at: i64,
 }
 
-static EXIT_VERDICTS: Lazy<Mutex<HashMap<String, ExitVerdict>>> =
+struct ExitObservation {
+    status: ProxyRouteStatus,
+    started_at: std::time::Instant,
+    running: bool,
+}
+
+static EXIT_OBSERVATIONS: Lazy<Mutex<HashMap<String, ExitObservation>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-/// Pulls `ip` and `loc` out of a `/cdn-cgi/trace` body.
 fn parse_exit_trace(body: &str) -> (Option<String>, Option<String>) {
     let field = |name: &str| {
         body.lines()
@@ -115,140 +115,178 @@ fn parse_exit_trace(body: &str) -> (Option<String>, Option<String>) {
     (field("ip"), field("loc"))
 }
 
-fn judge_exit(trace: Result<String, String>, blocked: &[String]) -> (bool, String) {
-    match trace {
-        Err(e) => (false, format!("the exit could not be established ({e})")),
-        Ok(body) => match parse_exit_trace(&body) {
-            (ip, Some(loc)) => {
-                let ip = ip.unwrap_or_else(|| "unknown address".to_string());
-                if blocked.iter().any(|c| c.eq_ignore_ascii_case(&loc)) {
-                    (false, format!("traffic is leaving from {loc} ({ip})"))
-                } else {
-                    (true, format!("{loc} ({ip})"))
-                }
-            }
-            _ => (false, "the exit check returned no country".to_string()),
-        },
+fn exit_status(
+    route: String,
+    target: String,
+    trace: Result<String, String>,
+    watched_countries: &[String],
+    previous: Option<&ProxyRouteStatus>,
+) -> ProxyRouteStatus {
+    let parsed = trace.and_then(|body| {
+        let (ip, country) = parse_exit_trace(&body);
+        country
+            .map(|country| (ip, country))
+            .ok_or_else(|| "the exit check returned no country".to_string())
+    });
+    let (ip, country, warning) = match parsed {
+        Ok((ip, country)) => {
+            let warning = if watched_countries
+                .iter()
+                .any(|c| c.eq_ignore_ascii_case(&country))
+            {
+                Some(format!(
+                    "Exit region {country} needs attention. Country checks do not stop requests."
+                ))
+            } else if let Some(old) = previous
+                .and_then(|s| s.country.as_deref())
+                .filter(|old| !old.eq_ignore_ascii_case(&country))
+            {
+                Some(format!("Exit country changed from {old} to {country}. Country checks do not stop requests."))
+            } else {
+                None
+            };
+            (ip, Some(country), warning)
+        }
+        Err(error) => (
+            previous.and_then(|s| s.ip.clone()),
+            previous.and_then(|s| s.country.clone()),
+            Some(format!(
+                "Could not verify the exit region: {error}. Country checks do not stop requests."
+            )),
+        ),
+    };
+    ProxyRouteStatus {
+        route,
+        target,
+        country,
+        ip,
+        warning,
+        checked_at: chrono::Utc::now().timestamp(),
     }
 }
 
-async fn fetch_exit_trace(trace_url: &str, route: Option<&str>) -> Result<String, String> {
-    let timeout = std::time::Duration::from_secs(10);
-    if route.is_some_and(|r| r.starts_with("socks5")) {
-        let client = reqwest::Client::builder()
-            .proxy(reqwest::Proxy::all(route.unwrap_or_default()).map_err(|e| e.to_string())?)
-            .timeout(timeout)
-            .build()
-            .map_err(|e| e.to_string())?;
-        let response = client
-            .get(trace_url)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
-        return response.text().await.map_err(|e| e.to_string());
-    }
-
-    // Same client the model request itself goes out through.
-    let uri: http::Uri = trace_url.parse().map_err(|e| format!("{e}"))?;
-    let host = uri.host().unwrap_or_default().to_string();
-    let mut headers = http::HeaderMap::new();
-    headers.insert(
-        http::header::HOST,
-        http::HeaderValue::from_str(&host).map_err(|e| e.to_string())?,
-    );
-    headers.insert(http::header::ACCEPT, http::HeaderValue::from_static("*/*"));
-    let response = crate::proxy::hyper_client::send_request(
-        uri,
-        http::Method::GET,
-        headers,
-        http::Extensions::new(),
-        Vec::new(),
-        timeout,
-        route,
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+async fn fetch_exit_trace(
+    trace_url: &str,
+    proxy_config: Option<&crate::provider::ProviderProxyConfig>,
+) -> Result<String, String> {
+    let response = super::http_client::get_for_provider(proxy_config)?
+        .get(trace_url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     if !response.status().is_success() {
         return Err(format!("exit check answered {}", response.status()));
     }
-    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    response.text().await.map_err(|e| e.to_string())
 }
 
-/// Refuses unless this machine's traffic is leaving from an allowed place over
-/// the route `provider`'s requests take. `trace_url` is the `/cdn-cgi/trace` of
-/// the host the login is about to be presented to.
+/// Schedule a background region observation. The legacy name is kept for
+/// callers; country lookups cannot prevent them from sending a request.
 pub async fn ensure_exit_allowed(
     db: &Database,
     provider: &Provider,
     trace_url: &str,
 ) -> Result<(), ProxyError> {
-    let blocked = db
+    let watched = db
         .get_account_pool_config()
         .unwrap_or_default()
         .blocked_exit_countries;
-    if blocked.is_empty() {
+    if watched.is_empty() {
         return Ok(());
     }
-
-    let route = provider
+    let proxy_config = provider
         .meta
         .as_ref()
         .and_then(|m| m.proxy_config.as_ref())
-        .filter(|c| c.enabled)
-        .and_then(crate::proxy::http_client::build_proxy_url_from_config)
-        .or_else(crate::proxy::http_client::get_current_proxy_url);
-    let route_key = format!("{}|{trace_url}", route.as_deref().unwrap_or("direct"));
-
-    let cached = EXIT_VERDICTS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .get(&route_key)
         .cloned();
-    if let Some(verdict) = cached {
-        let ttl = if verdict.allowed {
-            EXIT_OK_TTL_SECS
-        } else {
-            EXIT_REFUSAL_TTL_SECS
-        };
-        if verdict.checked_at.elapsed().as_secs() < ttl {
-            return exit_result(&verdict);
-        }
-    }
-
-    let started = std::time::Instant::now();
-    let verdict = loop {
-        let (allowed, detail) = judge_exit(
-            fetch_exit_trace(trace_url, route.as_deref()).await,
-            &blocked,
+    let trace_url = trace_url.to_string();
+    // Route discovery and network I/O happen after the request is released.
+    tauri::async_runtime::spawn(async move {
+        let route = super::http_client::effective_proxy_url(proxy_config.as_ref());
+        let route_label = route
+            .as_ref()
+            .ok()
+            .and_then(|r| r.as_deref())
+            .map(super::http_client::mask_url)
+            .unwrap_or_else(|| "Network route".to_string());
+        let route_key = format!(
+            "{}|{trace_url}",
+            super::http_client::route_cache_key(proxy_config.as_ref())
+                .unwrap_or_else(|_| route_label.clone())
         );
-        if allowed || started.elapsed().as_secs() >= EXIT_HOLD_SECS {
-            break ExitVerdict {
-                allowed,
-                detail,
-                checked_at: std::time::Instant::now(),
-            };
+        let target = url::Url::parse(&trace_url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_string))
+            .unwrap_or_default();
+        let previous = {
+            let mut observations = EXIT_OBSERVATIONS.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(old) = observations.get(&route_key) {
+                if old.running || old.started_at.elapsed().as_secs() < EXIT_OBSERVATION_TTL_SECS {
+                    return;
+                }
+            }
+            let previous = observations.get(&route_key).map(|old| old.status.clone());
+            let status = previous.clone().unwrap_or(ProxyRouteStatus {
+                route: route_label.clone(),
+                target: target.clone(),
+                country: None,
+                ip: None,
+                warning: None,
+                checked_at: 0,
+            });
+            observations.insert(
+                route_key.clone(),
+                ExitObservation {
+                    status,
+                    started_at: std::time::Instant::now(),
+                    running: true,
+                },
+            );
+            previous
+        };
+        let result = match route {
+            Ok(_) => fetch_exit_trace(&trace_url, proxy_config.as_ref()).await,
+            Err(error) => Err(error),
+        };
+        let status = exit_status(route_label, target, result, &watched, previous.as_ref());
+        if let Some(warning) = &status.warning {
+            log::warn!(
+                "[exit_region] {} via {}: {warning}",
+                status.target,
+                status.route
+            );
+        } else {
+            log::info!(
+                "[exit_region] {} via {}: {} ({})",
+                status.target,
+                status.route,
+                status.country.as_deref().unwrap_or("unknown"),
+                status.ip.as_deref().unwrap_or("unknown")
+            );
         }
-        log::warn!("[account_pool] holding request: {detail}");
-        tokio::time::sleep(std::time::Duration::from_secs(EXIT_RECHECK_SECS)).await;
-    };
-
-    EXIT_VERDICTS
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(route_key, verdict.clone());
-    exit_result(&verdict)
+        let mut observations = EXIT_OBSERVATIONS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(old) = observations.get_mut(&route_key) {
+            old.status = status;
+            old.running = false;
+        }
+        observations.retain(|_, old| old.running || old.started_at.elapsed().as_secs() < 3600);
+    });
+    Ok(())
 }
 
-fn exit_result(verdict: &ExitVerdict) -> Result<(), ProxyError> {
-    if verdict.allowed {
-        return Ok(());
-    }
-    log::error!("[account_pool] request refused: {}", verdict.detail);
-    Err(ProxyError::ForwardFailed(format!(
-        "Switchy did not send this request: {}. Subscription account traffic only leaves through the proxy chain.",
-        verdict.detail
-    )))
+pub fn proxy_route_status() -> Vec<ProxyRouteStatus> {
+    let mut statuses: Vec<_> = EXIT_OBSERVATIONS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .values()
+        .filter(|o| o.status.checked_at > 0 && o.started_at.elapsed().as_secs() < 3600)
+        .map(|o| o.status.clone())
+        .collect();
+    statuses.sort_by(|a, b| b.checked_at.cmp(&a.checked_at));
+    let mut seen = std::collections::HashSet::new();
+    statuses.retain(|s| seen.insert((s.route.clone(), s.target.clone())));
+    statuses
 }
 
 // ── Quota ───────────────────────────────────────────────────────────────────
@@ -469,12 +507,12 @@ pub fn order_by_quota(
         .partition(|p| !is_spent(&p.id, model, threshold_percent, now));
     {
         let quotas = QUOTAS.read().unwrap_or_else(|e| e.into_inner());
-        fresh.sort_by_key(|p| {
-            match quotas.get(&p.id).and_then(|q| weekly_reset_of(q, now)) {
+        fresh.sort_by_key(
+            |p| match quotas.get(&p.id).and_then(|q| weekly_reset_of(q, now)) {
                 Some(reset) => (0, reset),
                 None => (1, 0),
-            }
-        });
+            },
+        );
     }
     fresh.into_iter().chain(spent).collect()
 }
@@ -508,33 +546,83 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exit_in_a_blocked_country_is_refused() {
-        let blocked = vec!["CN".to_string()];
-        let (allowed, detail) = judge_exit(Ok("fl=1\nip=1.2.3.4\nloc=CN\n".into()), &blocked);
-        assert!(!allowed);
-        assert!(detail.contains("CN") && detail.contains("1.2.3.4"));
+    fn unsupported_country_is_advisory() {
+        let status = observe(Ok("ip=1.2.3.4\nloc=CN\n".into()), None);
+        assert_eq!(status.country.as_deref(), Some("CN"));
+        assert!(status.warning.unwrap().contains("do not stop requests"));
     }
 
     #[test]
-    fn exit_elsewhere_is_allowed() {
-        let blocked = vec!["cn".to_string()];
-        let (allowed, _) = judge_exit(Ok("ip=12.17.210.193\nloc=US\nwarp=off\n".into()), &blocked);
-        assert!(allowed);
+    fn a_country_change_is_reported() {
+        let old = observe(Ok("ip=1.2.3.4\nloc=GB\n".into()), None);
+        let status = observe(Ok("ip=2.3.4.5\nloc=US\n".into()), Some(&old));
+        assert_eq!(status.country.as_deref(), Some("US"));
+        assert!(status.warning.unwrap().contains("changed from GB to US"));
     }
 
     #[test]
-    fn unverifiable_exit_is_refused() {
-        let blocked = vec!["CN".to_string()];
-        assert!(!judge_exit(Err("connection reset".into()), &blocked).0);
-        assert!(!judge_exit(Ok("ip=1.2.3.4\n".into()), &blocked).0);
-        assert!(!judge_exit(Ok(String::new()), &blocked).0);
+    fn failed_lookup_keeps_last_country_and_reports_a_warning() {
+        let old = observe(Ok("ip=82.26.163.142\nloc=GB\n".into()), None);
+        for trace in [
+            Err("connection reset".into()),
+            Ok("ip=1.2.3.4\n".into()),
+            Ok(String::new()),
+        ] {
+            let status = observe(trace, Some(&old));
+            assert_eq!(status.country.as_deref(), Some("GB"));
+            assert!(status.warning.unwrap().contains("do not stop requests"));
+        }
+    }
+
+    fn observe(
+        trace: Result<String, String>,
+        previous: Option<&ProxyRouteStatus>,
+    ) -> ProxyRouteStatus {
+        exit_status(
+            "test proxy".into(),
+            "api.anthropic.com".into(),
+            trace,
+            &["CN".into()],
+            previous,
+        )
+    }
+
+    #[tokio::test]
+    async fn region_observation_returns_before_a_dead_proxy_can_answer() {
+        use crate::provider::{ProviderMeta, ProviderProxyConfig};
+        let db = Database::memory().unwrap();
+        let mut provider = Provider::with_id(
+            "advisory-test".into(),
+            "test".into(),
+            serde_json::json!({}),
+            None,
+        );
+        provider.meta = Some(ProviderMeta {
+            proxy_config: Some(ProviderProxyConfig {
+                enabled: true,
+                proxy_type: Some("socks5".into()),
+                proxy_host: Some("127.0.0.1".into()),
+                proxy_port: Some(1),
+                proxy_username: None,
+                proxy_password: None,
+            }),
+            ..Default::default()
+        });
+        tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            ensure_exit_allowed(&db, &provider, "https://api.anthropic.com/cdn-cgi/trace"),
+        )
+        .await
+        .expect("model request waited for region probe")
+        .unwrap();
     }
 
     #[test]
-    fn pool_config_defaults_block_china_and_tolerate_old_saved_values() {
+    fn pool_config_defaults_warn_about_china_and_tolerate_old_saved_values() {
         let saved: AccountPoolConfig =
             serde_json::from_str(r#"{"enabled":true,"thresholdPercent":95}"#).unwrap();
         assert_eq!(saved.blocked_exit_countries, vec!["CN".to_string()]);
+        assert!(!saved.require_proxy);
         assert_eq!(
             AccountPoolConfig::default().blocked_exit_countries,
             vec!["CN".to_string()]
@@ -724,6 +812,9 @@ mod tests {
             ["ord-week-ends", "ord-current", "ord-unread"],
             "its session window reset, and its week ends first"
         );
-        assert_eq!(rotation_reason("ord-current", None, 98).0, SwitchReason::Recovered);
+        assert_eq!(
+            rotation_reason("ord-current", None, 98).0,
+            SwitchReason::Recovered
+        );
     }
 }

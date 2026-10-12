@@ -212,7 +212,8 @@ impl StreamCheckService {
 
         // Get the HTTP client: prefer the provider's own proxy config, otherwise the global client
         let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
-        let client = crate::proxy::http_client::get_for_provider(proxy_config);
+        let client =
+            crate::proxy::http_client::get_for_provider(proxy_config).map_err(AppError::Message)?;
         let request_timeout = std::time::Duration::from_secs(config.timeout_secs);
 
         let model_to_test = Self::resolve_test_model(app_type, provider, config);

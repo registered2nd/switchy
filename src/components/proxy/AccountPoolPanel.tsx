@@ -9,6 +9,7 @@ import {
   settingsApi,
   type AccountPoolConfig,
   type CodexWindowUpdate,
+  type ProxyRouteStatus,
 } from "@/lib/api/settings";
 
 interface AccountPoolPanelProps {
@@ -20,6 +21,7 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
   const [config, setConfig] = useState<AccountPoolConfig>({
     enabled: false,
     thresholdPercent: 98,
+    requireProxy: false,
     blockedExitCountries: ["CN"],
     keepWarmEnabled: false,
     keepWarmIntervalMinutes: 60,
@@ -30,17 +32,44 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [codexUpdates, setCodexUpdates] = useState<CodexWindowUpdate[]>([]);
   const [refreshPending, setRefreshPending] = useState<string | null>(null);
+  const [routeStatuses, setRouteStatuses] = useState<ProxyRouteStatus[]>([]);
 
   useEffect(() => {
     settingsApi
       .getAccountPoolConfig()
       .then((loaded) => {
-        setConfig(loaded);
+        setConfig({ ...loaded, requireProxy: loaded.requireProxy ?? false });
         setThresholdText(String(loaded.thresholdPercent));
         setKeepWarmText(String(loaded.keepWarmIntervalMinutes));
       })
       .catch((e) => console.error("Failed to load account pool config:", e))
       .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    let pending = false;
+    const load = () => {
+      if (pending) return;
+      pending = true;
+      settingsApi
+        .getProxyRouteStatus()
+        .then((statuses) => {
+          if (live) setRouteStatuses(statuses);
+        })
+        .catch((error) =>
+          console.error("Failed to check proxy routes:", error),
+        )
+        .finally(() => {
+          pending = false;
+        });
+    };
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -152,6 +181,47 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
           onBlur={commitThreshold}
         />
       </div>
+
+      <div className="flex items-center justify-between gap-4 border-t border-border/50 pt-4">
+        <div className="space-y-0.5">
+          <Label htmlFor="account-pool-require-proxy">
+            {t("proxy.accountPool.requireProxy", "Require proxy")}
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            {t(
+              "proxy.accountPool.requireProxyDescription",
+              "Accounts with their own proxy always use it. For other accounts, require a global/local proxy or active TUN route. Leave this off for router-proxied Wi-Fi. Country checks only provide warnings.",
+            )}
+          </p>
+        </div>
+        <Switch
+          id="account-pool-require-proxy"
+          checked={config.requireProxy}
+          disabled={disabled}
+          onCheckedChange={(checked) => void save({ requireProxy: checked })}
+        />
+      </div>
+
+      {routeStatuses.some((status) => status.warning) && (
+        <div className="space-y-2 rounded-md border border-border p-3">
+          <p className="text-sm font-medium">
+            {t("proxy.accountPool.networkWarnings", "Network warnings")}
+          </p>
+          {routeStatuses
+            .filter((status) => status.warning)
+            .map((status) => (
+              <div
+                key={`${status.route}:${status.target}`}
+                className="space-y-1 text-xs"
+              >
+                <p className="font-medium">
+                  {status.target} · {status.route}
+                </p>
+                <p className="text-muted-foreground">{status.warning}</p>
+              </div>
+            ))}
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-4 border-t border-border/50 pt-4">
         <div className="space-y-0.5">

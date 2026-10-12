@@ -3,13 +3,21 @@
 //! Provides an HTTP client that honours the global proxy setting.
 //! Every module that sends HTTP requests should use the client from this module.
 
+use super::outbound_route::{require_route, OutboundRoute};
 use crate::provider::ProviderProxyConfig;
 use once_cell::sync::OnceCell;
 use reqwest::Client;
 use std::env;
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
 use std::time::Duration;
+
+static REQUIRE_PROXY: AtomicBool = AtomicBool::new(false);
+
+pub fn set_require_proxy(required: bool) {
+    REQUIRE_PROXY.store(required, Ordering::Relaxed);
+}
 
 /// rustls 0.23 will not choose a process-wide crypto provider when both
 /// `ring` (hyper-rustls) and `aws-lc-rs` (reqwest) are linked. The first
@@ -60,6 +68,12 @@ fn get_proxy_port() -> u16 {
 ///   None or an empty string means a direct connection
 pub fn init(proxy_url: Option<&str>) -> Result<(), String> {
     let effective_url = proxy_url.filter(|s| !s.trim().is_empty());
+    // Preserve route intent even when malformed saved configuration cannot
+    // construct a client. No startup failure may silently select direct.
+    let record = CURRENT_PROXY_URL.get_or_init(|| RwLock::new(None));
+    *record
+        .write()
+        .map_err(|_| "Proxy configuration lock unavailable")? = effective_url.map(str::to_owned);
     let client = build_client(effective_url)?;
 
     // Try to initialize the global client; if it already exists, warn and update via apply_proxy
@@ -194,14 +208,16 @@ pub fn update_proxy(proxy_url: Option<&str>) -> Result<(), String> {
 ///
 /// Returns the client configured with the proxy (if one is set), otherwise a client that follows the system proxy.
 pub fn get() -> Client {
-    GLOBAL_CLIENT
-        .get()
-        .and_then(|lock| lock.read().ok())
-        .map(|c| c.clone())
-        .unwrap_or_else(|| {
-            log::warn!("[GlobalProxy] [GP-004] Client not initialized, using fallback");
-            build_client(None).unwrap_or_default()
-        })
+    get_for_provider(None).unwrap_or_else(|e| {
+        // Older callers return Client rather than Result. Preserve fail-closed
+        // behavior for them too; port zero is never an outbound direct route.
+        log::error!("[GlobalProxy] outbound route unavailable: {e}");
+        Client::builder()
+            .no_proxy()
+            .proxy(reqwest::Proxy::all("http://127.0.0.1:0").expect("constant proxy URL"))
+            .build()
+            .expect("failed-route client")
+    })
 }
 
 /// Returns the current proxy URL
@@ -226,8 +242,21 @@ fn build_client(proxy_url: Option<&str>) -> Result<Client, String> {
 }
 
 fn build_client_with(proxy_url: Option<&str>, http1_only: bool) -> Result<Client, String> {
+    let route = match proxy_url {
+        Some(url) => OutboundRoute::Proxy(validate_proxy_url(url)?),
+        None => OutboundRoute::Direct,
+    };
+    build_client_for_route(&route, http1_only)
+}
+
+pub(crate) fn build_client_for_route(
+    route: &OutboundRoute,
+    http1_only: bool,
+) -> Result<Client, String> {
     install_rustls_provider();
-    let mut builder = Client::builder();
+    // Each resolved proxy is explicit, so NO_PROXY/system bypass lists cannot
+    // turn an account's configured route into a direct connection.
+    let mut builder = Client::builder().no_proxy();
     if http1_only {
         builder = builder.http1_only();
     }
@@ -243,7 +272,7 @@ fn build_client_with(proxy_url: Option<&str>, http1_only: bool) -> Result<Client
         .no_deflate();
 
     // Use the proxy address if there is one; otherwise follow the system proxy
-    if let Some(url) = proxy_url {
+    if let OutboundRoute::Proxy(url) = route {
         // Validate the URL format and scheme first
         let parsed = url::Url::parse(url)
             .map_err(|e| format!("Invalid proxy URL '{}': {}", mask_url(url), e))?;
@@ -261,16 +290,11 @@ fn build_client_with(proxy_url: Option<&str>, http1_only: bool) -> Result<Client
             .map_err(|e| format!("Invalid proxy URL '{}': {}", mask_url(url), e))?;
         builder = builder.proxy(proxy);
         log::debug!("[GlobalProxy] Proxy configured: {}", mask_url(url));
-    } else {
-        // No global proxy: let reqwest detect the system proxy (environment variables)
-        // If the system proxy points at this machine, disable it to avoid a loop
-        if system_proxy_points_to_loopback() {
-            builder = builder.no_proxy();
-            log::warn!(
-                "[GlobalProxy] System proxy points to localhost, bypassing to avoid recursion"
-            );
-        } else {
-            log::debug!("[GlobalProxy] Following system proxy (no explicit proxy configured)");
+    } else if let OutboundRoute::Tun(tun) = route {
+        builder = builder.local_address(tun.source);
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        {
+            builder = builder.interface(&tun.interface);
         }
     }
 
@@ -279,6 +303,7 @@ fn build_client_with(proxy_url: Option<&str>, http1_only: bool) -> Result<Client
         .map_err(|e| format!("Failed to build HTTP client: {e}"))
 }
 
+#[cfg(test)]
 fn system_proxy_points_to_loopback() -> bool {
     const KEYS: [&str; 6] = [
         "HTTP_PROXY",
@@ -355,77 +380,133 @@ pub fn mask_url(url: &str) -> String {
 /// Converts ProviderProxyConfig into a proxy URL string
 pub fn build_proxy_url_from_config(config: &ProviderProxyConfig) -> Option<String> {
     let proxy_type = config.proxy_type.as_deref().unwrap_or("http");
-    let host = config.proxy_host.as_deref()?;
+    let host = config.proxy_host.as_deref()?.trim();
+    if host.is_empty() {
+        return None;
+    }
     let port = config.proxy_port?;
-
-    // Build a proxy URL with credentials
-    if let (Some(username), Some(password)) = (&config.proxy_username, &config.proxy_password) {
-        if !username.is_empty() && !password.is_empty() {
-            return Some(format!(
-                "{proxy_type}://{username}:{password}@{host}:{port}"
-            ));
+    if port == 0 {
+        return None;
+    }
+    let mut url = url::Url::parse(&format!("{proxy_type}://{host}:{port}")).ok()?;
+    if let Some(username) = &config.proxy_username {
+        url.set_username(username).ok()?;
+        if let Some(password) = &config.proxy_password {
+            url.set_password(Some(password)).ok()?;
         }
     }
-
-    Some(format!("{proxy_type}://{host}:{port}"))
+    Some(url.to_string())
 }
 
-/// Builds an HTTP client from a provider's own proxy configuration
-///
-/// If the provider has its own proxy (enabled = true), builds a client with it;
-/// otherwise returns None and the caller should use the global client.
-///
-/// # Arguments
-/// * `proxy_config` - the provider's proxy configuration
-///
-/// # Returns
-/// Some(Client) if the configuration is valid, otherwise None
-pub fn build_client_for_provider(proxy_config: Option<&ProviderProxyConfig>) -> Option<Client> {
-    let config = proxy_config.filter(|c| c.enabled)?;
-
-    let proxy_url = build_proxy_url_from_config(config)?;
-
-    log::debug!(
-        "[ProviderProxy] Building client with proxy: {}",
-        mask_url(&proxy_url)
-    );
-
-    // Build a client with the proxy
-    let proxy = match reqwest::Proxy::all(&proxy_url) {
-        Ok(p) => p,
-        Err(e) => {
-            log::error!(
-                "[ProviderProxy] Failed to create proxy from '{}': {}",
-                mask_url(&proxy_url),
-                e
-            );
-            return None;
-        }
-    };
-
-    match Client::builder()
-        .timeout(Duration::from_secs(600))
-        .connect_timeout(Duration::from_secs(30))
-        .pool_max_idle_per_host(10)
-        .tcp_keepalive(Duration::from_secs(60))
-        .no_gzip()
-        .no_brotli()
-        .no_deflate()
-        .proxy(proxy)
-        .build()
+/// Validate an explicit route before building any connection.
+pub(crate) fn validate_proxy_url(value: &str) -> Result<String, String> {
+    let parsed = url::Url::parse(value).map_err(|e| format!("Invalid configured proxy: {e}"))?;
+    if !["http", "https", "socks5", "socks5h"].contains(&parsed.scheme())
+        || parsed.host_str().is_none()
+        || parsed.port_or_known_default().filter(|p| *p != 0).is_none()
     {
-        Ok(client) => {
-            log::info!(
-                "[ProviderProxy] Client built with proxy: {}",
-                mask_url(&proxy_url)
-            );
-            Some(client)
-        }
-        Err(e) => {
-            log::error!("[ProviderProxy] Failed to build client: {e}");
-            None
+        return Err(
+            "Invalid configured proxy: a supported scheme, host and port are required".into(),
+        );
+    }
+    if proxy_points_to_loopback(value) {
+        return Err("Configured proxy points to Switchy's own listener".into());
+    }
+    Ok(parsed.to_string())
+}
+
+fn system_proxy_url() -> Result<Option<String>, String> {
+    for key in [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+    ] {
+        if let Ok(value) = env::var(key) {
+            let value = value.trim();
+            if value.is_empty() || proxy_points_to_loopback(value) {
+                continue;
+            }
+            let normalized = if value.contains("://") {
+                value.to_string()
+            } else {
+                format!("http://{value}")
+            };
+            return validate_proxy_url(&normalized).map(Some);
         }
     }
+    #[cfg(windows)]
+    {
+        use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+        if let Ok(settings) = RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")
+        {
+            if settings.get_value::<u32, _>("ProxyEnable").unwrap_or(0) != 0 {
+                if let Ok(value) = settings.get_value::<String, _>("ProxyServer") {
+                    let raw = if value.contains('=') {
+                        value
+                            .split(';')
+                            .find_map(|p| p.trim().strip_prefix("https="))
+                            .or_else(|| {
+                                value
+                                    .split(';')
+                                    .find_map(|p| p.trim().strip_prefix("socks="))
+                            })
+                    } else {
+                        Some(value.as_str())
+                    };
+                    if let Some(raw) = raw.filter(|s| !s.trim().is_empty()) {
+                        if !proxy_points_to_loopback(raw) {
+                            let scheme = if value.contains("socks=") && !value.contains("https=") {
+                                "socks5"
+                            } else {
+                                "http"
+                            };
+                            let normalized = if raw.contains("://") {
+                                raw.into()
+                            } else {
+                                format!("{scheme}://{raw}")
+                            };
+                            return validate_proxy_url(&normalized).map(Some);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Account proxy > global proxy > explicit system proxy. Malformed enabled
+/// account settings are an error, never permission to use another route.
+pub fn effective_proxy_url(
+    proxy_config: Option<&ProviderProxyConfig>,
+) -> Result<Option<String>, String> {
+    if let Some(config) = proxy_config.filter(|c| c.enabled) {
+        let url = build_proxy_url_from_config(config)
+            .ok_or("Configured account proxy is incomplete or malformed")?;
+        return validate_proxy_url(&url).map(Some);
+    }
+    if let Some(url) = get_current_proxy_url() {
+        return validate_proxy_url(&url).map(Some);
+    }
+    system_proxy_url()
+}
+
+pub(crate) fn resolve_route(
+    proxy_config: Option<&ProviderProxyConfig>,
+) -> Result<OutboundRoute, String> {
+    require_route(
+        effective_proxy_url(proxy_config)?,
+        REQUIRE_PROXY.load(Ordering::Relaxed),
+        super::outbound_route::detect_tun,
+    )
+}
+
+pub fn route_cache_key(proxy_config: Option<&ProviderProxyConfig>) -> Result<String, String> {
+    resolve_route(proxy_config).map(|route| route.cache_key())
 }
 
 /// Returns the HTTP client for a provider
@@ -437,14 +518,24 @@ pub fn build_client_for_provider(proxy_config: Option<&ProviderProxyConfig>) -> 
 ///
 /// # Returns
 /// The HTTP client suited to this provider
-pub fn get_for_provider(proxy_config: Option<&ProviderProxyConfig>) -> Client {
-    // Prefer the provider's own proxy
-    if let Some(client) = build_client_for_provider(proxy_config) {
-        return client;
+pub fn get_for_provider(proxy_config: Option<&ProviderProxyConfig>) -> Result<Client, String> {
+    let route = resolve_route(proxy_config)?;
+    if !proxy_config.is_some_and(|c| c.enabled) {
+        let global = get_current_proxy_url();
+        let cached_route = match &route {
+            OutboundRoute::Proxy(url) => global
+                .as_deref()
+                .is_some_and(|saved| validate_proxy_url(saved).is_ok_and(|saved| saved == *url)),
+            OutboundRoute::Direct => global.is_none(),
+            OutboundRoute::Tun(_) => false,
+        };
+        if cached_route {
+            if let Some(client) = GLOBAL_CLIENT.get().and_then(|lock| lock.read().ok()) {
+                return Ok(client.clone());
+            }
+        }
     }
-
-    // Fall back to the global client
-    get()
+    build_client_for_route(&route, false)
 }
 
 /// An HTTP/1.1-only client taking the same route as `get_for_provider`, for a
@@ -452,11 +543,7 @@ pub fn get_for_provider(proxy_config: Option<&ProviderProxyConfig>) -> Client {
 pub fn get_http1_for_provider(
     proxy_config: Option<&ProviderProxyConfig>,
 ) -> Result<Client, String> {
-    let proxy_url = proxy_config
-        .filter(|c| c.enabled)
-        .and_then(build_proxy_url_from_config)
-        .or_else(get_current_proxy_url);
-    build_client_with(proxy_url.as_deref(), true)
+    build_client_for_route(&resolve_route(proxy_config)?, true)
 }
 
 #[cfg(test)]
@@ -467,6 +554,112 @@ mod tests {
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn account_proxy(scheme: &str, host: Option<&str>, port: Option<u16>) -> ProviderProxyConfig {
+        ProviderProxyConfig {
+            enabled: true,
+            proxy_type: Some(scheme.into()),
+            proxy_host: host.map(str::to_owned),
+            proxy_port: port,
+            proxy_username: None,
+            proxy_password: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_and_dead_account_proxies_never_reach_direct_target() {
+        let target = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_url = format!("http://{}/credential-target", target.local_addr().unwrap());
+        for config in [
+            account_proxy("http", None, Some(1234)),
+            account_proxy("unknown", Some("127.0.0.1"), Some(1234)),
+            account_proxy("http", Some("127.0.0.1"), Some(0)),
+        ] {
+            assert!(get_for_provider(Some(&config)).is_err());
+            assert!(get_http1_for_provider(Some(&config)).is_err());
+        }
+        let dead = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead_port = dead.local_addr().unwrap().port();
+        drop(dead);
+        for scheme in ["http", "socks5"] {
+            let config = account_proxy(scheme, Some("127.0.0.1"), Some(dead_port));
+            for client in [
+                get_for_provider(Some(&config)).unwrap(),
+                get_http1_for_provider(Some(&config)).unwrap(),
+            ] {
+                assert!(client
+                    .get(&target_url)
+                    .bearer_auth("test-secret")
+                    .timeout(Duration::from_millis(500))
+                    .send()
+                    .await
+                    .is_err());
+            }
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(80), target.accept())
+                .await
+                .is_err(),
+            "configured proxy failures must never touch the target directly"
+        );
+    }
+
+    #[test]
+    fn proxy_credentials_are_encoded_without_changing_route() {
+        let mut config = account_proxy("socks5", Some("127.0.0.1"), Some(1080));
+        config.proxy_username = Some("name@example".into());
+        config.proxy_password = Some("password/@:#".into());
+        let url = build_proxy_url_from_config(&config).unwrap();
+        let parsed = url::Url::parse(&url).unwrap();
+        assert_eq!(parsed.host_str(), Some("127.0.0.1"));
+        assert_eq!(
+            percent_encoding::percent_decode_str(parsed.username()).decode_utf8_lossy(),
+            "name@example"
+        );
+        assert_eq!(
+            percent_encoding::percent_decode_str(parsed.password().unwrap()).decode_utf8_lossy(),
+            "password/@:#"
+        );
+    }
+
+    #[tokio::test]
+    async fn tun_client_never_falls_back_to_ipv6_or_unbound_ipv4() {
+        use super::super::outbound_route::TunRoute;
+        let target4 = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let route = OutboundRoute::Tun(TunRoute {
+            interface: "missing_tun".into(),
+            source: "192.0.2.1".parse().unwrap(),
+            #[cfg(target_os = "macos")]
+            index: u32::MAX,
+        });
+        let client = build_client_for_route(&route, false).unwrap();
+        assert!(client
+            .get(format!("http://{}/", target4.local_addr().unwrap()))
+            .timeout(Duration::from_millis(400))
+            .send()
+            .await
+            .is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(80), target4.accept())
+                .await
+                .is_err()
+        );
+        // A single-family source bind must filter the other family completely,
+        // including literal addresses rather than only DNS-resolved names.
+        if let Ok(target6) = tokio::net::TcpListener::bind("[::1]:0").await {
+            assert!(client
+                .get(format!("http://{}/", target6.local_addr().unwrap()))
+                .timeout(Duration::from_millis(400))
+                .send()
+                .await
+                .is_err());
+            assert!(
+                tokio::time::timeout(Duration::from_millis(80), target6.accept())
+                    .await
+                    .is_err()
+            );
+        }
     }
 
     #[test]

@@ -177,6 +177,7 @@ async fn warm_claude(
 
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
     let response = crate::proxy::http_client::get_for_provider(proxy_config)
+        .map_err(ProxyError::ForwardFailed)?
         .post(format!("{}/v1/messages", claude_pool::ANTHROPIC_BASE_URL))
         .bearer_auth(token)
         .header("anthropic-version", "2023-06-01")
@@ -227,6 +228,7 @@ async fn warm_codex(
 
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
     let mut request = crate::proxy::http_client::get_for_provider(proxy_config)
+        .map_err(ProxyError::ForwardFailed)?
         .post(format!("{}/responses", codex_pool::CHATGPT_CODEX_BASE_URL))
         .bearer_auth(&credentials.access_token)
         .header("content-type", "application/json")

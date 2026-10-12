@@ -158,17 +158,20 @@ async fn connect_first(
     accounts: Vec<Provider>,
     handshake: &ClientHandshake,
     mut passed_over: Option<(SwitchReason, String)>,
-) -> Option<(Provider, Upstream, HeaderMap)> {
+) -> Option<(Provider, Upstream, HeaderMap, String)> {
     for provider in accounts {
         match connect_upstream(state, &provider, handshake).await {
-            Ok((upstream, headers)) => {
+            Ok((upstream, headers, route_key)) => {
                 super::codex_pool::record_quota(&provider.id, &headers);
                 let reason = passed_over.unwrap_or_else(|| rotation_reason(state));
                 note_switch(state, &provider, reason);
-                return Some((provider, upstream, headers));
+                return Some((provider, upstream, headers, route_key));
             }
             Err((status, e)) => {
-                log::warn!("[CodexWS] provider={}: websocket refused ({e})", provider.id);
+                log::warn!(
+                    "[CodexWS] provider={}: websocket refused ({e})",
+                    provider.id
+                );
                 if passed_over.is_none() {
                     let reason = if super::codex_pool::needs_sign_in(&provider) {
                         SwitchReason::SignedOut
@@ -208,7 +211,7 @@ pub async fn handle(
         headers: request.headers().clone(),
         query: request.uri().query().map(str::to_string),
     };
-    let Some((provider, upstream, upstream_headers)) =
+    let Some((provider, upstream, upstream_headers, route_key)) =
         connect_first(&state, accounts, &handshake, None).await
     else {
         log::warn!("[CodexWS] no account accepted the websocket; Codex falls back to HTTP");
@@ -223,10 +226,13 @@ pub async fn handle(
     tokio::spawn(async move {
         match on_upgrade.await {
             Ok(upgraded) => {
-                let client =
-                    WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, unlimited())
-                        .await;
-                relay(state, provider, client, upstream, handshake).await;
+                let client = WebSocketStream::from_raw_socket(
+                    TokioIo::new(upgraded),
+                    Role::Server,
+                    unlimited(),
+                )
+                .await;
+                relay(state, provider, client, upstream, handshake, route_key).await;
             }
             Err(e) => log::warn!("[CodexWS] client upgrade failed: {e}"),
         }
@@ -263,7 +269,7 @@ async fn connect_upstream(
     state: &ProxyState,
     provider: &Provider,
     handshake: &ClientHandshake,
-) -> Result<(Upstream, HeaderMap), (Option<u16>, String)> {
+) -> Result<(Upstream, HeaderMap, String), (Option<u16>, String)> {
     super::account_pool::ensure_exit_allowed(
         &state.db,
         provider,
@@ -281,7 +287,9 @@ async fn connect_upstream(
         url.push_str(query);
     }
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
-    let client = super::http_client::get_http1_for_provider(proxy_config).map_err(|e| (None, e))?;
+    let route = super::http_client::resolve_route(proxy_config).map_err(|e| (None, e))?;
+    let route_key = route.cache_key();
+    let client = super::http_client::build_client_for_route(&route, true).map_err(|e| (None, e))?;
 
     let mut upstream = client
         .get(&url)
@@ -322,7 +330,21 @@ async fn connect_upstream(
         .await
         .map_err(|e| (None, e.to_string()))?;
     let socket = WebSocketStream::from_raw_socket(upgraded, Role::Client, unlimited()).await;
-    Ok((socket, headers))
+    Ok((socket, headers, route_key))
+}
+
+fn current_route_key(state: &ProxyState, provider: &Provider) -> Result<String, String> {
+    let current = state
+        .db
+        .get_provider_by_id(&provider.id, "codex")
+        .map_err(|e| e.to_string())?
+        .ok_or("serving account no longer exists")?;
+    let config = current.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
+    super::http_client::route_cache_key(config)
+}
+
+fn route_changed(opened: &str, current: Result<String, String>) -> bool {
+    !current.is_ok_and(|key| key == opened)
 }
 
 /// The event type of a JSON text frame.
@@ -339,7 +361,11 @@ fn continues_earlier_turn(create: &Message) -> bool {
     };
     serde_json::from_str::<Value>(text.as_str())
         .ok()
-        .and_then(|v| v.get("previous_response_id")?.as_str().map(|s| !s.is_empty()))
+        .and_then(|v| {
+            v.get("previous_response_id")?
+                .as_str()
+                .map(|s| !s.is_empty())
+        })
         .unwrap_or(false)
 }
 
@@ -442,9 +468,9 @@ fn log_completed(state: &ProxyState, provider: &Provider, turn: &TurnLog, event:
     let Ok(event) = serde_json::from_str::<Value>(event) else {
         return;
     };
-    let Some(usage) =
-        super::usage::parser::TokenUsage::from_codex_stream_events_auto(std::slice::from_ref(&event))
-    else {
+    let Some(usage) = super::usage::parser::TokenUsage::from_codex_stream_events_auto(
+        std::slice::from_ref(&event),
+    ) else {
         return;
     };
     let model = usage
@@ -514,6 +540,7 @@ async fn relay(
     client: WebSocketStream<TokioIo<hyper::upgrade::Upgraded>>,
     upstream: Upstream,
     handshake: ClientHandshake,
+    mut route_key: String,
 ) {
     let (mut client_tx, mut client_rx) = client.split();
     let (mut upstream_tx, mut upstream_rx) = upstream.split();
@@ -541,6 +568,9 @@ async fn relay(
                 }
                 if let Message::Text(text) = &message {
                     if event_type(text.as_str()).as_deref() == Some("response.create") {
+                        if route_changed(&route_key, current_route_key(&state, &provider)) {
+                            break "outbound route changed or required proxy unavailable; reconnecting".to_string();
+                        }
                         turn = Some(message.clone());
                         turn_log = Some(TurnLog::new(text.as_str(), &handshake));
                         streaming = false;
@@ -588,7 +618,7 @@ async fn relay(
                                 .filter(|p| p.id != provider.id)
                                 .collect();
                             let reason = (SwitchReason::Limit, "Usage limit reached".to_string());
-                            if let Some((next, upstream, _)) =
+                            if let Some((next, upstream, _, next_route_key)) =
                                 connect_first(&state, others, &handshake, Some(reason)).await
                             {
                                 let (mut tx, rx) = upstream.split();
@@ -606,6 +636,7 @@ async fn relay(
                                     upstream_tx = tx;
                                     upstream_rx = rx;
                                     provider = next;
+                                    route_key = next_route_key;
                                     held.clear();
                                     answered = false;
                                     continue 'relay;
@@ -645,6 +676,9 @@ async fn relay(
                 }
             }
             _ = check.tick() => {
+                if route_changed(&route_key, current_route_key(&state, &provider)) {
+                    break "outbound route changed or required proxy unavailable; reconnecting".to_string();
+                }
                 if turn.is_some() {
                     continue;
                 }
@@ -680,16 +714,42 @@ mod tests {
     use axum::http::HeaderValue;
 
     #[test]
+    fn existing_websocket_reconnects_when_route_changes_or_is_unavailable() {
+        assert!(!route_changed("direct/system", Ok("direct/system".into())));
+        assert!(route_changed(
+            "direct/system",
+            Ok("http://127.0.0.1:7890".into())
+        ));
+        assert!(route_changed(
+            "direct/system",
+            Err("Require proxy: no enforceable route".into())
+        ));
+        assert!(route_changed(
+            "socks5://proxy-a:1080",
+            Ok("socks5://proxy-b:1080".into())
+        ));
+    }
+
+    #[test]
     fn turns_end_on_terminal_events_only() {
         assert_eq!(
             event_type(r#"{"type":"response.create","model":"m"}"#).as_deref(),
             Some("response.create")
         );
         assert_eq!(event_type("not json"), None);
-        for kind in ["response.completed", "response.failed", "response.incomplete", "error"] {
+        for kind in [
+            "response.completed",
+            "response.failed",
+            "response.incomplete",
+            "error",
+        ] {
             assert!(ends_turn(kind));
         }
-        for kind in ["response.output_text.delta", "codex.rate_limits", "response.created"] {
+        for kind in [
+            "response.output_text.delta",
+            "codex.rate_limits",
+            "response.created",
+        ] {
             assert!(!ends_turn(kind));
         }
     }
@@ -703,7 +763,9 @@ mod tests {
         assert!(!continues_earlier_turn(&create(
             r#"{"type":"response.create","previous_response_id":null,"input":[]}"#
         )));
-        assert!(!continues_earlier_turn(&create(r#"{"type":"response.create","input":[]}"#)));
+        assert!(!continues_earlier_turn(&create(
+            r#"{"type":"response.create","input":[]}"#
+        )));
     }
 
     #[test]
@@ -725,7 +787,10 @@ mod tests {
         .to_string();
         let (status, headers) = error_event(&text).expect("error event");
         assert_eq!(status, 429);
-        assert_eq!(headers.get("x-codex-primary-used-percent").unwrap(), "100.0");
+        assert_eq!(
+            headers.get("x-codex-primary-used-percent").unwrap(),
+            "100.0"
+        );
         assert_eq!(headers.get("x-codex-primary-window-minutes").unwrap(), "15");
         assert_eq!(
             error_event(r#"{"type":"error","status_code":400}"#).map(|e| e.0),

@@ -10,6 +10,11 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ### Added
 
+- **Optional proxy requirement.** Pool settings can require a global or local
+  proxy, or an active local TUN route, for accounts without their own proxy.
+  Leave it off for router-proxied Wi-Fi. Accounts with their own proxy always
+  use it.
+
 - **Choose the browser profile for Claude Code and Codex sign-in.** Settings →
   General → *Open sign-in links manually* keeps Claude's link in the terminal
   and makes `codex login` use a link and one-time code in PowerShell, Bash and
@@ -19,6 +24,11 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
   WSL mirrors are supported. Turning the setting off restores ordinary login.
 
 ### Fixed
+
+- **Country lookups run in the background.** A failed lookup or a reported
+  region of concern no longer holds or refuses Claude and Codex requests.
+  Pool settings show network warnings, including changes in the exit country.
+  Configured proxy failures still stop requests without a direct fallback.
 
 - **Request errors keep Claude on the same account.**
   Connection failures, login errors and service errors no longer move Claude

@@ -354,30 +354,17 @@ pub fn run() {
             {
                 let db = &app.state::<AppState>().db;
                 let proxy_url = db.get_global_proxy_url().ok().flatten();
+                crate::proxy::http_client::set_require_proxy(
+                    db.get_account_pool_config().unwrap_or_default().require_proxy,
+                );
 
                 if let Err(e) = crate::proxy::http_client::init(proxy_url.as_deref()) {
                     log::error!(
                         "[GlobalProxy] [GP-005] Failed to initialize with saved config: {e}"
                     );
 
-                    // Clear the invalid proxy config
-                    if proxy_url.is_some() {
-                        log::warn!(
-                            "[GlobalProxy] [GP-006] Clearing invalid proxy config from database"
-                        );
-                        if let Err(clear_err) = db.set_global_proxy_url(None) {
-                            log::error!(
-                                "[GlobalProxy] [GP-007] Failed to clear invalid config: {clear_err}"
-                            );
-                        }
-                    }
-
-                    // Re-initialise with a direct connection
-                    if let Err(fallback_err) = crate::proxy::http_client::init(None) {
-                        log::error!(
-                            "[GlobalProxy] [GP-008] Failed to initialize direct connection: {fallback_err}"
-                        );
-                    }
+                    // Preserve the configured route. An invalid proxy is an
+                    // error to fix in settings, never permission to go direct.
                 }
             }
 
@@ -529,6 +516,7 @@ pub fn run() {
             commands::get_account_pool_config,
             commands::set_account_pool_config,
             commands::get_account_pool_quota,
+            commands::get_proxy_route_status,
             commands::get_codex_window_updates,
             commands::set_codex_refresh_on_exit,
             commands::get_optimizer_config,

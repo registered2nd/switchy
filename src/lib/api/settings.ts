@@ -125,6 +125,10 @@ export const settingsApi = {
     return await invoke("get_account_pool_config");
   },
 
+  async getProxyRouteStatus(): Promise<ProxyRouteStatus[]> {
+    return await invoke("get_proxy_route_status");
+  },
+
   async getCodexWindowUpdates(): Promise<CodexWindowUpdate[]> {
     return await invoke("get_codex_window_updates");
   },
@@ -163,7 +167,9 @@ export interface RectifierConfig {
 export interface AccountPoolConfig {
   enabled: boolean;
   thresholdPercent: number;
-  /** ISO country codes subscription account traffic must never leave from. */
+  /** Require a global/local proxy or active TUN route without an account proxy. */
+  requireProxy: boolean;
+  /** ISO country codes that produce advisory subscription exit warnings. */
   blockedExitCountries: string[];
   /** Open each pooled account's session window before it is needed. */
   keepWarmEnabled: boolean;
@@ -171,6 +177,15 @@ export interface AccountPoolConfig {
   keepWarmIntervalMinutes: number;
   /** Sign Codex's shared background server in to the account the proxy serves. */
   codexSharedSession: boolean;
+}
+
+export interface ProxyRouteStatus {
+  route: string;
+  target: string;
+  country: string | null;
+  ip: string | null;
+  warning: string | null;
+  checkedAt: number;
 }
 
 export interface CodexWindowUpdate {

@@ -206,7 +206,8 @@ static REFRESH_STATE: Lazy<Mutex<HashMap<String, RefreshState>>> =
 /// Whether Anthropic has refused `provider`'s captured refresh token, so the
 /// account stays unusable until it is signed in and captured again.
 pub fn needs_sign_in(provider: &Provider) -> bool {
-    let Some(current) = read_stored(&provider.id).map(|stored| adopt_newer_live_login(provider, stored))
+    let Some(current) =
+        read_stored(&provider.id).map(|stored| adopt_newer_live_login(provider, stored))
     else {
         return false;
     };
@@ -313,6 +314,7 @@ async fn refresh_login(provider: &Provider, root: &Value) -> Result<Value, Proxy
     );
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
     let response = crate::proxy::http_client::get_for_provider(proxy_config)
+        .map_err(ProxyError::ForwardFailed)?
         .post(TOKEN_ENDPOINT)
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/plain, */*")
@@ -896,9 +898,6 @@ mod tests {
 
         propagate_refreshed_login(&provider, &root("a-new", "r-new", 2_000));
 
-        assert_eq!(
-            refresh_token(&home.wsl_login()).as_deref(),
-            Some("r-other")
-        );
+        assert_eq!(refresh_token(&home.wsl_login()).as_deref(), Some("r-other"));
     }
 }
