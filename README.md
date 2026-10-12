@@ -129,7 +129,7 @@ cd src-tauri && cargo test   # backend tests
 
 After reinstalling a running copy, verify port 15721 before using routed sessions; Switchy turns the proxy back on when it starts.
 
-The workstation runs development build **1.0.33**, installed on 2026-10-12. Country observations run in the background and provide warnings. Configured proxies remain mandatory; *Require proxy* is off for this machine's router-proxied Wi-Fi. Live Claude and Codex requests answered successfully after installation. This build is tracked under Unreleased above the public 1.0.29 history in [CHANGELOG.md](CHANGELOG.md).
+The workstation runs **1.0.33**, installed on 2026-10-12. Country observations run in the background and provide warnings. Configured proxies remain mandatory; *Require proxy* is off for this machine's router-proxied Wi-Fi. Live Claude and Codex requests answered successfully after installation. The Windows and Apple Silicon installers are in `installers/`; release history is in [CHANGELOG.md](CHANGELOG.md).
 
 The frontend is React and TypeScript (`src/`), the backend Tauri and Rust (`src-tauri/`). The SQLite database is the store; switching writes the selected provider into each tool's own config files.
 
