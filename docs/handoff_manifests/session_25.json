@@ -1,0 +1,96 @@
+{
+  "schema_version": 2,
+  "base": {
+    "context_generated_at": "2026-10-12T09:50:08.439348Z",
+    "context_source_revision": "workstate:handoff/switchy/session_24@sha256:dc76c51259358b02459270fa446ce53a3aed76238b0e6cc194dcaaf6a669fa83",
+    "publication_token": 1949
+  },
+  "session": {
+    "id": "session_25",
+    "title": "Switchy 1.0.34: login-renewal network failures report as connection errors; Windows and macOS release",
+    "started_at": "2026-10-14T06:40:00Z",
+    "ended_at": "2026-10-14T06:40:00Z",
+    "purpose": "Answer the user's questions on manual sign-in and the Anthropic firewall kill-switch, check whether the outage's all-502 behaviour was designed, fix the login-renewal error classification found there, and release 1.0.34.",
+    "outcomes": [
+      "Explained the manual sign-in setting for a friend without Switchy: Claude Code's settings.json env BROWSER pointed at a no-op program (/usr/bin/true on macOS/Linux; Switchy ships a windowless no_browser.exe on Windows; a .cmd alternative was given but not tested). Nothing was changed.",
+      "Re-checked the four 'Block Anthropic direct' Windows Firewall rules on the workstation against system-setup/setup_and_credentials.md; they match. Stamped the re-check date (hub commit d9f1e0a). Gave the user an untested macOS pf equivalent for his friend in chat only; it is not recorded in any file.",
+      "Outage diagnosis from switchy.log and switchy.db proxy_request_logs on 2026-10-13: 16:50-17:13 local, 121 Claude and Codex requests returned 502 'TLS handshake failed: connection forcibly closed' after one same-account retry (~11 s), which is the designed behaviour. From 17:27 to 22:33 platform.claude.com stayed unreachable, so every request on the selected Claude account (ccb19499) and its hourly keep-warm failed in login renewal; clients received 401 'Authentication failed' (Claude Code shows 'Please run /login') and the log recorded 500, although the login was valid and renewed at 22:33:37. A ~3 s DNS failure at 22:31 affected only Claude Code's CONNECT side traffic, answered 502.",
+      "Fixed in a3c1081d: Claude and Codex token renewals report a transport failure, an unreadable reply, or a 429/5xx from the token endpoint as ForwardFailed (502, retried once on the same account); only 400/401/403, which also retires the refresh token, stays a login error. New unit test; cargo test --lib proxy:: -- --test-threads=1 passed 503.",
+      "Built 1.0.34 (the NSIS helper cache was mis-hashed; replaced the DLL by hand per LEARNINGS.md), installed it with the single stop/silent-install/relaunch/port-15721 command; installed binary reports 1.0.34 and live Claude and Codex requests returned 200.",
+      "Released: private pushed; cleaned public source published (public 1d877e29); macOS workflow run 38520862591 built the DMG, verified intact, version 1.0.34, ARM64; v1.0.34 published as latest with exe, msi and dmg, sizes and SHA-256 digests matching local files. Superseded 1.0.33 installers pruned.",
+      "the user's correction: a bug fix is not a DECISION_LOG entry. The entry added with the fix was removed in 32bdc7c5; the change is recorded in CHANGELOG and the commit only."
+    ],
+    "pickup": null,
+    "task_ids": [
+      "SW206"
+    ],
+    "artifact_ids": [],
+    "decision_pointers": [],
+    "finding_pointers": [
+      "C:/Projects/system-setup/setup_and_credentials.md"
+    ],
+    "evidence_pointers": [
+      "git:a3c1081d",
+      "git:32bdc7c5",
+      "git:3314cd02",
+      "git:15956204",
+      "https://github.com/registered2nd/switchy/releases/tag/v1.0.34",
+      "https://github.com/registered2nd/switchy/actions/runs/38520862591",
+      "C:/Projects/Switchy/CHANGELOG.md",
+      "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+      "C:/Projects/Switchy/src-tauri/src/proxy/codex_pool.rs",
+      "C:/Users/Administrator/.switchy/logs/switchy.log"
+    ],
+    "attention": false,
+    "attention_note": null,
+    "latest_summary": "1.0.34 released (Windows + Apple Silicon) and installed here: login-renewal network failures now report as retryable 502s instead of 401 'run /login'. Outage 502s confirmed as designed. SW206 done."
+  },
+  "context": {
+    "current_focus": {
+      "source": "C:/Projects/Switchy/README.md",
+      "summary": "Switchy 1.0.34 is the latest public Windows and Apple Silicon release and is installed on the workstation. A login renewal that cannot reach the sign-in service now reports a retryable connection error rather than asking for /login. The requested fix and release are complete; await the user's feedback. Prior renewal, restart, WSL, rotation and proxy-off checks remain pending under their triggers. The macOS build was not run on a Mac."
+    },
+    "initiative_focus": [],
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/connect_tunnel.rs",
+        "summary": "Confirm account-proxy coverage on the next natural Claude sign-in or renewal while Owen is selected, without forcing a new login. Claude Code's own exchange should log '[connect_tunnel] platform.claude.com:443 via socks5://82.26.163.142:45001'. For Switchy's renewal, observe '[claude_pool] refreshing login for provider=98e00f12...' and the successful refreshed-login message; the enforced per-account client route is owned by proxy/http_client.rs. Windows/WSL HTTPS_PROXY and NO_PROXY, UK exit probes and telemetry tunnels were verified; a live sign-in/renewal using this route remains unobserved. Connection failures must stop rather than fall back to direct; country observations only warn."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/lib.rs",
+        "summary": "CONFIRM THE RESTART PATH ON STEPHEN'S NEXT WINDOWS RESTART (1.0.29). In C:/Users/Administrator/.switchy/logs/switchy.prev.log after 'Session ending; handing the live configs back': '[session-end] claude/codex/gemini handed back', '[session-end] ... in WSL handed back', then 'Live configs handed back for the session end'. 'did not finish in 4 seconds' with the last [session-end] line shows which step stalls (Windows step = database lock, WSL step = WSL I/O); fix that step. In switchy.log: Switchy started within seconds of login (window hidden, launched with --autostart from HKCU Run), '[auto_launch] start at login on', proxy on 15721, and Claude Code / Codex answer without ECONNREFUSED."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+        "summary": "CONFIRM CLAUDE LOGINS STAY IN STEP WITH WSL (1.0.27). In switchy.log, when an account WSL is signed in to renews: '[claude_pool] provider=... took the newer login from WSL' or 'wrote the refreshed login through to WSL', and no new 'invalid_grant' 'Refresh token not found or invalid' in account_switches/provider_health. WSL's ~/.claude/.credentials.json and ~/.switchy/accounts/<id>/credentials.json for that account should carry the same refreshToken after each renewal."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/codex_ws.rs",
+        "summary": "CONFIRM ROTATION AND CODEX FAILOVER ON LIVE TRAFFIC (1.0.25/1.0.26). In C:/Users/Administrator/.switchy/logs/switchy.log and the switchy.db account_switches table: (a) when an account's five-hour window resets while another serves, a switch back to it with reason 'recovered' and detail \"Another account's weekly limit resets sooner\"; (b) a Codex turn refused for usage that continues an earlier one logs '[CodexWS] provider=... websocket closed (turn refused for usage; Codex resends it in full)' and the turn then completes on the next account with no error in Codex. GET http://127.0.0.1:15721/switchy/accounts shows current account, pool order, quota and atLimit per account."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      }
+    ]
+  },
+  "task_completions": [
+    {
+      "id": "SW206",
+      "refs": [
+        "git:a3c1081d",
+        "git:15956204",
+        "https://github.com/registered2nd/switchy/releases/tag/v1.0.34"
+      ],
+      "reason": "Token-renewal network failures now return 502 and retry instead of a login error; 503 proxy tests passed; 1.0.34 built, installed and live HTTP 200 verified; DMG verified (intact, 1.0.34, ARM64); private and public pushed; v1.0.34 published as latest with all three asset digests matching."
+    }
+  ]
+}
