@@ -8,6 +8,15 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A network outage no longer looks like a broken sign-in.** When Switchy
+  could not reach Claude's or ChatGPT's sign-in service to renew an account's
+  login, it answered with a login error, and Claude Code asked you to run
+  `/login`. It now reports a connection error, so the tools retry and carry on
+  once the network is back. A login the service actually rejects is still
+  reported as signed out.
+
 ## [1.0.33] — 2026-10-12 — Proxy enforcement and advisory region checks
 
 Windows installer: download `Switchy_1.0.33_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

@@ -594,7 +594,7 @@ async fn refresh_login(db: &Arc<Database>, provider: &mut Provider) -> Result<()
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| ProxyError::AuthError(format!("Codex token refresh failed: {e}")))?;
+        .map_err(|e| ProxyError::ForwardFailed(format!("Codex token refresh failed: {e}")))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -610,15 +610,16 @@ async fn refresh_login(db: &Arc<Database>, provider: &mut Provider) -> Result<()
                 .dead_refresh_token = Some(refresh_token);
             sign_codex_out_for(provider);
         }
-        return Err(ProxyError::AuthError(format!(
+        let message = format!(
             "Codex token refresh for {} was refused ({status}): {}",
             provider.name,
             body.chars().take(200).collect::<String>()
-        )));
+        );
+        return Err(super::claude_pool::refresh_refusal(status.as_u16(), message));
     }
 
     let data: Value = response.json().await.map_err(|e| {
-        ProxyError::AuthError(format!("Codex token refresh: unreadable reply: {e}"))
+        ProxyError::ForwardFailed(format!("Codex token refresh: unreadable reply: {e}"))
     })?;
     let new_auth = apply_refresh_response(&auth, &data).ok_or_else(|| {
         ProxyError::AuthError("Codex token refresh returned no access token".to_string())

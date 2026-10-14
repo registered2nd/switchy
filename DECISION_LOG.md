@@ -2,6 +2,12 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-10-13 — A login renewal that cannot reach the sign-in service is a connection error
+
+- Decision: Claude and Codex token renewals report a network failure, an unreadable reply, a 429 or a 5xx from the token endpoint as a forwarding failure (502, retried once on the same account). Only a 400, 401 or 403, which also retires the refresh token, is a login error.
+- Why: during a 5-hour outage on 2026-10-13, `platform.claude.com` was unreachable and every request on the selected account returned 401 "Authentication failed", which Claude Code answers with "Please run /login", although the login was valid and renewed once the network returned.
+- Files: `refresh_refusal` and `refresh_login` in `src-tauri/src/proxy/claude_pool.rs`; `refresh_login` in `src-tauri/src/proxy/codex_pool.rs`.
+
 ## 2026-10-11 — Claude request errors stay on the serving account; quota drives switching
 
 - Decision: Claude request failures do not open a circuit breaker, reduce concurrency or try another account. Quota rotation uses the configured percentage, and exhausted account or model quota can trigger fallback; both continue to update the selected account, saved login, window and tray.

@@ -286,6 +286,18 @@ pub async fn access_token_for(provider: &Provider, force: bool) -> Result<String
     })
 }
 
+/// A login renewal the token endpoint answered with an error. Only a rejection
+/// of the token is a login problem; a server error or rate limit is the
+/// service being unreachable, reported like a dropped connection so the app
+/// retries instead of asking the user to sign in again.
+pub(crate) fn refresh_refusal(status: u16, message: String) -> ProxyError {
+    if matches!(status, 400 | 401 | 403) {
+        ProxyError::AuthError(message)
+    } else {
+        ProxyError::ForwardFailed(message)
+    }
+}
+
 async fn refresh_login(provider: &Provider, root: &Value) -> Result<Value, ProxyError> {
     let refresh_token = refresh_token(root).ok_or_else(|| {
         ProxyError::AuthError(format!(
@@ -327,7 +339,7 @@ async fn refresh_login(provider: &Provider, root: &Value) -> Result<Value, Proxy
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| ProxyError::AuthError(format!("Claude token refresh failed: {e}")))?;
+        .map_err(|e| ProxyError::ForwardFailed(format!("Claude token refresh failed: {e}")))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -339,15 +351,16 @@ async fn refresh_login(provider: &Provider, root: &Value) -> Result<Value, Proxy
                 .or_default()
                 .dead_refresh_token = Some(refresh_token);
         }
-        return Err(ProxyError::AuthError(format!(
+        let message = format!(
             "Claude token refresh for {} was refused ({status}): {}",
             provider.name,
             body.chars().take(200).collect::<String>()
-        )));
+        );
+        return Err(refresh_refusal(status.as_u16(), message));
     }
 
     let data: Value = response.json().await.map_err(|e| {
-        ProxyError::AuthError(format!("Claude token refresh: unreadable reply: {e}"))
+        ProxyError::ForwardFailed(format!("Claude token refresh: unreadable reply: {e}"))
     })?;
     let renewed = apply_refresh_response(root, &data, chrono::Utc::now().timestamp_millis())
         .ok_or_else(|| {
@@ -645,6 +658,22 @@ mod tests {
             },
             "mcpOAuth": { "keep": true }
         })
+    }
+
+    #[test]
+    fn only_a_rejected_token_makes_a_refresh_failure_a_login_problem() {
+        for status in [400, 401, 403] {
+            assert!(matches!(
+                refresh_refusal(status, String::new()),
+                ProxyError::AuthError(_)
+            ));
+        }
+        for status in [429, 500, 502, 503, 504] {
+            assert!(matches!(
+                refresh_refusal(status, String::new()),
+                ProxyError::ForwardFailed(_)
+            ));
+        }
     }
 
     #[test]
