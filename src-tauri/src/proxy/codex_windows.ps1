@@ -130,9 +130,17 @@ function global:codex {
             finally { Remove-Item Env:\SWITCHY_CODEX_WINDOW_TOKEN -ErrorAction SilentlyContinue }
             $swExit = $LASTEXITCODE
             if (-not (Test-Path $swRefresh)) { return }
+            # Switchy names the conversation this window was in when it is
+            # certain. Without one the picker opens, so another window's
+            # conversation is never taken.
+            $swThread = ''
+            try { $swThread = [System.IO.File]::ReadAllText("$swBase.thread").Trim() } catch { }
             $swArgs = @($swResume) + @('resume')
+            if ($swThread -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
+                $swArgs += $swThread
+            }
         } finally {
-            Remove-Item -LiteralPath $swMarker, $swRefresh, "$swBase.token" -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $swMarker, $swRefresh, "$swBase.token", "$swBase.thread" -ErrorAction SilentlyContinue
             if ($swServer -and -not $swServer.HasExited) {
                 & taskkill.exe /PID $swServer.Id /T /F *> $null
             }

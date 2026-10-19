@@ -144,18 +144,27 @@ codex() {
     ( ( _sw_shell=$$
         while kill -0 "$_sw_shell" 2>/dev/null && [ -S "$_sw_sock" ]; do sleep 5; done
         pkill -f "unix://$_sw_sock"; sleep 3; pkill -KILL -f "unix://$_sw_sock"
-        rm -f "$_sw_sock" "$_sw_sock.session" "$_sw_sock.refresh" ) </dev/null >/dev/null 2>&1 & )
+        rm -f "$_sw_sock" "$_sw_sock.session" "$_sw_sock.refresh" "$_sw_sock.thread" ) </dev/null >/dev/null 2>&1 & )
     sleep 1
     command codex --remote "unix://$_sw_sock" "$@"
     _sw_rc=$?
     _sw_refresh=0
-    if [ -e "$_sw_sock.refresh" ]; then _sw_refresh=1; fi
-    rm -f "$_sw_sock.session" "$_sw_sock.refresh"
+    _sw_thread=
+    if [ -e "$_sw_sock.refresh" ]; then
+      _sw_refresh=1
+      # Switchy names the conversation this window was in when it is certain.
+      [ -r "$_sw_sock.thread" ] && read -r _sw_thread < "$_sw_sock.thread"
+    fi
+    rm -f "$_sw_sock.session" "$_sw_sock.refresh" "$_sw_sock.thread"
     ( ( pkill -f "unix://$_sw_sock"; sleep 3; pkill -KILL -f "unix://$_sw_sock"; rm -f "$_sw_sock" ) </dev/null >/dev/null 2>&1 & )
     if [ "$_sw_refresh" -ne 1 ]; then return $_sw_rc; fi
-    # The picker preserves the right conversation even when several threads
-    # were loaded on the old server. The new server uses the installed CLI.
+    # The new server uses the installed CLI. Without a named conversation the
+    # picker opens, so another window's conversation is never taken.
     set -- "${_sw_resume_opts[@]}" resume
+    case "$_sw_thread" in
+      *[!0-9a-fA-F-]*) ;;
+      ????????-????-????-????-????????????) set -- "$@" "$_sw_thread" ;;
+    esac
   done
 }
 "#;
@@ -677,12 +686,13 @@ pub fn set_refresh_on_exit(socket: &str, queued: bool) -> Result<(), String> {
     }
     let marker = session.marker.with_extension("refresh");
     if queued {
-        std::fs::write(&marker, "").map_err(|e| format!("Could not queue refresh: {e}"))
+        std::fs::write(&marker, "").map_err(|e| format!("Could not queue refresh: {e}"))?;
     } else if marker.exists() {
-        std::fs::remove_file(&marker).map_err(|e| format!("Could not cancel refresh: {e}"))
-    } else {
-        Ok(())
+        std::fs::remove_file(&marker).map_err(|e| format!("Could not cancel refresh: {e}"))?;
     }
+    // The window's connection names its conversation for the shell now.
+    nudge();
+    Ok(())
 }
 
 /// `Ubuntu-22.04` from `\\wsl$\Ubuntu-22.04\home\...` or
@@ -827,6 +837,7 @@ fn forget(socket: &str, marker: &Path, why: &str) {
     for path in [
         marker.with_extension("token"),
         marker.with_extension("refresh"),
+        marker.with_extension("thread"),
         marker.to_path_buf(),
     ] {
         match std::fs::remove_file(&path) {
@@ -850,9 +861,10 @@ fn wsl_socket_gone(said: &str) -> bool {
 
 /// Holds one window's server: signs it in to the current account whenever
 /// that account or its token changes, once none of its conversations is
-/// mid-turn, and answers its requests for new tokens. Returns when the
-/// window's session file goes away: the relay does not end when its server
-/// does.
+/// mid-turn, answers its requests for new tokens, and while a refresh on exit
+/// is queued names the window's conversation for its shell to resume. Returns
+/// when the window's session file goes away: the relay does not end when its
+/// server does.
 async fn serve(
     db: &Arc<Database>,
     install: &Install,
@@ -967,8 +979,16 @@ async fn serve(
     // when the server was last asked whether it is still mid-turn.
     let mut deferred: Option<(String, String)> = None;
     let mut checked_at = Instant::now();
+    // The conversation last named for the shell (`Some(None)`: none), when
+    // that was decided, and whether the loaded conversations may have changed
+    // since.
+    let thread_file = marker.with_extension("thread");
+    let mut named: Option<Option<String>> = None;
+    let mut named_at = Instant::now();
+    let mut stale = true;
     loop {
         if !marker.exists() {
+            name_conversation(&thread_file, None);
             return Ok(());
         }
         if let Some(provider) = current_account(db) {
@@ -1030,6 +1050,39 @@ async fn serve(
             }
         }
 
+        if stale || named_at.elapsed() >= TICK {
+            stale = false;
+            named_at = Instant::now();
+            let id = if marker.with_extension("refresh").exists() {
+                match loaded_threads(&mut tx, &mut rx, db, &mut next_id).await {
+                    Ok(Some(threads)) => Some(own_conversation(&threads)),
+                    Ok(None) => return Ok(()),
+                    Err(e) => {
+                        log::debug!(
+                            "[codex_engine] {socket}: could not read its conversations: {e}"
+                        );
+                        None
+                    }
+                }
+            } else {
+                Some(None)
+            };
+            if let Some(id) = id.filter(|id| named.as_ref() != Some(id)) {
+                name_conversation(&thread_file, id.as_deref());
+                if marker.with_extension("refresh").exists() {
+                    match &id {
+                        Some(id) => log::info!(
+                            "[codex_engine] {socket}: refresh on exit resumes conversation {id}"
+                        ),
+                        None => log::info!(
+                            "[codex_engine] {socket}: refresh on exit opens the conversation picker; the window has no single conversation"
+                        ),
+                    }
+                }
+                named = Some(id);
+            }
+        }
+
         tokio::select! {
             message = rx.next() => {
                 let Some(message) = message else {
@@ -1040,13 +1093,100 @@ async fn serve(
                     Ok(Message::Close(_)) | Err(_) => return Ok(()),
                     Ok(_) => continue,
                 };
+                // A conversation was opened or got its first message.
+                stale |= text.contains("\"thread/started\"")
+                    || text.contains("\"thread/status/changed\"");
                 if let Some(reply) = answer(db, &text).await {
                     tx.send(send(reply)).await.map_err(|e| e.to_string())?;
                 }
             }
-            _ = tokio::time::timeout(TICK, wake.changed()) => {}
+            _ = tokio::time::timeout(TICK, wake.changed()) => stale = true,
         }
     }
+}
+
+/// Names the conversation a window's shell resumes after a refresh on exit,
+/// or removes the name.
+fn name_conversation(path: &Path, id: Option<&str>) {
+    let result = match id {
+        Some(id) => std::fs::write(path, format!("{id}\n")),
+        None => match std::fs::remove_file(path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        },
+    };
+    if let Err(e) = result {
+        log::warn!("[codex_engine] could not update {}: {e}", path.display());
+    }
+}
+
+/// The conversation a window is in, when that is certain: the one
+/// conversation with a message among the threads loaded on its server. The
+/// server keeps every conversation its window opened loaded until it stops,
+/// beside the empty thread the window starts with, a short-lived one that
+/// titles a new conversation, and subagents' threads; those are left out.
+/// `None` when no conversation or more than one remains.
+fn own_conversation(threads: &[Value]) -> Option<String> {
+    let mut ids = threads
+        .iter()
+        .filter(|thread| {
+            thread.get("parentThreadId").is_none_or(Value::is_null)
+                && thread.get("ephemeral").and_then(Value::as_bool) != Some(true)
+                && thread
+                    .get("preview")
+                    .and_then(Value::as_str)
+                    .is_some_and(|preview| !preview.is_empty())
+        })
+        .filter_map(|thread| thread.get("id").and_then(Value::as_str));
+    let id = ids.next()?;
+    (ids.next().is_none() && is_thread_id(id)).then(|| id.to_string())
+}
+
+/// A Codex thread id, the only form the window's shell resumes.
+fn is_thread_id(id: &str) -> bool {
+    id.len() == 36
+        && id.char_indices().all(|(i, c)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                c == '-'
+            } else {
+                c.is_ascii_hexdigit()
+            }
+        })
+}
+
+/// Every thread loaded on a window's server, as `thread/read` describes it.
+/// `Ok(None)` when the connection closed.
+async fn loaded_threads(
+    tx: &mut WsTx,
+    rx: &mut WsRx,
+    db: &Arc<Database>,
+    next_id: &mut i64,
+) -> Result<Option<Vec<Value>>, String> {
+    let Some(list) = call(tx, rx, db, next_id, "thread/loaded/list", json!({})).await? else {
+        return Ok(None);
+    };
+    let ids: Vec<String> = list
+        .pointer("/result/data")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("thread/loaded/list answered {list}"))?
+        .iter()
+        .filter_map(|thread| thread.as_str().map(str::to_string))
+        .collect();
+    let mut threads = Vec::new();
+    for id in ids {
+        let params = json!({ "threadId": id, "includeTurns": false });
+        let Some(mut read) = call(tx, rx, db, next_id, "thread/read", params).await? else {
+            return Ok(None);
+        };
+        if let Some(thread) = read
+            .pointer_mut("/result/thread")
+            .map(Value::take)
+            .filter(Value::is_object)
+        {
+            threads.push(thread);
+        }
+    }
+    Ok(Some(threads))
 }
 
 /// Whether any conversation loaded on a window's server is mid-turn. Signing
@@ -1059,30 +1199,11 @@ async fn window_busy(
     db: &Arc<Database>,
     next_id: &mut i64,
 ) -> Result<Option<bool>, String> {
-    let Some(list) = call(tx, rx, db, next_id, "thread/loaded/list", json!({})).await? else {
-        return Ok(None);
-    };
-    let threads: Vec<String> = list
-        .pointer("/result/data")
-        .and_then(Value::as_array)
-        .ok_or_else(|| format!("thread/loaded/list answered {list}"))?
-        .iter()
-        .filter_map(|thread| thread.as_str().map(str::to_string))
-        .collect();
-    for thread in threads {
-        let params = json!({ "threadId": thread, "includeTurns": false });
-        let Some(read) = call(tx, rx, db, next_id, "thread/read", params).await? else {
-            return Ok(None);
-        };
-        if read
-            .pointer("/result/thread/status/type")
-            .and_then(Value::as_str)
-            == Some("active")
-        {
-            return Ok(Some(true));
-        }
-    }
-    Ok(Some(false))
+    Ok(loaded_threads(tx, rx, db, next_id).await?.map(|threads| {
+        threads
+            .iter()
+            .any(|thread| thread.pointer("/status/type").and_then(Value::as_str) == Some("active"))
+    }))
 }
 
 /// Sends one request to a window's server and returns its response, answering
@@ -1390,6 +1511,128 @@ mod tests {
         )));
         assert!(!wsl_socket_gone(""));
         assert!(!wsl_socket_gone("No such file or directory (os error 2)"));
+    }
+
+    /// The threads a window's server holds after it was started and one
+    /// conversation was opened: the empty one it started with, the
+    /// conversation, the short-lived thread that titled it, and a subagent's.
+    fn window_threads(conversation: &str) -> Vec<Value> {
+        vec![
+            json!({ "id": "01a154ce-1092-7ff0-9287-bfe0d4a8a215", "parentThreadId": null, "ephemeral": false, "preview": "" }),
+            json!({ "id": conversation, "parentThreadId": null, "ephemeral": false, "preview": "Reply with BRAVO." }),
+            json!({ "id": "01a154cd-4748-7d42-8593-2b9900c8c65b", "parentThreadId": null, "ephemeral": true, "preview": "" }),
+            json!({ "id": "01a154cf-0000-7000-8000-000000000001", "parentThreadId": conversation, "ephemeral": false, "preview": "Check the tests." }),
+        ]
+    }
+
+    #[test]
+    fn a_window_names_its_conversation_only_when_it_has_exactly_one() {
+        let conversation = "01a154cd-3b7a-75a1-a33e-087f6c86447c";
+        let mut threads = window_threads(conversation);
+        assert_eq!(own_conversation(&threads).as_deref(), Some(conversation));
+
+        // Only the empty thread it started with: no conversation yet.
+        assert_eq!(own_conversation(&threads[..1]), None);
+
+        // A second conversation opened in the same window.
+        threads.push(
+            json!({ "id": "01a154d0-5555-7000-8000-000000000002", "preview": "Another one." }),
+        );
+        assert_eq!(own_conversation(&threads), None);
+
+        // Anything but a thread id is never handed to the shell.
+        let odd = vec![json!({ "id": "BRAVO; rm -rf ~", "preview": "x" })];
+        assert_eq!(own_conversation(&odd), None);
+        assert!(is_thread_id(conversation));
+        assert!(!is_thread_id("01a154cd3b7a-75a1-a33e-087f6c86447c-"));
+        assert!(!is_thread_id("01a154cd-3b7a-75a1-a33e-087f6c86447"));
+    }
+
+    /// A window server that answers `thread/loaded/list` and `thread/read`
+    /// from `threads`, and every other request with an empty result.
+    async fn conversation_server(threads: Vec<Value>) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let socket = format!("ws://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            while let Some(Ok(message)) = ws.next().await {
+                let Message::Text(text) = message else {
+                    continue;
+                };
+                let request: Value = serde_json::from_str(&text).unwrap();
+                let Some(id) = request.get("id").cloned() else {
+                    continue;
+                };
+                let result = match request["method"].as_str() {
+                    Some("thread/loaded/list") => json!({
+                        "data": threads.iter().map(|thread| thread["id"].clone()).collect::<Vec<_>>(),
+                    }),
+                    Some("thread/read") => json!({
+                        "thread": threads.iter().find(|thread| thread["id"] == request["params"]["threadId"]),
+                    }),
+                    _ => json!({}),
+                };
+                let reply = json!({ "id": id, "result": result }).to_string();
+                if ws.send(Message::Text(reply.into())).await.is_err() {
+                    break;
+                }
+            }
+        });
+        socket
+    }
+
+    #[tokio::test]
+    async fn a_queued_window_names_its_conversation_for_the_shell_until_it_closes() {
+        let db = Arc::new(Database::memory().unwrap());
+        let home = tempfile::TempDir::new().expect("temp home");
+        let install = Install {
+            kind: InstallKind::Windows,
+            codex_dir: home.path().join(".codex"),
+        };
+        std::fs::create_dir_all(install.sessions_dir()).expect("sessions dir");
+        let conversation = "01a154cd-3b7a-75a1-a33e-087f6c86447c";
+        let socket = conversation_server(window_threads(conversation)).await;
+        let marker = install.sessions_dir().join("window.session");
+        std::fs::write(&marker, format!("{socket}\nrefresh-on-exit-v1\n")).unwrap();
+        std::fs::write(marker.with_extension("token"), "token").unwrap();
+        std::fs::write(marker.with_extension("refresh"), "").unwrap();
+        let named = marker.with_extension("thread");
+        async fn eventually(done: impl Fn() -> bool) -> bool {
+            let started = Instant::now();
+            while !done() && started.elapsed() < Duration::from_secs(10) {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            done()
+        }
+
+        let serving = {
+            let (db, install, socket, marker) =
+                (db.clone(), install.clone(), socket.clone(), marker.clone());
+            tokio::spawn(async move { serve(&db, &install, &socket, &marker).await })
+        };
+        let read = || std::fs::read_to_string(&named).unwrap_or_default();
+        assert!(
+            eventually(|| read() == format!("{conversation}\n")).await,
+            "named {:?}",
+            read()
+        );
+
+        // A cancelled refresh takes the name back.
+        std::fs::remove_file(marker.with_extension("refresh")).unwrap();
+        nudge();
+        assert!(eventually(|| !named.exists()).await);
+
+        // A closed window leaves nothing behind.
+        std::fs::write(marker.with_extension("refresh"), "").unwrap();
+        nudge();
+        assert!(eventually(|| named.exists()).await);
+        std::fs::remove_file(&marker).unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(10), serving)
+            .await
+            .expect("serve returns once the window closes");
+        assert_eq!(result.unwrap(), Ok(()));
+        assert!(!named.exists());
     }
 
     /// A window server that answers each request with the next scripted

@@ -8,6 +8,23 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.38] — 2026-10-19 — A refreshed Codex window comes back on its own conversation
+
+Windows installer: download `Switchy_1.0.38_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.38_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Changed
+
+- **Refresh on exit reopens the window's conversation.** A Codex window
+  queued for refresh in Settings → Pool used to come back on Codex's
+  conversation picker after you exited it. It now comes back on the
+  conversation it was showing, with the options it was started with, even
+  when other windows have conversations in the same folder. When the window
+  has no conversation with a message yet, or has opened more than one, the
+  picker still opens. Open a new terminal after installing so it uses the new
+  `codex` function.
+
 ## [1.0.37] — 2026-10-19 — Closed Codex windows are forgotten
 
 Windows installer: download `Switchy_1.0.37_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
