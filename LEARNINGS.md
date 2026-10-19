@@ -221,3 +221,11 @@ In the overlay-z-index thread, four commits tried to fix the same bug by moving 
 **Rule:** If the first attempt at a visual bug doesn't work, don't try a variant. Stop and ask: what does the DOM/CSS actually produce here, and why did the fix not take? One round of "let me look at the code again" beats three rounds of "let me try moving it."
 
 **How to apply:** On any rebuild that takes >5 min (Tauri release builds, native compiles), the cost of being wrong compounds. Trace before you tweak.
+
+## `wsl.exe -- cmd` re-parses the command in the distro's shell; use `-e` to pass arguments through
+
+`wsl.exe -d <distro> -- bash -lc '<script>'` does not hand `<script>` to bash as one argument. WSL joins everything after `--` into a command line and runs it through the distro's default shell first, so `$variables` and `$(...)` in the script are expanded by that shell before bash sees it: `p=hello; echo "[$p]"` prints `[]`. `wsl.exe -d <distro> -e bash -lc '<script>'` execs bash with the arguments as given and prints `[hello]`. Switchy's WSL scripts (`Install::shell` in `codex_engine.rs`) used `--` unnoticed, because the scripts it ran expanded to the same text either way; the first script with its own variable (a `pkill -f` pattern) silently matched nothing.
+
+**Rule:** Run a script in WSL with `wsl.exe -e bash -lc <script>`, never `--`, whenever the script contains `$`.
+
+**How to apply:** When a WSL command started from Windows "does nothing" and returns success, print the script's own variables from inside it before debugging the logic. From Git Bash, test with a quoted heredoc into `bash -s`, since Git Bash also rewrites `/paths` in arguments to native programs.
