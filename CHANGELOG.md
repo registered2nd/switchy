@@ -20,8 +20,9 @@ macOS (Apple Silicon): download `Switchy_1.0.39_aarch64.dmg` below, open it and 
   need a refresh* with a **Refresh** button for each. Switchy waits until
   Codex in that terminal has finished its reply, quits it, and the terminal
   starts the installed CLI on the same conversation by itself; you no longer
-  type `/exit`. In an Orca terminal Switchy types `/exit` there; in any other
-  terminal it ends Codex and puts the terminal back as it was. Text typed but
+  type `/exit`. In an Orca terminal Switchy quits Codex there as you would
+  (Ctrl+C, then `/exit` if it is still open); in any other terminal it ends
+  Codex and puts the terminal back as it was. Text typed but
   not sent in that Codex's input box is lost. While a reply is running the
   entry says it is waiting, and the refresh can still be cancelled. Codex
   started before this version gets **Refresh** too when it runs in an Orca
