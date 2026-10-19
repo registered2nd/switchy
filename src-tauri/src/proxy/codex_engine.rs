@@ -392,7 +392,9 @@ impl Install {
         let InstallKind::Wsl(distro) = &self.kind else {
             unreachable!()
         };
-        command.args(["-d", distro, "--", "bash", "-lc", script]);
+        // `-e` runs bash itself; after `--` the distro's shell would read the
+        // script first and expand its variables.
+        command.args(["-d", distro, "-e", "bash", "-lc", script]);
         #[cfg(windows)]
         {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -2197,15 +2199,11 @@ mod tests {
             pane: "tab-1:leaf-2".into(),
             handle: "term_abc".into(),
         };
-        let found = orca_from_environment(
-            "ORCA_TERMINAL_HANDLE=term_abc
-ORCA_PANE_KEY=tab-1:leaf-2
-",
-        );
+        let found =
+            orca_from_environment("ORCA_TERMINAL_HANDLE=term_abc\r\nORCA_PANE_KEY=tab-1:leaf-2\r\n");
         assert_eq!(found, Some(orca));
         assert_eq!(
-            orca_from_environment("ORCA_PANE_KEY=tab-1:leaf-2
-"),
+            orca_from_environment("ORCA_PANE_KEY=tab-1:leaf-2\n"),
             Some(Terminal::Orca {
                 pane: "tab-1:leaf-2".into(),
                 handle: String::new(),
@@ -2213,17 +2211,15 @@ ORCA_PANE_KEY=tab-1:leaf-2
         );
         // Outside Orca, or behind tmux or screen inside it.
         assert_eq!(orca_from_environment(""), None);
-        assert_eq!(orca_from_environment("ORCA_PANE_KEY=
-"), None);
+        assert_eq!(orca_from_environment("ORCA_PANE_KEY=\n"), None);
         assert_eq!(
-            orca_from_environment("ORCA_PANE_KEY=tab-1:leaf-2
-TMUX=/tmp/tmux-1000/default,1,0
-"),
+            orca_from_environment("ORCA_PANE_KEY=tab-1:leaf-2\nTMUX=/tmp/tmux-1000/default,1,0\n"),
             None
         );
-        assert_eq!(orca_from_environment("STY=1.pts-0
-ORCA_PANE_KEY=tab-1:leaf-2
-"), None);
+        assert_eq!(
+            orca_from_environment("STY=1.pts-0\nORCA_PANE_KEY=tab-1:leaf-2\n"),
+            None
+        );
     }
 
     #[test]
