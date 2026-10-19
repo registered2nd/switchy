@@ -1563,7 +1563,12 @@ fn orca_handle(terminals: &[Value], pane: &str, handle: &str) -> Option<String> 
 }
 
 /// Quits Codex in an Orca pane as a user would: Ctrl+C clears anything typed
-/// but not sent, then `/exit`. Returns the pane's handle.
+/// but not sent, then `/exit` and Enter. Each goes as plain input: with
+/// `--enter`, Orca treats the text as an agent prompt and watches for its
+/// submission, and sent right after a reply that call outlasted Codex and the
+/// restarted Codex quit too. Enter goes on its own so Codex does not take it
+/// as part of a paste.
+/// Returns the pane's handle.
 async fn type_exit(pane: &str, handle: &str) -> Result<String, String> {
     let cli = orca_cli().ok_or("the Orca command line is not installed")?;
     let list = orca(&cli, &["terminal", "list"]).await?;
@@ -1574,11 +1579,9 @@ async fn type_exit(pane: &str, handle: &str) -> Result<String, String> {
     let handle = orca_handle(terminals, pane, handle).ok_or("its Orca pane is closed")?;
     orca(&cli, &["terminal", "send", "--terminal", &handle, "--interrupt"]).await?;
     tokio::time::sleep(Duration::from_millis(500)).await;
-    orca(
-        &cli,
-        &["terminal", "send", "--terminal", &handle, "--text", "/exit", "--enter"],
-    )
-    .await?;
+    orca(&cli, &["terminal", "send", "--terminal", &handle, "--text", "/exit"]).await?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    orca(&cli, &["terminal", "send", "--terminal", &handle, "--text", "\r"]).await?;
     Ok(handle)
 }
 
