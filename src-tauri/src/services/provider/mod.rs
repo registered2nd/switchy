@@ -1447,6 +1447,15 @@ impl ProviderService {
             crate::settings::get_effective_current_provider(&state.db, &app_type).unwrap_or(None);
         let result = Self::switch_inner(state, app_type.clone(), id)?;
         crate::proxy::manual_hold::hold(app_type.as_str(), id);
+        // Picking another account by hand ends a lock on the app.
+        if crate::proxy::manual_hold::locked(app_type.as_str()).is_none() {
+            let mut locks = state.db.get_account_locks().unwrap_or_default();
+            if locks.remove(app_type.as_str()).is_some() {
+                if let Err(e) = state.db.set_account_locks(&locks) {
+                    log::warn!("Could not save the ended {} lock: {e}", app_type.as_str());
+                }
+            }
+        }
         if matches!(app_type, AppType::Codex) {
             Self::check_picked_codex_login(state, id);
             crate::proxy::codex_engine::nudge();

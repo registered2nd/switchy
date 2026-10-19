@@ -225,6 +225,8 @@ export const useSwitchProviderMutation = (appId: AppId) => {
         queryKey: ["failoverQueue", appId],
       });
       await queryClient.invalidateQueries({ queryKey: ["codexAccount"] });
+      // Enabling another account by hand ends a lock.
+      await queryClient.invalidateQueries({ queryKey: ["accountLocks"] });
       await queryClient.invalidateQueries({
         queryKey: ["subscription", "quota"],
       });

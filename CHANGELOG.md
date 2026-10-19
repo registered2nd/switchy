@@ -8,6 +8,21 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.36] — 2026-10-19 — Lock in an account
+
+Windows installer: download `Switchy_1.0.36_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.36_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Added
+
+- **Lock in an account.** Official Claude and Codex cards have a *Lock in*
+  button. It enables that account and keeps it: no rotation and no automatic
+  switch move the app off it, whatever the switching rules would pick, until
+  you click *Locked* to unlock it or enable another account. The lock survives
+  a restart. Agents can do the same with the `lock_account` and
+  `unlock_account` commands.
+
 ## [1.0.35] — 2026-10-19 — An agent can drive the whole app
 
 Windows installer: download `Switchy_1.0.35_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

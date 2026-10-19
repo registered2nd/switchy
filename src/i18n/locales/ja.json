@@ -106,7 +106,11 @@
     },
     "duplicateLiveIdsLoadFailed": "設定からプロバイダー識別子の読み込みに失敗しました。設定を修正してから再度お試しください。",
     "live": "使用中",
-    "inConfig": "設定に含まれています"
+    "inConfig": "設定に含まれています",
+    "lockIn": "固定",
+    "locked": "固定中",
+    "lockInHint": "解除するまで、このアカウントだけを使います（ローテーションや自動切り替えなし）",
+    "unlockHint": "解除すると自動切り替えが再開します"
   },
   "notifications": {
     "providerAdded": "プロバイダーを追加しました",

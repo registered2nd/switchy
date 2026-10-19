@@ -107,6 +107,51 @@ pub fn switch_provider(
     switch_provider_internal(&state, app_type, &id).map_err(|e| e.to_string())
 }
 
+/// Locks the app on one account: it is enabled, and the proxy serves it
+/// alone, with no rotation or automatic switch, until it is unlocked or
+/// another account is enabled by hand. The lock survives a restart.
+#[tauri::command]
+pub fn lock_account(state: State<'_, AppState>, app: String, id: String) -> Result<bool, String> {
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+    let current = crate::settings::get_effective_current_provider(&state.db, &app_type)
+        .map_err(|e| e.to_string())?;
+    if current.as_deref() != Some(id.as_str()) {
+        switch_provider_internal(&state, app_type.clone(), &id).map_err(|e| e.to_string())?;
+    }
+    let mut locks = state.db.get_account_locks().map_err(|e| e.to_string())?;
+    locks.insert(app_type.as_str().to_string(), id.clone());
+    state
+        .db
+        .set_account_locks(&locks)
+        .map_err(|e| e.to_string())?;
+    crate::proxy::manual_hold::lock(app_type.as_str(), &id);
+    log::info!("[{}] locked on {id}", app_type.as_str());
+    Ok(true)
+}
+
+/// Ends the app's lock; automatic switching resumes.
+#[tauri::command]
+pub fn unlock_account(state: State<'_, AppState>, app: String) -> Result<bool, String> {
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+    let mut locks = state.db.get_account_locks().map_err(|e| e.to_string())?;
+    locks.remove(app_type.as_str());
+    state
+        .db
+        .set_account_locks(&locks)
+        .map_err(|e| e.to_string())?;
+    crate::proxy::manual_hold::unlock(app_type.as_str());
+    log::info!("[{}] unlocked", app_type.as_str());
+    Ok(true)
+}
+
+/// The account each app is locked on, by provider id.
+#[tauri::command]
+pub fn get_account_locks(
+    state: State<'_, AppState>,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    state.db.get_account_locks().map_err(|e| e.to_string())
+}
+
 fn import_default_config_internal(state: &AppState, app_type: AppType) -> Result<bool, AppError> {
     let imported = ProviderService::import_default_config(state, app_type.clone())?;
 

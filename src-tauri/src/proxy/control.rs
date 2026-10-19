@@ -59,6 +59,7 @@ pub async fn accounts(State(state): State<ProxyState>) -> Json<Value> {
             json!({
                 "current": current,
                 "heldByHand": super::manual_hold::held(app),
+                "locked": super::manual_hold::locked(app),
                 "order": order,
             }),
         );

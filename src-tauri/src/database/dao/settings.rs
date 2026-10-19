@@ -275,6 +275,24 @@ impl Database {
         self.set_setting("account_pool_config", &json)
     }
 
+    /// The account each app is locked on, by provider id.
+    pub fn get_account_locks(&self) -> Result<std::collections::HashMap<String, String>, AppError> {
+        match self.get_setting("account_locks")? {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|e| AppError::Database(format!("Failed to parse account locks: {e}"))),
+            None => Ok(std::collections::HashMap::new()),
+        }
+    }
+
+    pub fn set_account_locks(
+        &self,
+        locks: &std::collections::HashMap<String, String>,
+    ) -> Result<(), AppError> {
+        let json = serde_json::to_string(locks)
+            .map_err(|e| AppError::Database(format!("Failed to serialize account locks: {e}")))?;
+        self.set_setting("account_locks", &json)
+    }
+
     // --- Optimizer config ---
 
     /// Get the optimizer config

@@ -77,6 +77,20 @@ export const providersApi = {
     return await invoke("switch_provider", { id, app: appId });
   },
 
+  /** Locks the app on this account until it is unlocked, enabling it first. */
+  async lockAccount(id: string, appId: AppId): Promise<boolean> {
+    return await invoke("lock_account", { id, app: appId });
+  },
+
+  async unlockAccount(appId: AppId): Promise<boolean> {
+    return await invoke("unlock_account", { app: appId });
+  },
+
+  /** The account each app is locked on, by provider id. */
+  async getAccountLocks(): Promise<Record<string, string>> {
+    return await invoke("get_account_locks");
+  },
+
   async importDefault(appId: AppId): Promise<boolean> {
     return await invoke("import_default_config", { app: appId });
   },

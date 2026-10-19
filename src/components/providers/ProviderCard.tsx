@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { GripVertical, ChevronDown, ChevronUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -8,7 +8,7 @@ import type {
   DraggableSyntheticListeners,
 } from "@dnd-kit/core";
 import type { Provider } from "@/types";
-import type { AppId } from "@/lib/api";
+import { providersApi, type AppId } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ProviderActions } from "@/components/providers/ProviderActions";
 import { ProviderIcon } from "@/components/ProviderIcon";
@@ -242,6 +242,28 @@ export function ProviderCard({
     { kind: "needsConfirmation" }
   > | null>(null);
   const canCapture = appId === "claude" && isOfficial && isCurrent;
+
+  // A locked account is served alone, with no rotation, until it is unlocked.
+  const canLock = (appId === "claude" || appId === "codex") && isOfficial;
+  const { data: accountLocks } = useQuery({
+    queryKey: ["accountLocks"],
+    queryFn: () => providersApi.getAccountLocks(),
+    enabled: canLock,
+  });
+  const isLocked = accountLocks?.[appId] === provider.id;
+  const toggleLock = async () => {
+    try {
+      if (isLocked) {
+        await providersApi.unlockAccount(appId);
+      } else {
+        await providersApi.lockAccount(provider.id, appId);
+      }
+      await providersApi.updateTrayMenu();
+    } catch (error) {
+      toast.error(String(error));
+    }
+    await queryClient.invalidateQueries();
+  };
   const captureLogin = async (force: boolean) => {
     setCapturing(true);
     try {
@@ -484,6 +506,8 @@ export function ProviderCard({
               onDisableOmo={handleDisableAnyOmo}
               onCaptureLogin={canCapture ? () => captureLogin(false) : undefined}
               isCapturing={capturing}
+              isLocked={isLocked}
+              onToggleLock={canLock ? toggleLock : undefined}
               isAutoFailoverEnabled={isAutoFailoverEnabled}
               isInFailoverQueue={isInFailoverQueue}
               onToggleFailover={onToggleFailover}

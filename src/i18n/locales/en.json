@@ -106,7 +106,11 @@
     },
     "duplicateLiveIdsLoadFailed": "Failed to read provider IDs from the config. Fix the config and try again.",
     "live": "In use",
-    "inConfig": "In config"
+    "inConfig": "In config",
+    "lockIn": "Lock in",
+    "locked": "Locked",
+    "lockInHint": "Use only this account, with no rotation or automatic switching, until you unlock it",
+    "unlockHint": "Unlock: automatic switching resumes"
   },
   "notifications": {
     "providerAdded": "Provider added",

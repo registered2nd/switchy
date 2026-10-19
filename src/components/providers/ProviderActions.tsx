@@ -7,6 +7,8 @@ import {
   ListMinus,
   ListPlus,
   Loader2,
+  Lock,
+  LockOpen,
   Minus,
   MoreHorizontal,
   Plus,
@@ -42,6 +44,8 @@ interface ProviderActionsProps {
   onDisableOmo?: () => void;
   onCaptureLogin?: () => void;
   isCapturing?: boolean;
+  isLocked?: boolean;
+  onToggleLock?: () => void;
   isAutoFailoverEnabled?: boolean;
   isInFailoverQueue?: boolean;
   onToggleFailover?: (enabled: boolean) => void;
@@ -66,6 +70,8 @@ export function ProviderActions({
   onDisableOmo,
   onCaptureLogin,
   isCapturing = false,
+  isLocked = false,
+  onToggleLock,
   isAutoFailoverEnabled = false,
   isInFailoverQueue = false,
   onToggleFailover,
@@ -210,6 +216,33 @@ export function ProviderActions({
         >
           {isCapturing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {t("claudeAccount.capture.short", { defaultValue: "Capture login" })}
+        </Button>
+      )}
+
+      {onToggleLock && (
+        <Button
+          size="sm"
+          variant={isLocked ? "default" : "outline"}
+          onClick={onToggleLock}
+          title={
+            isLocked
+              ? t("provider.unlockHint", {
+                  defaultValue: "Unlock: automatic switching resumes",
+                })
+              : t("provider.lockInHint", {
+                  defaultValue:
+                    "Use only this account, with no rotation or automatic switching, until you unlock it",
+                })
+          }
+        >
+          {isLocked ? (
+            <Lock className="h-3.5 w-3.5" />
+          ) : (
+            <LockOpen className="h-3.5 w-3.5" />
+          )}
+          {isLocked
+            ? t("provider.locked", { defaultValue: "Locked" })
+            : t("provider.lockIn", { defaultValue: "Lock in" })}
         </Button>
       )}
 

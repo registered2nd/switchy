@@ -395,6 +395,11 @@ pub fn run() {
 
                 initialize_common_config_snippets(&state);
 
+                // Accounts locked by hand stay locked across a restart
+                for (app_type, provider_id) in state.db.get_account_locks().unwrap_or_default() {
+                    crate::proxy::manual_hold::lock(&app_type, &provider_id);
+                }
+
                 // Restore the proxy from the proxy state saved in the settings table
                 restore_proxy_state_on_startup(&state).await;
                 if let Err(e) = state.proxy_service.listen_for_control().await {
@@ -493,6 +498,9 @@ pub fn run() {
             commands::get_codex_account_identity,
             commands::remove_provider_from_live_config,
             commands::switch_provider,
+            commands::lock_account,
+            commands::unlock_account,
+            commands::get_account_locks,
             commands::import_default_config,
             commands::get_claude_config_status,
             commands::get_config_status,

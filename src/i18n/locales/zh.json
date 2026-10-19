@@ -106,7 +106,11 @@
     },
     "duplicateLiveIdsLoadFailed": "无法读取配置中的供应商 ID，请修复配置后重试。",
     "live": "使用中",
-    "inConfig": "已在配置中"
+    "inConfig": "已在配置中",
+    "lockIn": "锁定",
+    "locked": "已锁定",
+    "lockInHint": "只用这个账号，不轮换、不自动切换，直到解锁",
+    "unlockHint": "解锁后恢复自动切换"
   },
   "notifications": {
     "providerAdded": "供应商已添加",
