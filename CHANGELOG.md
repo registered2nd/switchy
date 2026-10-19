@@ -8,6 +8,23 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.37] — 2026-10-19 — Closed Codex windows are forgotten
+
+Windows installer: download `Switchy_1.0.37_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.37_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Fixed
+
+- **A Codex window closed by killing its terminal is no longer retried
+  forever.** With *Switch Codex's signed-in account* on, a Codex window whose
+  terminal was closed before Codex exited (a closed tab, a restarted terminal
+  app, a reboot) left its details behind, and Switchy tried to reach every such
+  window's server once a minute, all at once, filling the log with refused
+  connections. Switchy now forgets a window the first time its server refuses
+  the connection, in Windows and in WSL, and logs one line saying so. A window
+  that fails for any other reason is still tried again a minute later.
+
 ## [1.0.36] — 2026-10-19 — Lock in an account
 
 Windows installer: download `Switchy_1.0.36_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

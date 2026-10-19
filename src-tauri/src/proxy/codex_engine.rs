@@ -820,6 +820,34 @@ async fn run(app: tauri::AppHandle, install: Install) {
     }
 }
 
+/// Removes the files of a window whose server has exited, so it is not tried
+/// again. The shell removes them when its window exits, but not when its
+/// terminal is killed first.
+fn forget(socket: &str, marker: &Path, why: &str) {
+    for path in [
+        marker.with_extension("token"),
+        marker.with_extension("refresh"),
+        marker.to_path_buf(),
+    ] {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("[codex_engine] could not remove {}: {e}", path.display()),
+        }
+    }
+    log::info!(
+        "[codex_engine] {socket}: {why}, so its window has closed; removed its session files"
+    );
+}
+
+/// Whether a WSL relay that could not connect reported its window's socket
+/// as removed or left with nothing listening, the two ways it is gone for
+/// good.
+fn wsl_socket_gone(said: &str) -> bool {
+    said.contains("failed to connect to socket")
+        && (said.contains("(os error 2)") || said.contains("(os error 111)"))
+}
+
 /// Holds one window's server: signs it in to the current account whenever
 /// that account or its token changes, once none of its conversations is
 /// mid-turn, and answers its requests for new tokens. Returns when the
@@ -845,9 +873,16 @@ async fn serve(
                     },
                 )?,
             );
-            let (ws, _) = tokio_tungstenite::connect_async(request)
-                .await
-                .map_err(|e| format!("could not connect: {e}"))?;
+            let (ws, _) = match tokio_tungstenite::connect_async(request).await {
+                Ok(connected) => connected,
+                // The shell writes the session file only once its server
+                // answers, so a refusal now means that server has exited.
+                Err(WsError::Io(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                    forget(socket, marker, "the connection was refused");
+                    return Ok(());
+                }
+                Err(e) => return Err(format!("could not connect: {e}")),
+            };
             let (tx, rx) = ws.split();
             (Box::pin(tx), Box::pin(rx))
         }
@@ -856,15 +891,51 @@ async fn serve(
                 .codex(&format!("app-server proxy --sock '{socket}'"))
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
                 .spawn()
                 .map_err(|e| e.to_string())?;
             let stdin = child.stdin.take().ok_or("no stdin")?;
             let stdout = child.stdout.take().ok_or("no stdout")?;
-            let (ws, _) =
-                tokio_tungstenite::client_async("ws://localhost/", tokio::io::join(stdout, stdin))
-                    .await
-                    .map_err(|e| format!("could not connect: {e}"))?;
+            let mut stderr = child.stderr.take().ok_or("no stderr")?;
+            // Read for the relay's whole life so its pipe never fills; the
+            // start says why a relay that could not connect stopped.
+            let said = tokio::spawn(async move {
+                use tokio::io::AsyncReadExt;
+                let (mut start, mut chunk) = (Vec::new(), [0u8; 1024]);
+                while let Ok(n) = stderr.read(&mut chunk).await {
+                    if n == 0 {
+                        break;
+                    }
+                    if start.len() < 4096 {
+                        start.extend_from_slice(&chunk[..n]);
+                    }
+                }
+                String::from_utf8_lossy(&start).into_owned()
+            });
+            let (ws, _) = match tokio_tungstenite::client_async(
+                "ws://localhost/",
+                tokio::io::join(stdout, stdin),
+            )
+            .await
+            {
+                Ok(connected) => connected,
+                Err(e) => {
+                    let said = tokio::time::timeout(TICK, said)
+                        .await
+                        .ok()
+                        .and_then(Result::ok)
+                        .unwrap_or_default();
+                    if wsl_socket_gone(&said) {
+                        forget(
+                            socket,
+                            marker,
+                            "its socket is gone or refused the connection",
+                        );
+                        return Ok(());
+                    }
+                    return Err(format!("could not connect: {e}"));
+                }
+            };
             relay = Some(child);
             let (tx, rx) = ws.split();
             (Box::pin(tx), Box::pin(rx))
@@ -1251,6 +1322,74 @@ mod tests {
         assert_eq!(updates[0].installed_version, "codex-cli 0.160.0");
         assert!(updates[0].cli_changed);
         assert!(updates[0].refresh_on_exit);
+    }
+
+    #[tokio::test]
+    async fn a_window_whose_server_refuses_is_forgotten_and_one_failing_otherwise_is_kept() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let db = Arc::new(Database::memory().unwrap());
+        let home = tempfile::TempDir::new().expect("temp home");
+        let install = Install {
+            kind: InstallKind::Windows,
+            codex_dir: home.path().join(".codex"),
+        };
+        std::fs::create_dir_all(install.sessions_dir()).expect("sessions dir");
+        let window = |name: &str, socket: &str| {
+            let marker = install.sessions_dir().join(format!("{name}.session"));
+            std::fs::write(&marker, format!("{socket}\nrefresh-on-exit-v1\n")).unwrap();
+            std::fs::write(marker.with_extension("token"), "token").unwrap();
+            std::fs::write(marker.with_extension("refresh"), "").unwrap();
+            marker
+        };
+        let files = |marker: &Path| {
+            ["session", "token", "refresh"]
+                .map(|extension| marker.with_extension(extension).exists())
+        };
+
+        // Nothing listens on a port that was just released.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let socket = format!("ws://127.0.0.1:{port}");
+        let gone = window("gone", &socket);
+        assert_eq!(serve(&db, &install, &socket, &gone).await, Ok(()));
+        assert_eq!(files(&gone), [false; 3]);
+
+        // A server that turns the window's token away.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let socket = format!("ws://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let _ = stream.read(&mut [0u8; 4096]).await;
+            let _ = stream
+                .write_all(b"HTTP/1.1 401 Unauthorized\r\ncontent-length: 0\r\n\r\n")
+                .await;
+        });
+        let unauthorized = window("unauthorized", &socket);
+        assert!(serve(&db, &install, &socket, &unauthorized).await.is_err());
+        assert_eq!(files(&unauthorized), [true; 3]);
+        assert_eq!(install.sessions().len(), 1);
+    }
+
+    #[test]
+    fn a_wsl_relay_reports_a_gone_socket_only_for_a_missing_or_refusing_socket() {
+        let failed = |cause: &str| {
+            format!("Error: failed to connect to socket at /home/me/.codex/switchy-sessions/1-2.sock\n\nCaused by:\n    {cause}\n")
+        };
+        assert!(wsl_socket_gone(&failed(
+            "No such file or directory (os error 2)"
+        )));
+        assert!(wsl_socket_gone(&failed(
+            "Connection refused (os error 111)"
+        )));
+        assert!(!wsl_socket_gone(&failed("Permission denied (os error 13)")));
+        assert!(!wsl_socket_gone(&failed(
+            "Resource temporarily unavailable (os error 11)"
+        )));
+        assert!(!wsl_socket_gone(""));
+        assert!(!wsl_socket_gone("No such file or directory (os error 2)"));
     }
 
     /// A window server that answers each request with the next scripted
