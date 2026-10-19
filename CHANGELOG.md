@@ -8,6 +8,25 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.35] — 2026-10-19 — An agent can drive the whole app
+
+Windows installer: download `Switchy_1.0.35_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.35_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Added
+
+- **Everything the window does, a script or an agent can do.** On Switchy's
+  local port (`127.0.0.1:15721`), `GET /switchy/commands` lists every command
+  the window uses with its arguments, and `POST /switchy/invoke` runs any of
+  them: add, edit, enable or delete providers, change settings, turn the proxy
+  and routing on or off, read usage, back up and more. The window and tray
+  refresh after a change. Only programs on the same machine can use these
+  routes; web pages are refused.
+- **The control routes answer from launch.** The local port now opens when
+  Switchy starts, whether or not the proxy is on, so an agent can reach the app
+  without turning the proxy on first.
+
 ## [1.0.34] — 2026-10-13 — Network outages no longer ask you to sign in
 
 Windows installer: download `Switchy_1.0.34_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

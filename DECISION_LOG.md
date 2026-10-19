@@ -2,6 +2,13 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-10-19 — Agents run any window command over the proxy's port, which is served from launch
+
+- Context: the user wanted the whole app controllable by an agent; the 2026-10-09 routes covered only reading the pool and switching Claude or Codex accounts, and answered only while the proxy ran.
+- Decision: `POST /switchy/invoke` hands `{"command", "args"}` to the main window's own command handler (`Webview::on_message` with the app's invoke key), so every Tauri command and plugin command the window can call runs with its arguments, ACL and behaviour, and new commands are covered without route code. `GET /switchy/commands` lists them with their arguments, parsed from `generate_handler!` and the command signatures by `build.rs`. Both answer only loopback callers that send no `Origin` header. The proxy's port is opened at launch in the proxy-off state (the state a proxy turned off after it was on is left in), so the routes answer whether or not the proxy is on; this replaces 2026-10-09's "exist only while the proxy runs".
+- Why: one dispatch through the window's handler keeps parity with the UI as commands change, where a hand-written route per command would drift. The routes return API keys and change everything, and the router's CORS is open, so a web page must not reach them.
+- Files: `src-tauri/src/proxy/control.rs`, routes and the peer address in `proxy/server.rs`, `listen_for_control` in `services/proxy.rs`, `write_command_catalog` in `build.rs`, the `agent-invoked` refresh in `src/App.tsx`.
+
 ## 2026-10-11 — Claude request errors stay on the serving account; quota drives switching
 
 - Decision: Claude request failures do not open a circuit breaker, reduce concurrency or try another account. Quota rotation uses the configured percentage, and exhausted account or model quota can trigger fallback; both continue to update the selected account, saved login, window and tray.

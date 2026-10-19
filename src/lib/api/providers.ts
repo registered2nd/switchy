@@ -110,6 +110,11 @@ export const providersApi = {
     });
   },
 
+  /** A command an agent ran through the control routes changed something. */
+  async onAgentInvoked(handler: () => void): Promise<UnlistenFn> {
+    return await listen("agent-invoked", () => handler());
+  },
+
   async onSwitched(
     handler: (event: ProviderSwitchEvent) => void,
   ): Promise<UnlistenFn> {

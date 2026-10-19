@@ -181,6 +181,7 @@ impl ProxyServer {
 
                                     // Insert our own header case map alongside hyper's internal one
                                     parts.extensions.insert(cases);
+                                    parts.extensions.insert(super::control::Peer(remote_addr));
 
                                     let body = axum::body::Body::new(body);
                                     let axum_req = http::Request::from_parts(parts, body);
@@ -303,6 +304,8 @@ impl ProxyServer {
             // Control: see and switch accounts in the running app
             .route("/switchy/accounts", get(super::control::accounts))
             .route("/switchy/switch", post(super::control::switch))
+            .route("/switchy/commands", get(super::control::commands))
+            .route("/switchy/invoke", post(super::control::invoke))
             // Claude API (with or without prefix)
             .route("/v1/messages", post(handlers::handle_messages))
             .route("/claude/v1/messages", post(handlers::handle_messages))

@@ -319,6 +319,35 @@ impl ProxyService {
         Ok(info)
     }
 
+    /// Serves the proxy's port with the proxy off, so the control routes
+    /// answer from launch: the state a proxy turned off after it was on is
+    /// left in. Turning the proxy on reuses this listener.
+    pub async fn listen_for_control(&self) -> Result<(), String> {
+        if self.is_listening().await {
+            return Ok(());
+        }
+        let config = self
+            .db
+            .get_proxy_config()
+            .await
+            .map_err(|e| format!("Could not read the proxy config: {e}"))?;
+        let app_handle = self.app_handle.read().await.clone();
+        let server = ProxyServer::new(config, self.db.clone(), app_handle);
+        let info = server
+            .start()
+            .await
+            .map_err(|e| format!("Could not open the proxy's port: {e}"))?;
+        self.released
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        *self.server.write().await = Some(server);
+        log::info!(
+            "Proxy is off; its port {}:{} is open for the control routes",
+            info.address,
+            info.port
+        );
+        Ok(())
+    }
+
     /// Start the proxy server (with live-config takeover)
     pub async fn start_with_takeover(&self) -> Result<ProxyServerInfo, String> {
         // 1. Back up each app's live config
@@ -3085,6 +3114,34 @@ model = "gpt-5.1-codex"
             .expect("base_url should exist");
 
         assert_eq!(base_url, new_url);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn listen_for_control_opens_the_port_with_the_proxy_off() {
+        let _home = TempHome::new();
+        crate::settings::reload_settings().expect("reload settings");
+
+        let db = Arc::new(Database::memory().expect("init db"));
+        let mut config = db.get_proxy_config().await.expect("proxy config");
+        config.listen_port = 0;
+        db.update_proxy_config(config).await.expect("save proxy config");
+        let service = ProxyService::new(db.clone());
+
+        service.listen_for_control().await.expect("open the port");
+        assert!(service.is_listening().await);
+        assert!(!service.is_running().await);
+        assert!(!service.get_status().await.expect("status").running);
+        assert!(
+            !db.get_global_proxy_config()
+                .await
+                .expect("global config")
+                .proxy_enabled
+        );
+
+        service.start().await.expect("turn the proxy on");
+        assert!(service.is_running().await);
+        service.stop().await.expect("stop");
     }
 
     #[tokio::test]

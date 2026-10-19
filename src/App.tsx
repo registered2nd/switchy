@@ -293,6 +293,24 @@ function App() {
     };
   }, [activeApp, refetch]);
 
+  // An agent changed something through the control routes: reload it all.
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    providersApi
+      .onAgentInvoked(() => {
+        queryClient.invalidateQueries();
+      })
+      .then((fn) => {
+        unsubscribe = fn;
+      })
+      .catch((error) =>
+        console.error("[App] Failed to subscribe to agent commands", error),
+      );
+    return () => {
+      unsubscribe?.();
+    };
+  }, [queryClient]);
+
   // A sign-in filed with a card: show it signed in and clear the failures
   // the refused login left, without waiting for the next poll.
   useEffect(() => {

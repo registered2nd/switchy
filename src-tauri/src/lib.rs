@@ -397,6 +397,9 @@ pub fn run() {
 
                 // Restore the proxy from the proxy state saved in the settings table
                 restore_proxy_state_on_startup(&state).await;
+                if let Err(e) = state.proxy_service.listen_for_control().await {
+                    log::warn!("Control routes unavailable: {e}");
+                }
                 crate::auto_launch::sync_with_proxy(
                     state.db.is_live_takeover_active().await.unwrap_or(false),
                 );

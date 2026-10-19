@@ -85,10 +85,14 @@ Routing an app through the proxy edits its config — Claude Code's `settings.js
 
 ## Control routes
 
-The proxy's port also answers two routes for a script or an agent to see and act on the running app, wherever the proxy listens (`127.0.0.1:15721` by default):
+The proxy's port (`127.0.0.1:15721` by default) answers routes for a script or an agent to see and drive the running app. The port is open from launch, with the proxy on or off.
 
 - `GET /switchy/accounts`: for Claude and Codex, the current account, the account held after a pick by hand, and the switching order as the pool would serve a request now, each account with its last quota reading and whether it is at its limit.
 - `POST /switchy/switch` with `{"app": "codex", "provider": "<id>"}`: makes the account current as *Enable* on its card does, including the 10-minute hold, and updates the window and the tray.
+- `GET /switchy/commands`: every command the window can call, with its argument names and types.
+- `POST /switchy/invoke` with `{"command": "<name>", "args": {...}}`: runs that command as the window would and answers `{"result": ...}` or `{"error": ...}`. Anything the window does is reachable this way: providers (`get_providers`, `add_provider`, `update_provider`, `switch_provider`, …), settings (`get_settings`, `save_settings`), the proxy and routing (`set_proxy_takeover_for_app`, …), usage, backups and the rest. Argument names are camelCase, for example `{"command": "get_providers", "args": {"app": "claude"}}`. The window and tray refresh after a command that changes something. A command that opens a file dialog waits for someone at the screen.
+
+The two command routes return API keys and logins, so they answer only callers on this machine and refuse any request carrying an `Origin` header, which every browser page sends. They need the main window to exist; it does whenever Switchy is running, hidden in the tray or not.
 
 ## Other tools in the app
 
@@ -129,7 +133,7 @@ cd src-tauri && cargo test   # backend tests
 
 After reinstalling a running copy, verify port 15721 before using routed sessions; Switchy turns the proxy back on when it starts.
 
-The workstation runs **1.0.34**, installed on 2026-10-13. Country observations run in the background and provide warnings. Configured proxies remain mandatory; *Require proxy* is off for this machine's router-proxied Wi-Fi. Live Claude and Codex requests answered successfully after installation. The Windows and Apple Silicon installers are in `installers/`; release history is in [CHANGELOG.md](CHANGELOG.md).
+The workstation runs **1.0.35**, installed on 2026-10-19. Country observations run in the background and provide warnings. Configured proxies remain mandatory; *Require proxy* is off for this machine's router-proxied Wi-Fi. After installation, the control routes listed all 191 commands, ran reads, added and deleted a provider, and refused a request carrying an `Origin` header; the proxy answered with its takeovers restored. The Windows and Apple Silicon installers are in `installers/`; release history is in [CHANGELOG.md](CHANGELOG.md).
 
 The frontend is React and TypeScript (`src/`), the backend Tauri and Rust (`src-tauri/`). The SQLite database is the store; switching writes the selected provider into each tool's own config files.
 
