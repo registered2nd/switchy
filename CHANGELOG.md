@@ -12,7 +12,7 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 Windows installer: download `Switchy_1.0.38_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
 
-macOS (Apple Silicon): download `Switchy_1.0.38_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+macOS (Apple Silicon): this release has no `.dmg`; the latest one is `Switchy_1.0.37_aarch64.dmg` in the 1.0.37 release. The change below is for the Windows and WSL `codex` shells.
 
 ### Changed
 
