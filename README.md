@@ -130,6 +130,8 @@ pnpm test:unit        # frontend tests (vitest)
 cd src-tauri && cargo test   # backend tests
 ```
 
+GitHub Actions runs both suites on Linux for every push to `main` and every pull request ([tests.yml](.github/workflows/tests.yml)). Locally, a backend test that starts the proxy fails while an installed Switchy holds port 15721.
+
 `CI=true pnpm build` builds the app and copies the current version's `-setup.exe` and `.msi` into `installers/`. `CI=true` stops pnpm from prompting mid-build, which fails when no terminal is attached. Under pnpm 11 a fresh checkout may also need `CI=true pnpm install --force` so the `esbuild` and `msw` build scripts allowed in `pnpm-workspace.yaml` actually run; [LEARNINGS.md](LEARNINGS.md) has this and the other build notes.
 
 After reinstalling a running copy, verify port 15721 before using routed sessions; Switchy turns the proxy back on when it starts.
