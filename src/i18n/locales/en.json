@@ -108,9 +108,9 @@
     "live": "In use",
     "inConfig": "In config",
     "lockIn": "Lock in",
-    "locked": "Locked",
-    "lockInHint": "Use only this account, with no rotation or automatic switching, until you unlock it",
-    "unlockHint": "Unlock: automatic switching resumes"
+    "lockInHint": "Lock in: use only this account, with no rotation or automatic switching, until you unlock it",
+    "unlockHint": "Locked. Click to unlock: automatic switching resumes",
+    "unlock": "Unlock"
   },
   "notifications": {
     "providerAdded": "Provider added",

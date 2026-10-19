@@ -219,33 +219,6 @@ export function ProviderActions({
         </Button>
       )}
 
-      {onToggleLock && (
-        <Button
-          size="sm"
-          variant={isLocked ? "default" : "outline"}
-          onClick={onToggleLock}
-          title={
-            isLocked
-              ? t("provider.unlockHint", {
-                  defaultValue: "Unlock: automatic switching resumes",
-                })
-              : t("provider.lockInHint", {
-                  defaultValue:
-                    "Use only this account, with no rotation or automatic switching, until you unlock it",
-                })
-          }
-        >
-          {isLocked ? (
-            <Lock className="h-3.5 w-3.5" />
-          ) : (
-            <LockOpen className="h-3.5 w-3.5" />
-          )}
-          {isLocked
-            ? t("provider.locked", { defaultValue: "Locked" })
-            : t("provider.lockIn", { defaultValue: "Lock in" })}
-        </Button>
-      )}
-
       {showMainButton && (
         <Button
           size="sm"
@@ -256,6 +229,43 @@ export function ProviderActions({
         >
           {buttonState.icon}
           {buttonState.text}
+        </Button>
+      )}
+
+      {onToggleLock && (
+        <Button
+          size="icon"
+          variant="ghost"
+          className={cn(
+            "h-8 w-8",
+            isLocked
+              ? "bg-primary/15 text-primary hover:bg-primary/25 hover:text-primary"
+              : "text-muted-foreground",
+          )}
+          onClick={onToggleLock}
+          aria-pressed={isLocked}
+          title={
+            isLocked
+              ? t("provider.unlockHint", {
+                  defaultValue:
+                    "Locked. Click to unlock: automatic switching resumes",
+                })
+              : t("provider.lockInHint", {
+                  defaultValue:
+                    "Lock in: use only this account, with no rotation or automatic switching, until you unlock it",
+                })
+          }
+          aria-label={
+            isLocked
+              ? t("provider.unlock", { defaultValue: "Unlock" })
+              : t("provider.lockIn", { defaultValue: "Lock in" })
+          }
+        >
+          {isLocked ? (
+            <Lock className="h-4 w-4" />
+          ) : (
+            <LockOpen className="h-4 w-4" />
+          )}
         </Button>
       )}
 

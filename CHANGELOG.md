@@ -16,12 +16,13 @@ macOS (Apple Silicon): download `Switchy_1.0.36_aarch64.dmg` below, open it and 
 
 ### Added
 
-- **Lock in an account.** Official Claude and Codex cards have a *Lock in*
-  button. It enables that account and keeps it: no rotation and no automatic
-  switch move the app off it, whatever the switching rules would pick, until
-  you click *Locked* to unlock it or enable another account. The lock survives
-  a restart. Agents can do the same with the `lock_account` and
-  `unlock_account` commands.
+- **Lock in an account.** Official Claude and Codex cards have a lock icon
+  next to the edit button. Click the open lock to lock that account in: it is
+  enabled and kept, with no rotation and no automatic switch moving the app
+  off it, whatever the switching rules would pick. The closed, highlighted
+  lock shows it is locked; click it to unlock, or enable another account.
+  The lock survives a restart. Agents can do the same with the `lock_account`
+  and `unlock_account` commands.
 
 ## [1.0.35] — 2026-10-19 — An agent can drive the whole app
 

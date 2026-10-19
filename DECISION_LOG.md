@@ -7,7 +7,7 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
 - Context: the user wanted one Claude account used up regardless of rotation's order, with a single button.
 - Decision: *Lock in* is the 10-minute manual hold without its expiry (`manual_hold::lock`), so it inherits the hold's rules: the proxy serves only that account, failover and rotation do not move it. Enabling another account by hand replaces it; re-enabling the locked one keeps it. Locks are stored per app in the settings table (`account_locks`) and restored at launch.
 - Why: the hold already carries every "serve only this one" behaviour; a separate pin in rotation's ordering would still let failover and the 98% threshold move the app off it.
-- Files: `src-tauri/src/proxy/manual_hold.rs`, `lock_account`/`unlock_account` in `commands/provider.rs`, the lock clean-up in `ProviderService::switch`, the card button in `src/components/providers/ProviderActions.tsx`.
+- Files: `src-tauri/src/proxy/manual_hold.rs`, `lock_account`/`unlock_account` in `commands/provider.rs`, the lock clean-up in `ProviderService::switch`, the lock icon toggle in `src/components/providers/ProviderActions.tsx`.
 
 ## 2026-10-19 — Agents run any window command over the proxy's port, which is served from launch
 
