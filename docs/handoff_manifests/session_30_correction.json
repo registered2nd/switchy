@@ -1,0 +1,109 @@
+{
+  "schema_version": 2,
+  "base": {
+    "context_generated_at": "2026-10-19T18:37:57.047603Z",
+    "context_source_revision": "workstate:handoff/switchy/session_30@sha256:2133cffd1f6ca01b575cf57609729f7275659e5c598205b992cc0ecda87564fc",
+    "publication_token": 2218
+  },
+  "session": {
+    "id": "session_30",
+    "title": "1.0.39: one click refreshes a Codex terminal (SW209)",
+    "started_at": "2026-10-19T16:40:38Z",
+    "ended_at": "2026-10-19T18:40:00Z",
+    "purpose": "Carry out SW209: the user found 'Refresh on exit' unintuitive (it only queued, and he had to type /exit) and 'windows' unclear. Make the Pool list's button refresh the terminal itself once Codex is idle, in Orca and in other terminals, on Windows and WSL, controllable over /switchy/invoke; say terminals; release 1.0.39, install it on the workstation and verify live. Mid-session the user also asked that his two older Codex tabs get one-click Refresh, and that they be restarted.",
+    "pickup": null,
+    "task_ids": [
+      "SW209"
+    ],
+    "artifact_ids": [],
+    "decision_pointers": [],
+    "finding_pointers": [
+      "C:/Projects/Switchy/README.md",
+      "C:/Projects/Switchy/docs/codex_model_discovery_2026_09_29.md",
+      "C:/Projects/Switchy/LEARNINGS.md",
+      "C:/Projects/Switchy/brief_archive/worker_report_sw209.md"
+    ],
+    "evidence_pointers": [
+      "git:ea614ef7",
+      "git:eb15cc49",
+      "git:a91e088a",
+      "git:a21580b2",
+      "git:aa569187",
+      "git:90bd72d8",
+      "git:52296356",
+      "git:1b0cef9f",
+      "https://github.com/registered2nd/switchy/releases/tag/v1.0.39",
+      "https://github.com/registered2nd/switchy/actions/runs/39302458001",
+      "C:/Users/Administrator/.switchy/logs/switchy.log",
+      "C:/Projects/Switchy/brief_archive/worker_report_sw209.md"
+    ],
+    "attention": false,
+    "attention_note": null,
+    "outcomes": [
+      "Item 1: the codex shells record terminal=orca <pane> <handle> or terminal=native in the session file. Refresh queues; the window's connection waits while any loaded thread is active (UI shows waiting, cancellable), then in Orca sends Ctrl+C and, if Codex is still open a second later, /exit and Enter as plain orca terminal send inputs (falling back to ending the client after 15 s); elsewhere it writes 'ended' to the refresh marker and ends the client found by its --remote address (Windows process tree; WSL SIGTERM then SIGKILL), and the shell restores its saved console modes or stty state and leaves the alternate screen. WSL shells Orca starts carry ORCA_* and are handled as Orca. Commands: get_codex_terminal_updates, refresh_codex_terminal, cancel_codex_terminal_refresh (replacing get_codex_window_updates and set_codex_refresh_on_exit).",
+      "At the user's direction (the brief had them keep the manual path): a session from an older shell is looked up once from its Codex client's environment (WSL /proc/<pid>/environ, Windows PEB); found in an Orca pane it gets Refresh, typed into only and never ended from outside; elsewhere it keeps Refresh on exit.",
+      "Item 2: en/zh/ja say terminals; queued text says Switchy ends Codex once idle and unsent input is lost; new Refresh, waiting and refresh-on-exit strings; zh/ja via /translate (bulk brief, term record added).",
+      "Item 3: cargo test --lib proxy::codex_engine 19 passed (7 new, including waits-while-busy / ends-once-idle / cancel against a fake server and fake client); pnpm typecheck clean; vitest AccountPoolPanel (3 new) + SettingsDialog 11 passed; scripts/test_codex_manual_sign_in.py passed on Windows and WSL.",
+      "Item 4: v1.0.39 Latest on registered2nd/switchy with exe, msi and Apple Silicon DMG (run 39302458001), digests matching installers/, target public fd5cbf16; installed on the workstation by the one-command reinstall (last 11:09:08 local). The projects-88 session, at the user's request, put the laptop on 1.0.39 (running) and another user's PC on 1.0.39 (installed, not running); another user's Mac then got the release DMG from projects-88 after the close (restarted 11:50 local, port 15721 open; README updated in f57b4e6e).",
+      "Item 5: verified over /switchy/invoke in all four kinds (Windows Orca, WSL Orca, Windows native, WSL native): each waited through a running reply, came back on its own conversation (resume <id>, recalled its first word), with a usable terminal (Windows input mode after exit as after a normal exit; WSL stty unchanged) and the second terminal untouched. Native cases ran in Orca-hosted consoles without Orca's variables; the button was not clicked physically because the user was using the desktop, and he said the API suffices.",
+      "At the user's instruction his KnowledgeSystem and Worldbuilding Codex tabs were refreshed over the API at 11:22 local; both came back on the conversation picker (their shells predate 1.0.38) and were put back on their own conversations through the picker's search; both now run 0.163.0 servers with their launch options.",
+      "Fixed on the way: stopping only the server leaves the client reconnecting forever; orca send --enter (agent-prompt path) misbehaves right after a reply; Ctrl+C on an empty input box quits Codex on Windows; wsl.exe -- expanded script variables (now -e, recorded in LEARNINGS.md)."
+    ],
+    "latest_summary": "1.0.39: Refresh in Settings -> Pool (or refresh_codex_terminal over /switchy/invoke) now restarts Codex in its terminal itself once it has finished replying, in Orca and other terminals, Windows and WSL, on the same conversation. Released with Windows installers and the Apple Silicon DMG; verified live on the workstation; the user's two older Codex tabs were refreshed at his request."
+  },
+  "context": {
+    "current_focus": {
+      "source": "C:/Projects/Switchy/README.md",
+      "summary": "Switchy 1.0.39 is the latest public release (Windows installers and Apple Silicon DMG). Refresh in Settings -> Pool restarts a stale Codex terminal itself once it has finished replying, on the same conversation; the same commands are on /switchy/invoke. The workstation, laptop and another user's Mac run 1.0.39; another user's PC has it installed and not running. On the workstation Claude is locked on registered2nd (ccb19499) at the user's request; its weekly reset reads 2026-10-25, which the user had expected before 10/22, and he has not said whether to keep that lock or move it to the Apple-relay account that resets 10/22. The requested work is complete; await the user's feedback. Earlier renewal, restart, WSL, rotation and proxy-off checks stay pending under their triggers."
+    },
+    "initiative_focus": [],
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/connect_tunnel.rs",
+        "summary": "Confirm account-proxy coverage on the next natural Claude sign-in or renewal while Owen is selected, without forcing a new login. Claude Code's own exchange should log '[connect_tunnel] platform.claude.com:443 via socks5://82.26.163.142:45001'. For Switchy's renewal, observe '[claude_pool] refreshing login for provider=98e00f12...' and the successful refreshed-login message; the enforced per-account client route is owned by proxy/http_client.rs. Windows/WSL HTTPS_PROXY and NO_PROXY, UK exit probes and telemetry tunnels were verified; a live sign-in/renewal using this route remains unobserved. Connection failures must stop rather than fall back to direct; country observations only warn."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/lib.rs",
+        "summary": "CONFIRM THE RESTART PATH ON STEPHEN'S NEXT WINDOWS RESTART (1.0.29). In C:/Users/Administrator/.switchy/logs/switchy.prev.log after 'Session ending; handing the live configs back': '[session-end] claude/codex/gemini handed back', '[session-end] ... in WSL handed back', then 'Live configs handed back for the session end'. 'did not finish in 4 seconds' with the last [session-end] line shows which step stalls (Windows step = database lock, WSL step = WSL I/O); fix that step. In switchy.log: Switchy started within seconds of login (window hidden, launched with --autostart from HKCU Run), '[auto_launch] start at login on', proxy on 15721, and Claude Code / Codex answer without ECONNREFUSED."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+        "summary": "CONFIRM CLAUDE LOGINS STAY IN STEP WITH WSL (1.0.27). In switchy.log, when an account WSL is signed in to renews: '[claude_pool] provider=... took the newer login from WSL' or 'wrote the refreshed login through to WSL', and no new 'invalid_grant' 'Refresh token not found or invalid' in account_switches/provider_health. WSL's ~/.claude/.credentials.json and ~/.switchy/accounts/<id>/credentials.json for that account should carry the same refreshToken after each renewal."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/codex_ws.rs",
+        "summary": "CONFIRM ROTATION AND CODEX FAILOVER ON LIVE TRAFFIC (1.0.25/1.0.26). In C:/Users/Administrator/.switchy/logs/switchy.log and the switchy.db account_switches table: (a) when an account's five-hour window resets while another serves, a switch back to it with reason 'recovered' and detail \"Another account's weekly limit resets sooner\"; (b) a Codex turn refused for usage that continues an earlier one logs '[CodexWS] provider=... websocket closed (turn refused for usage; Codex resends it in full)' and the turn then completes on the next account with no error in Codex. GET http://127.0.0.1:15721/switchy/accounts shows current account, pool order, quota and atLimit per account."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      }
+    ]
+  },
+  "task_completions": [
+    {
+      "id": "SW209",
+      "refs": [
+        "git:ea614ef7",
+        "git:eb15cc49",
+        "git:a91e088a",
+        "git:a21580b2",
+        "git:aa569187",
+        "git:90bd72d8",
+        "git:52296356",
+        "git:1b0cef9f",
+        "https://github.com/registered2nd/switchy/releases/tag/v1.0.39",
+        "C:/Projects/Switchy/brief_archive/worker_report_sw209.md"
+      ],
+      "reason": "1 (One click refreshes, both kinds of terminal, API) done: shells record the terminal; Switchy waits for idle, then in Orca Ctrl+C and /exit, elsewhere ends the client and the shell restores the terminal; older Orca tabs found from the client's environment at the user's direction; get_codex_terminal_updates / refresh_codex_terminal / cancel_codex_terminal_refresh. 2 (Wording) done in en/zh/ja. 3 (Tests) done: codex_engine 19 passed, typecheck clean, vitest 11 passed, wrapper script test passed. 4 (Release and install) done: v1.0.39 Latest with exe, msi and DMG; installed on the workstation; laptop and another user's PC moved to 1.0.39 by projects-88, another user's Mac pending. 5 (Verify live) done over the API in Windows/WSL x Orca/native, each waiting, resuming its own conversation with a usable terminal, second terminal untouched; no physical click (desktop in use; the user said the API suffices); the user's two tabs refreshed at his request. 6 (Handoff) done: session_30; report at brief_archive/worker_report_sw209.md."
+    }
+  ]
+}
