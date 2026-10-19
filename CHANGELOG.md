@@ -24,9 +24,11 @@ macOS (Apple Silicon): download `Switchy_1.0.39_aarch64.dmg` below, open it and 
   terminal it ends Codex and puts the terminal back as it was. Text typed but
   not sent in that Codex's input box is lost. While a reply is running the
   entry says it is waiting, and the refresh can still be cancelled. Codex
-  started before this version keeps *Refresh on exit*: queue it, then exit
-  Codex yourself. Open a new terminal after installing so it uses the new
-  `codex` function.
+  started before this version gets **Refresh** too when it runs in an Orca
+  tab; started before 1.0.38, it comes back on the conversation picker. In
+  any other terminal it keeps *Refresh on exit*: queue it, then exit Codex
+  yourself. A terminal opened after installing uses the new `codex`
+  function.
 - **Scripts can refresh a terminal too.** Over the local control routes
   (`POST /switchy/invoke`), `get_codex_terminal_updates` lists the terminals
   that need a refresh, `refresh_codex_terminal` refreshes one and

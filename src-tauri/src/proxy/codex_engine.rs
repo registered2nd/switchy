@@ -585,21 +585,21 @@ pub struct WindowUpdate {
 
 /// Windows whose requested refresh waits for a turn to finish.
 static WAITING: Lazy<Mutex<HashSet<String>>> = Lazy::new(Mutex::default);
+/// Windows from shells that did not record their terminal, found running in
+/// an Orca pane: a refresh quits them by typing `/exit` there.
+static IN_ORCA: Lazy<Mutex<HashSet<String>>> = Lazy::new(Mutex::default);
 
-fn set_waiting(socket: &str, waiting: bool) {
-    let mut set = WAITING.lock().unwrap_or_else(|e| e.into_inner());
-    if waiting {
+fn mark(set: &Mutex<HashSet<String>>, socket: &str, on: bool) {
+    let mut set = set.lock().unwrap_or_else(|e| e.into_inner());
+    if on {
         set.insert(socket.to_string());
     } else {
         set.remove(socket);
     }
 }
 
-fn is_waiting(socket: &str) -> bool {
-    WAITING
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .contains(socket)
+fn marked(set: &Mutex<HashSet<String>>, socket: &str) -> bool {
+    set.lock().unwrap_or_else(|e| e.into_inner()).contains(socket)
 }
 
 /// A custom catalog is a startup snapshot in Codex. Compare it with the
@@ -718,8 +718,8 @@ async fn window_updates_for(install: &Install) -> Result<Vec<WindowUpdate>, Stri
             updates.push(WindowUpdate {
                 platform: install.name(),
                 queued: session.marker.with_extension("refresh").exists(),
-                managed: session.terminal.is_some(),
-                waiting: is_waiting(&session.socket),
+                managed: session.terminal.is_some() || marked(&IN_ORCA, &session.socket),
+                waiting: marked(&WAITING, &session.socket),
                 socket: session.socket,
                 cwd: session.cwd.filter(|cwd| !cwd.is_empty()),
                 server_version: session.cli_version.filter(|version| !version.is_empty()),
@@ -896,6 +896,7 @@ async fn run(app: tauri::AppHandle, install: Install) {
                 marker,
                 socket,
                 terminal,
+                refresh_on_exit,
                 ..
             } = session;
             if failed_at
@@ -918,13 +919,23 @@ async fn run(app: tauri::AppHandle, install: Install) {
                 failure_tx.clone(),
             );
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = serve(&db, &install, &socket, &marker, terminal.as_ref()).await {
+                let served = serve(
+                    &db,
+                    &install,
+                    &socket,
+                    &marker,
+                    terminal.as_ref(),
+                    refresh_on_exit,
+                )
+                .await;
+                if let Err(e) = served {
                     if marker.exists() {
                         log::warn!("[codex_engine] {socket}: {e}");
                         let _ = failure_tx.send(socket.clone());
                     }
                 }
-                set_waiting(&socket, false);
+                mark(&WAITING, &socket, false);
+                mark(&IN_ORCA, &socket, false);
                 serving
                     .lock()
                     .unwrap_or_else(|e| e.into_inner())
@@ -977,6 +988,7 @@ async fn serve(
     socket: &str,
     marker: &Path,
     terminal: Option<&Terminal>,
+    refresh_on_exit: bool,
 ) -> Result<(), String> {
     let mut relay = None;
     let (mut tx, mut rx): (WsTx, WsRx) = match &install.kind {
@@ -1096,6 +1108,25 @@ async fn serve(
     let mut stale = true;
     // How far a requested refresh has got in ending the window's Codex.
     let mut ending = Ending::NotYet;
+    // A shell that did not record its terminal cannot restore one either, so
+    // its Codex is only quit by typing `/exit`, in the Orca pane its
+    // environment names.
+    let restores = terminal.is_some();
+    let found = match terminal {
+        None if refresh_on_exit => match find_terminal(install, socket).await {
+            Ok(found) => found,
+            Err(e) => {
+                log::debug!("[codex_engine] {socket}: could not find its terminal: {e}");
+                None
+            }
+        },
+        _ => None,
+    };
+    if let Some(Terminal::Orca { pane, .. }) = &found {
+        log::info!("[codex_engine] {socket}: its older shell runs in Orca pane {pane}");
+        mark(&IN_ORCA, socket, true);
+    }
+    let terminal = terminal.or(found.as_ref());
     loop {
         if !marker.exists() {
             name_conversation(&thread_file, None);
@@ -1202,20 +1233,20 @@ async fn serve(
             }
             match (terminal.filter(|_| queued), read) {
                 (Some(terminal), Some((_, busy))) => {
-                    if busy && !is_waiting(socket) {
+                    if busy && !marked(&WAITING, socket) {
                         log::info!(
                             "[codex_engine] {socket}: refresh waits for the running turn to finish"
                         );
                     }
-                    set_waiting(socket, busy);
+                    mark(&WAITING, socket, busy);
                     if !busy {
-                        ending = end_step(install, socket, marker, terminal, ending).await;
+                        ending = end_step(install, socket, marker, terminal, restores, ending).await;
                     }
                 }
                 // Its turns could not be read; tried again at the next check.
                 (Some(_), None) => {}
                 (None, _) => {
-                    set_waiting(socket, false);
+                    mark(&WAITING, socket, false);
                     ending = Ending::NotYet;
                 }
             }
@@ -1365,14 +1396,21 @@ const EXIT_WAIT: Duration = Duration::from_secs(15);
 /// Takes the next step in ending an idle window's Codex for a refresh. In an
 /// Orca pane Codex is quit as a user would, by typing `/exit`; in any other
 /// terminal, or when that does not work, its client process is ended and the
-/// shell restores the terminal.
+/// shell restores the terminal. A shell that `restores` nothing is only typed
+/// into; when that fails the refresh waits for the user to exit Codex.
 async fn end_step(
     install: &Install,
     socket: &str,
     marker: &Path,
     terminal: &Terminal,
+    restores: bool,
     ending: Ending,
 ) -> Ending {
+    let instead = if restores {
+        "ending its Codex client instead"
+    } else {
+        "the refresh waits for Codex to be exited there"
+    };
     match ending {
         Ending::NotYet => {
             if let Terminal::Orca { pane, handle } = terminal {
@@ -1384,18 +1422,26 @@ async fn end_step(
                         return Ending::Typed(Instant::now());
                     }
                     Err(e) => log::warn!(
-                        "[codex_engine] {socket}: could not type /exit into its Orca terminal ({e}); ending its Codex client instead"
+                        "[codex_engine] {socket}: could not type /exit into its Orca terminal ({e}); {instead}"
                     ),
                 }
             }
-            end_client(install, socket, marker).await
+            if restores {
+                end_client(install, socket, marker).await
+            } else {
+                Ending::GaveUp
+            }
         }
         Ending::Typed(at) if at.elapsed() >= EXIT_WAIT => {
             log::warn!(
-                "[codex_engine] {socket}: Codex was still open {} s after /exit; ending its client",
+                "[codex_engine] {socket}: Codex was still open {} s after /exit; {instead}",
                 EXIT_WAIT.as_secs()
             );
-            end_client(install, socket, marker).await
+            if restores {
+                end_client(install, socket, marker).await
+            } else {
+                Ending::GaveUp
+            }
         }
         Ending::Ended(at) if at.elapsed() >= EXIT_WAIT => {
             log::warn!(
@@ -1437,45 +1483,128 @@ async fn end_client(install: &Install, socket: &str, marker: &Path) -> Ending {
 /// process tree, in WSL with SIGTERM, then SIGKILL if it is still running.
 async fn kill_client(install: &Install, socket: &str) -> Result<(), String> {
     let mut command = match &install.kind {
-        InstallKind::Windows => {
-            // The address goes in the environment so this command's own
-            // command line does not match.
-            let script = concat!(
-                "$remote = '--remote ' + $env:SWITCHY_CODEX_REMOTE + ' '\n",
-                "$found = @(Get-CimInstance Win32_Process -Filter \"Name='cmd.exe' or Name='node.exe' or Name='codex.exe'\" |\n",
-                "    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($remote) })\n",
-                "if ($found.Count -eq 0) { exit 3 }\n",
-                "foreach ($process in $found) { & taskkill.exe /PID $process.ProcessId /T /F *> $null }\n",
-                "exit 0\n",
-            );
-            let encoded: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
-            let mut command = Command::new("powershell.exe");
-            command
-                .args(["-NoProfile", "-NonInteractive", "-EncodedCommand"])
-                .arg(base64::Engine::encode(
-                    &base64::engine::general_purpose::STANDARD,
-                    encoded,
-                ))
-                .env("SWITCHY_CODEX_REMOTE", socket);
-            #[cfg(windows)]
-            command.creation_flags(0x0800_0000);
-            command.kill_on_drop(true);
-            command
-        }
-        InstallKind::Wsl(_) => {
-            let pattern = client_pattern(socket)?;
-            install.shell(&format!(
-                "p={}\npkill -TERM -f -- \"$p\" || exit 3\nfor i in 1 2 3 4 5 6 7 8 9 10; do pgrep -f -- \"$p\" >/dev/null || exit 0; sleep 0.3; done\npkill -KILL -f -- \"$p\"\nexit 0\n",
-                shell_quote(&pattern)
-            ))
-        }
+        InstallKind::Windows => windows_script(
+            socket,
+            "foreach ($process in $found) { & taskkill.exe /PID $process.ProcessId /T /F *> $null }\nexit 0\n",
+        ),
+        InstallKind::Wsl(_) => install.shell(&format!(
+            "p={}\npkill -TERM -f -- \"$p\" || exit 3\nfor i in 1 2 3 4 5 6 7 8 9 10; do pgrep -f -- \"$p\" >/dev/null || exit 0; sleep 0.3; done\npkill -KILL -f -- \"$p\"\nexit 0\n",
+            shell_quote(&client_pattern(socket)?)
+        )),
     };
+    client_command(&mut command).await.map(|_| ())
+}
+
+/// The variables that tell where a Codex client runs, matched as the start of
+/// its environment's `NAME=value` lines.
+const TERMINAL_VARIABLES: &str = "^(ORCA_PANE_KEY|ORCA_TERMINAL_HANDLE|TMUX|STY)=";
+
+/// Reads a Windows process's environment block through the process
+/// parameters in its PEB (x64 offsets).
+const PROCESS_ENVIRONMENT_TYPE: &str = r#"Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class SwitchyProcessEnvironment {
+    [StructLayout(LayoutKind.Sequential)]
+    struct BasicInformation { public IntPtr ExitStatus; public IntPtr Peb; public IntPtr Affinity; public IntPtr Priority; public IntPtr Id; public IntPtr ParentId; }
+    [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr process, int kind, ref BasicInformation info, int length, out int written);
+    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(int access, bool inherit, int id);
+    [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr process, IntPtr address, byte[] buffer, IntPtr size, out IntPtr read);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    static byte[] Read(IntPtr process, IntPtr address, long size) {
+        var buffer = new byte[size]; IntPtr read;
+        if (!ReadProcessMemory(process, address, buffer, (IntPtr)size, out read)) throw new InvalidOperationException("read failed");
+        return buffer;
+    }
+    public static string Of(int id) {
+        IntPtr process = OpenProcess(0x0410, false, id);
+        if (process == IntPtr.Zero) return null;
+        try {
+            var info = new BasicInformation(); int written;
+            if (NtQueryInformationProcess(process, 0, ref info, Marshal.SizeOf(info), out written) != 0) return null;
+            var parameters = (IntPtr)BitConverter.ToInt64(Read(process, info.Peb + 0x20, 8), 0);
+            var block = (IntPtr)BitConverter.ToInt64(Read(process, parameters + 0x80, 8), 0);
+            long size = BitConverter.ToInt64(Read(process, parameters + 0x3F0, 8), 0);
+            return Encoding.Unicode.GetString(Read(process, block, size));
+        } finally { CloseHandle(process); }
+    }
+}
+'@
+"#;
+
+/// Where the Codex client on `socket` runs, for a window whose shell did not
+/// record it: an Orca pane when the client's environment, passed down from
+/// the shell that started it, names one.
+async fn find_terminal(install: &Install, socket: &str) -> Result<Option<Terminal>, String> {
+    let mut command = match &install.kind {
+        InstallKind::Windows => windows_script(
+            socket,
+            &format!(
+                "{PROCESS_ENVIRONMENT_TYPE}foreach ($process in $found) {{\n    try {{ $text = [SwitchyProcessEnvironment]::Of([int]$process.ProcessId) }} catch {{ continue }}\n    if ($text) {{ $text.Split([char]0) | Where-Object {{ $_ -match '{TERMINAL_VARIABLES}' }}; exit 0 }}\n}}\nexit 4\n"
+            ),
+        ),
+        InstallKind::Wsl(_) => install.shell(&format!(
+            "p={}\npid=$(pgrep -f -- \"$p\" | head -n 1)\n[ -n \"$pid\" ] || exit 3\ntr '\\0' '\\n' < \"/proc/$pid/environ\" | grep -E '{TERMINAL_VARIABLES}'\nexit 0\n",
+            shell_quote(&client_pattern(socket)?)
+        )),
+    };
+    Ok(orca_from_environment(&client_command(&mut command).await?))
+}
+
+/// An Orca pane from a client's `NAME=value` lines, unless a terminal
+/// multiplexer stands between the pane and Codex.
+fn orca_from_environment(text: &str) -> Option<Terminal> {
+    let value = |name: &str| {
+        text.lines()
+            .find_map(|line| line.trim_end().strip_prefix(name)?.strip_prefix('='))
+            .filter(|value| !value.is_empty())
+    };
+    if value("TMUX").is_some() || value("STY").is_some() {
+        return None;
+    }
+    Some(Terminal::Orca {
+        pane: value("ORCA_PANE_KEY")?.to_string(),
+        handle: value("ORCA_TERMINAL_HANDLE").unwrap_or("").to_string(),
+    })
+}
+
+/// A hidden Windows PowerShell running `body` once it has the Codex client
+/// processes on `socket` in `$found`; it exits 3 when there are none.
+fn windows_script(socket: &str, body: &str) -> Command {
+    // The address goes in the environment so this command's own command line
+    // does not match.
+    let script = [
+        "$remote = '--remote ' + $env:SWITCHY_CODEX_REMOTE + ' '\n",
+        "$found = @(Get-CimInstance Win32_Process -Filter \"Name='cmd.exe' or Name='node.exe' or Name='codex.exe'\" |\n",
+        "    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($remote) })\n",
+        "if ($found.Count -eq 0) { exit 3 }\n",
+        body,
+    ]
+    .concat();
+    let encoded: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let mut command = Command::new("powershell.exe");
+    command
+        .args(["-NoProfile", "-NonInteractive", "-EncodedCommand"])
+        .arg(base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            encoded,
+        ))
+        .env("SWITCHY_CODEX_REMOTE", socket);
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
+    command.kill_on_drop(true);
+    command
+}
+
+/// Runs a command about a window's Codex client and returns what it printed.
+async fn client_command(command: &mut Command) -> Result<String, String> {
     let output = tokio::time::timeout(CALL_TIMEOUT, command.output())
         .await
         .map_err(|_| "it did not answer in time".to_string())?
         .map_err(|e| e.to_string())?;
     match output.status.code() {
-        Some(0) => Ok(()),
+        Some(0) => Ok(String::from_utf8_lossy(&output.stdout).into_owned()),
         Some(3) => Err("no Codex client is connected to it".to_string()),
         _ => Err(String::from_utf8_lossy(&output.stderr).trim().to_string()),
     }
@@ -1854,7 +1983,7 @@ mod tests {
             .port();
         let socket = format!("ws://127.0.0.1:{port}");
         let gone = window("gone", &socket);
-        assert_eq!(serve(&db, &install, &socket, &gone, None).await, Ok(()));
+        assert_eq!(serve(&db, &install, &socket, &gone, None, false).await, Ok(()));
         assert_eq!(files(&gone), [false; 3]);
 
         // A server that turns the window's token away.
@@ -1868,7 +1997,7 @@ mod tests {
                 .await;
         });
         let unauthorized = window("unauthorized", &socket);
-        assert!(serve(&db, &install, &socket, &unauthorized, None).await.is_err());
+        assert!(serve(&db, &install, &socket, &unauthorized, None, false).await.is_err());
         assert_eq!(files(&unauthorized), [true; 3]);
         assert_eq!(install.sessions().len(), 1);
     }
@@ -1987,7 +2116,7 @@ mod tests {
         let serving = {
             let (db, install, socket, marker) =
                 (db.clone(), install.clone(), socket.clone(), marker.clone());
-            tokio::spawn(async move { serve(&db, &install, &socket, &marker, None).await })
+            tokio::spawn(async move { serve(&db, &install, &socket, &marker, None, false).await })
         };
         let read = || std::fs::read_to_string(&named).unwrap_or_default();
         assert!(
@@ -2063,6 +2192,41 @@ mod tests {
     }
 
     #[test]
+    fn an_older_window_is_placed_in_the_orca_pane_its_environment_names() {
+        let orca = Terminal::Orca {
+            pane: "tab-1:leaf-2".into(),
+            handle: "term_abc".into(),
+        };
+        let found = orca_from_environment(
+            "ORCA_TERMINAL_HANDLE=term_abc
+ORCA_PANE_KEY=tab-1:leaf-2
+",
+        );
+        assert_eq!(found, Some(orca));
+        assert_eq!(
+            orca_from_environment("ORCA_PANE_KEY=tab-1:leaf-2
+"),
+            Some(Terminal::Orca {
+                pane: "tab-1:leaf-2".into(),
+                handle: String::new(),
+            })
+        );
+        // Outside Orca, or behind tmux or screen inside it.
+        assert_eq!(orca_from_environment(""), None);
+        assert_eq!(orca_from_environment("ORCA_PANE_KEY=
+"), None);
+        assert_eq!(
+            orca_from_environment("ORCA_PANE_KEY=tab-1:leaf-2
+TMUX=/tmp/tmux-1000/default,1,0
+"),
+            None
+        );
+        assert_eq!(orca_from_environment("STY=1.pts-0
+ORCA_PANE_KEY=tab-1:leaf-2
+"), None);
+    }
+
+    #[test]
     fn an_orca_pane_is_found_by_its_key_or_else_its_handle() {
         let terminals = vec![
             json!({ "handle": "term_a", "tabId": "tab-1", "leafId": "leaf-1" }),
@@ -2107,6 +2271,56 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
+    async fn an_older_windows_client_is_found_in_the_orca_pane_it_started_in() {
+        let home = tempfile::TempDir::new().expect("temp home");
+        let install = Install {
+            kind: InstallKind::Windows,
+            codex_dir: home.path().join(".codex"),
+        };
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let socket = format!("ws://127.0.0.1:{port}");
+        let spawn = |pane: Option<&str>| {
+            let mut command = std::process::Command::new("cmd.exe");
+            command
+                .args(["/d", "/k", "rem", "--remote", &socket, "--remote-auth-token-env", "X"])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::null())
+                .env_remove("TMUX")
+                .env_remove("STY")
+                .env_remove("ORCA_PANE_KEY")
+                .env_remove("ORCA_TERMINAL_HANDLE");
+            if let Some(pane) = pane {
+                command
+                    .env("ORCA_PANE_KEY", pane)
+                    .env("ORCA_TERMINAL_HANDLE", "term_seven");
+            }
+            command.spawn().expect("fake client")
+        };
+
+        let mut client = spawn(Some("tab-7:leaf-7"));
+        assert_eq!(
+            find_terminal(&install, &socket).await,
+            Ok(Some(Terminal::Orca {
+                pane: "tab-7:leaf-7".into(),
+                handle: "term_seven".into(),
+            }))
+        );
+        client.kill().unwrap();
+        client.wait().unwrap();
+
+        let mut client = spawn(None);
+        assert_eq!(find_terminal(&install, &socket).await, Ok(None));
+        client.kill().unwrap();
+        client.wait().unwrap();
+        assert!(find_terminal(&install, &socket).await.is_err());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
     async fn a_requested_refresh_waits_for_the_turn_then_ends_the_client_and_can_be_cancelled() {
         let db = Arc::new(Database::memory().unwrap());
         let home = tempfile::TempDir::new().expect("temp home");
@@ -2140,13 +2354,13 @@ mod tests {
             let (db, install, socket, marker) =
                 (db.clone(), install.clone(), socket.clone(), marker.clone());
             tokio::spawn(async move {
-                serve(&db, &install, &socket, &marker, Some(&Terminal::Native)).await
+                serve(&db, &install, &socket, &marker, Some(&Terminal::Native), true).await
             })
         };
         let ended = || std::fs::read_to_string(&refresh).unwrap_or_default() == ENDED;
 
         // Mid-turn: the refresh waits and the client keeps running.
-        assert!(eventually(|| is_waiting(&socket)).await);
+        assert!(eventually(|| marked(&WAITING, &socket)).await);
         tokio::time::sleep(TICK * 2).await;
         assert!(!ended());
         assert!(client.try_wait().unwrap().is_none());
@@ -2154,7 +2368,7 @@ mod tests {
         // Cancelled, the window is left alone after its turn ends.
         std::fs::remove_file(&refresh).unwrap();
         nudge();
-        assert!(eventually(|| !is_waiting(&socket)).await);
+        assert!(eventually(|| !marked(&WAITING, &socket)).await);
         set_status("idle");
         tokio::time::sleep(TICK * 2).await;
         assert!(!refresh.exists());
@@ -2170,7 +2384,7 @@ mod tests {
             std::fs::read_to_string(marker.with_extension("thread")).unwrap(),
             format!("{conversation}\n")
         );
-        assert!(!is_waiting(&socket));
+        assert!(!marked(&WAITING, &socket));
 
         // Ending is not cancelled any more, and the window's shell takes it
         // from here.
@@ -2199,7 +2413,7 @@ mod tests {
         let socket = "ws://127.0.0.1:9";
         let just_typed = Ending::Typed(Instant::now());
         assert_eq!(
-            end_step(&install, socket, &marker, &orca, just_typed).await,
+            end_step(&install, socket, &marker, &orca, true, just_typed).await,
             just_typed
         );
         assert_eq!(std::fs::read_to_string(&refresh).unwrap(), "");
@@ -2208,10 +2422,19 @@ mod tests {
         // retried; the shell would still restore the terminal.
         let long_ago = Instant::now() - EXIT_WAIT - Duration::from_secs(1);
         assert_eq!(
-            end_step(&install, socket, &marker, &orca, Ending::Typed(long_ago)).await,
+            end_step(&install, socket, &marker, &orca, true, Ending::Typed(long_ago)).await,
             Ending::GaveUp
         );
         assert_eq!(std::fs::read_to_string(&refresh).unwrap(), ENDED);
+
+        // An older shell cannot restore its terminal, so its Codex is never
+        // ended from outside; the refresh waits for the user to exit it.
+        std::fs::write(&refresh, "").unwrap();
+        assert_eq!(
+            end_step(&install, socket, &marker, &orca, false, Ending::Typed(long_ago)).await,
+            Ending::GaveUp
+        );
+        assert_eq!(std::fs::read_to_string(&refresh).unwrap(), "");
 
         // A refresh cancelled meanwhile is not started.
         std::fs::remove_file(&refresh).unwrap();
