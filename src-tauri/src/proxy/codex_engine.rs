@@ -1416,10 +1416,10 @@ async fn end_step(
     match ending {
         Ending::NotYet => {
             if let Terminal::Orca { pane, handle } = terminal {
-                match type_exit(pane, handle).await {
+                match type_exit(pane, handle, marker).await {
                     Ok(handle) => {
                         log::info!(
-                            "[codex_engine] {socket}: refreshing; typed /exit into Orca terminal {handle}"
+                            "[codex_engine] {socket}: refreshing; quit Codex in Orca terminal {handle}"
                         );
                         return Ending::Typed(Instant::now());
                     }
@@ -1693,14 +1693,15 @@ fn orca_handle(terminals: &[Value], pane: &str, handle: &str) -> Option<String> 
         .filter(|handle| !handle.is_empty())
 }
 
-/// Quits Codex in an Orca pane as a user would: Ctrl+C clears anything typed
-/// but not sent, then `/exit` and Enter. Each goes as plain input: with
-/// `--enter`, Orca treats the text as an agent prompt and watches for its
-/// submission, and sent right after a reply that call outlasted Codex and the
-/// restarted Codex quit too. Enter goes on its own so Codex does not take it
-/// as part of a paste.
-/// Returns the pane's handle.
-async fn type_exit(pane: &str, handle: &str) -> Result<String, String> {
+/// Quits Codex in an Orca pane as a user would. Ctrl+C clears anything typed
+/// but not sent; on an empty input box it quits Codex on Windows, so `/exit`
+/// and Enter follow only while the window's session file shows Codex still
+/// open; typed after it quit they would land in the restarted Codex. Each goes
+/// as plain input: with `--enter`, Orca treats the text as an agent prompt and
+/// watches for its submission, and sent right after a reply that call outlasted
+/// Codex and the restarted Codex quit too. Enter goes on its own so Codex does
+/// not take it as part of a paste. Returns the pane's handle.
+async fn type_exit(pane: &str, handle: &str, marker: &Path) -> Result<String, String> {
     let cli = orca_cli().ok_or("the Orca command line is not installed")?;
     let list = orca(&cli, &["terminal", "list"]).await?;
     let terminals = list
@@ -1709,7 +1710,10 @@ async fn type_exit(pane: &str, handle: &str) -> Result<String, String> {
         .ok_or("Orca listed no terminals")?;
     let handle = orca_handle(terminals, pane, handle).ok_or("its Orca pane is closed")?;
     orca(&cli, &["terminal", "send", "--terminal", &handle, "--interrupt"]).await?;
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    if !marker.exists() {
+        return Ok(handle);
+    }
     orca(&cli, &["terminal", "send", "--terminal", &handle, "--text", "/exit"]).await?;
     tokio::time::sleep(Duration::from_millis(500)).await;
     orca(&cli, &["terminal", "send", "--terminal", &handle, "--text", "\r"]).await?;
