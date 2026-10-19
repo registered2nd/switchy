@@ -462,9 +462,9 @@ base_url = "http://localhost:8080"
 
         let live: Value = read_json_file(&get_claude_settings_path()).expect("read live");
         assert_eq!(
-            live.get("permissions"),
-            updated.settings_config.get("permissions"),
-            "provider edits should propagate into Claude live config during takeover"
+            live["permissions"],
+            json!({ "allow": ["Bash"] }),
+            "the permissions are the user's"
         );
         assert_eq!(
             live.get("env")
