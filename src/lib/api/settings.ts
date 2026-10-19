@@ -129,12 +129,16 @@ export const settingsApi = {
     return await invoke("get_proxy_route_status");
   },
 
-  async getCodexWindowUpdates(): Promise<CodexWindowUpdate[]> {
-    return await invoke("get_codex_window_updates");
+  async getCodexTerminalUpdates(): Promise<CodexTerminalUpdate[]> {
+    return await invoke("get_codex_terminal_updates");
   },
 
-  async setCodexRefreshOnExit(socket: string, queued: boolean): Promise<void> {
-    await invoke("set_codex_refresh_on_exit", { socket, queued });
+  async refreshCodexTerminal(socket: string): Promise<void> {
+    await invoke("refresh_codex_terminal", { socket });
+  },
+
+  async cancelCodexTerminalRefresh(socket: string): Promise<void> {
+    await invoke("cancel_codex_terminal_refresh", { socket });
   },
 
   async setAccountPoolConfig(config: AccountPoolConfig): Promise<boolean> {
@@ -188,7 +192,7 @@ export interface ProxyRouteStatus {
   checkedAt: number;
 }
 
-export interface CodexWindowUpdate {
+export interface CodexTerminalUpdate {
   platform: string;
   socket: string;
   cwd: string | null;
@@ -197,7 +201,11 @@ export interface CodexWindowUpdate {
   cliChanged: boolean;
   catalogChanged: boolean;
   refreshOnExit: boolean;
+  /** Switchy ends Codex in the terminal itself; otherwise the user exits it. */
+  managed: boolean;
   queued: boolean;
+  /** A requested refresh waits for the current reply to finish. */
+  waiting: boolean;
 }
 
 export interface OptimizerConfig {

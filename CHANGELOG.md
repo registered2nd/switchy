@@ -8,6 +8,31 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.39] — 2026-10-19 — One click refreshes a Codex terminal
+
+Windows installer: download `Switchy_1.0.39_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.39_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Changed
+
+- **Refresh restarts Codex for you.** Settings → Pool lists *Codex terminals
+  need a refresh* with a **Refresh** button for each. Switchy waits until
+  Codex in that terminal has finished its reply, quits it, and the terminal
+  starts the installed CLI on the same conversation by itself; you no longer
+  type `/exit`. In an Orca terminal Switchy types `/exit` there; in any other
+  terminal it ends Codex and puts the terminal back as it was. Text typed but
+  not sent in that Codex's input box is lost. While a reply is running the
+  entry says it is waiting, and the refresh can still be cancelled. Codex
+  started before this version keeps *Refresh on exit*: queue it, then exit
+  Codex yourself. Open a new terminal after installing so it uses the new
+  `codex` function.
+- **Scripts can refresh a terminal too.** Over the local control routes
+  (`POST /switchy/invoke`), `get_codex_terminal_updates` lists the terminals
+  that need a refresh, `refresh_codex_terminal` refreshes one and
+  `cancel_codex_terminal_refresh` cancels, exactly as the buttons do. They
+  replace `get_codex_window_updates` and `set_codex_refresh_on_exit`.
+
 ## [1.0.38] — 2026-10-19 — A refreshed Codex window comes back on its own conversation
 
 Windows installer: download `Switchy_1.0.38_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

@@ -117,7 +117,7 @@ function App() {
     let live = true;
     const check = () => {
       settingsApi
-        .getCodexWindowUpdates()
+        .getCodexTerminalUpdates()
         .then((updates) => {
           if (!live) return;
           const pending = updates.filter((update) => !update.queued);
@@ -145,7 +145,7 @@ function App() {
           });
         })
         .catch((error) =>
-          console.error("Failed to check Codex windows:", error),
+          console.error("Failed to check Codex terminals:", error),
         );
     };
     check();

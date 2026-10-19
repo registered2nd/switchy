@@ -51,6 +51,22 @@ function global:codex {
     }
 
     [System.IO.Directory]::CreateDirectory($swDir) | Out-Null
+    # Reads and sets console modes, to restore them when Switchy ends this
+    # window's Codex for a refresh.
+    $swConsole = $null
+    try {
+        if (-not ('Switchy.CodexConsole' -as [type])) {
+            Add-Type -Namespace Switchy -Name CodexConsole -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int handle);
+[DllImport("kernel32.dll")] public static extern bool GetConsoleMode(IntPtr handle, out uint mode);
+[DllImport("kernel32.dll")] public static extern bool SetConsoleMode(IntPtr handle, uint mode);
+'@
+        }
+        $swConsole = 'Switchy.CodexConsole' -as [type]
+    } catch { }
+    # Where this window's Codex runs, so Switchy can end it for a refresh: it
+    # types /exit into an Orca pane and ends the client in any other terminal.
+    $swTerminal = if ($env:ORCA_PANE_KEY) { "orca $env:ORCA_PANE_KEY $env:ORCA_TERMINAL_HANDLE" } else { 'native' }
     while ($true) {
         # Codex refuses permission flags from a remote client resuming a
         # conversation, so they go to the window's server as config.
@@ -124,12 +140,29 @@ function global:codex {
             $swVersion = (& $swExecutable --version 2>$null | Select-Object -First 1)
             $swConfigDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Split-Path $PSScriptRoot -Parent }
             [System.IO.File]::WriteAllText($swMarker,
-                "$swUrl`nrefresh-on-exit-v1`n$((Get-Location).Path)`n$swVersion`n$swConfigDir`n$swExecutable`n")
+                "$swUrl`nrefresh-on-exit-v1`n$((Get-Location).Path)`n$swVersion`n$swConfigDir`n$swExecutable`nterminal=$swTerminal`n")
+            $swInMode = [uint32]0
+            $swOutMode = [uint32]0
+            $swHaveModes = $swConsole -and
+                $swConsole::GetConsoleMode($swConsole::GetStdHandle(-10), [ref]$swInMode) -and
+                $swConsole::GetConsoleMode($swConsole::GetStdHandle(-11), [ref]$swOutMode)
             $env:SWITCHY_CODEX_WINDOW_TOKEN = $swToken
             try { & $swExecutable --remote $swUrl --remote-auth-token-env SWITCHY_CODEX_WINDOW_TOKEN @swArgs }
             finally { Remove-Item Env:\SWITCHY_CODEX_WINDOW_TOKEN -ErrorAction SilentlyContinue }
             $swExit = $LASTEXITCODE
             if (-not (Test-Path $swRefresh)) { return }
+            # "ended" when Switchy ended the client from outside: undo the
+            # keyboard and mouse modes, alternate screen and raw input it left.
+            $swEnded = ''
+            try { $swEnded = [System.IO.File]::ReadAllText($swRefresh).Trim() } catch { }
+            if ($swEnded -eq 'ended' -and $swHaveModes) {
+                if ($swOutMode -band 4) {
+                    $swEsc = [char]27
+                    [Console]::Out.Write("$swEsc[<u$swEsc[?2004l$swEsc[?1004l$swEsc[?1006l$swEsc[?1003l$swEsc[?1002l$swEsc[?1000l$swEsc[?25h$swEsc[0m$swEsc[?1049l")
+                }
+                [void]$swConsole::SetConsoleMode($swConsole::GetStdHandle(-10), $swInMode)
+                [void]$swConsole::SetConsoleMode($swConsole::GetStdHandle(-11), $swOutMode)
+            }
             # Switchy names the conversation this window was in when it is
             # certain. Without one the picker opens, so another window's
             # conversation is never taken.

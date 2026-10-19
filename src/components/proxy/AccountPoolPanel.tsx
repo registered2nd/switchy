@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   settingsApi,
   type AccountPoolConfig,
-  type CodexWindowUpdate,
+  type CodexTerminalUpdate,
   type ProxyRouteStatus,
 } from "@/lib/api/settings";
 
@@ -30,7 +30,7 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
   const [thresholdText, setThresholdText] = useState("98");
   const [keepWarmText, setKeepWarmText] = useState("60");
   const [isLoading, setIsLoading] = useState(true);
-  const [codexUpdates, setCodexUpdates] = useState<CodexWindowUpdate[]>([]);
+  const [codexUpdates, setCodexUpdates] = useState<CodexTerminalUpdate[]>([]);
   const [refreshPending, setRefreshPending] = useState<string | null>(null);
   const [routeStatuses, setRouteStatuses] = useState<ProxyRouteStatus[]>([]);
 
@@ -72,31 +72,37 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
     };
   }, []);
 
+  // A requested refresh is followed closely until its terminal restarts.
+  const refreshing = codexUpdates.some((update) => update.queued);
   useEffect(() => {
     let live = true;
     const load = () => {
       settingsApi
-        .getCodexWindowUpdates()
+        .getCodexTerminalUpdates()
         .then((updates) => {
           if (live) setCodexUpdates(updates);
         })
         .catch((error) =>
-          console.error("Failed to check Codex windows:", error),
+          console.error("Failed to check Codex terminals:", error),
         );
     };
     load();
-    const timer = window.setInterval(load, 60_000);
+    const timer = window.setInterval(load, refreshing ? 3_000 : 60_000);
     return () => {
       live = false;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [refreshing]);
 
-  const toggleCodexRefresh = async (update: CodexWindowUpdate) => {
+  const toggleCodexRefresh = async (update: CodexTerminalUpdate) => {
     setRefreshPending(update.socket);
     try {
-      await settingsApi.setCodexRefreshOnExit(update.socket, !update.queued);
-      setCodexUpdates(await settingsApi.getCodexWindowUpdates());
+      if (update.queued) {
+        await settingsApi.cancelCodexTerminalRefresh(update.socket);
+      } else {
+        await settingsApi.refreshCodexTerminal(update.socket);
+      }
+      setCodexUpdates(await settingsApi.getCodexTerminalUpdates());
     } catch (error) {
       toast.error(String(error));
     } finally {
@@ -316,7 +322,16 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
                 )}
                 {update.queued && (
                   <p className="text-xs text-muted-foreground">
-                    {t("proxy.accountPool.codexRefreshQueued")}
+                    {t(
+                      update.managed
+                        ? "proxy.accountPool.codexRefreshQueued"
+                        : "proxy.accountPool.codexRefreshOnExitQueued",
+                    )}
+                  </p>
+                )}
+                {update.queued && update.waiting && (
+                  <p className="text-xs font-medium">
+                    {t("proxy.accountPool.codexRefreshWaiting")}
                   </p>
                 )}
               </div>
@@ -330,7 +345,9 @@ export function AccountPoolPanel({ disabled = false }: AccountPoolPanelProps) {
                   {t(
                     update.queued
                       ? "proxy.accountPool.codexCancelRefresh"
-                      : "proxy.accountPool.codexQueueRefresh",
+                      : update.managed
+                        ? "proxy.accountPool.codexRefresh"
+                        : "proxy.accountPool.codexQueueRefresh",
                   )}
                 </Button>
               )}

@@ -151,15 +151,24 @@ pub fn get_proxy_route_status() -> Vec<crate::proxy::account_pool::ProxyRouteSta
     crate::proxy::account_pool::proxy_route_status()
 }
 
+/// The terminals whose Codex started before the installed CLI or selected
+/// model catalog changed, keyed by `socket`.
 #[tauri::command]
-pub async fn get_codex_window_updates(
+pub async fn get_codex_terminal_updates(
 ) -> Result<Vec<crate::proxy::codex_engine::WindowUpdate>, String> {
     crate::proxy::codex_engine::window_updates().await
 }
 
+/// Refreshes the Codex in one terminal, as its Refresh button does.
 #[tauri::command]
-pub fn set_codex_refresh_on_exit(socket: String, queued: bool) -> Result<(), String> {
-    crate::proxy::codex_engine::set_refresh_on_exit(&socket, queued)
+pub fn refresh_codex_terminal(socket: String) -> Result<(), String> {
+    crate::proxy::codex_engine::request_refresh(&socket)
+}
+
+/// Cancels a terminal's refresh that has not yet ended its Codex.
+#[tauri::command]
+pub fn cancel_codex_terminal_refresh(socket: String) -> Result<(), String> {
+    crate::proxy::codex_engine::cancel_refresh(&socket)
 }
 
 /// Get the optimizer config
