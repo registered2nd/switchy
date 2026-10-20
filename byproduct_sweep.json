@@ -1,0 +1,8 @@
+{
+  "notes": "Starter rules: only what the Playwright MCP writes itself (console logs, page snapshots, screenshots); files downloaded into its folder stay. The sweep's judge decides any other untracked image and adds its rules here.",
+  "rules": [
+    {"path": ".playwright-mcp/*.log", "delete_after_days": 7, "why": "Playwright MCP console logs"},
+    {"path": ".playwright-mcp/*.yml", "delete_after_days": 7, "why": "Playwright MCP page snapshots"},
+    {"path": ".playwright-mcp/*", "images_only": true, "delete_after_days": 7, "why": "Playwright MCP screenshots; downloads saved in the folder stay"}
+  ]
+}
