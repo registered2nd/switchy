@@ -229,3 +229,13 @@ In the overlay-z-index thread, four commits tried to fix the same bug by moving 
 **Rule:** Run a script in WSL with `wsl.exe -e bash -lc <script>`, never `--`, whenever the script contains `$`.
 
 **How to apply:** When a WSL command started from Windows "does nothing" and returns success, print the script's own variables from inside it before debugging the logic. From Git Bash, test with a quoted heredoc into `bash -s`, since Git Bash also rewrites `/paths` in arguments to native programs.
+
+---
+
+## A Rust app killed by a refused allocation leaves no panic log; name the frames from the stripped binary itself
+
+Rust does not panic when the allocator refuses memory: it prints "memory allocation of N bytes failed" to stderr and calls `__fastfail(7)`, which Windows reports as `0xc0000409` / `BEX64`, the same signature as a buffer-overrun check. A windowed app has no stderr and the panic hook never runs, so `crash.log` stays empty however `panic` is set. Switchy's 2026-10-20 crash (`docs/finding_low_memory_abort_2026_10_20.md`) looked like an unexplained abort until the dump was read.
+
+**Rule:** For a Windows `0xc0000409` in a Rust binary, look for `%LOCALAPPDATA%\CrashDumps\<exe>.<pid>.dmp` (written when the machine has the WER `LocalDumps` key) before guessing, and check the dump's system memory counters for commit at its limit.
+
+**How to apply:** No debugger or symbols are needed. Parse the dump with Python's `minidump`, walk the faulting thread with the exe's own `.pdata` unwind entries (`pefile`), then disassemble each frame's function (`capstone`) and print what its RIP-relative operands point at: Rust panic `Location` records give the source file and line, and std's OOM path is recognisable by its "memory allocation of" string. The `Layout` the OOM hook received is on the stack and gives the size that was refused.

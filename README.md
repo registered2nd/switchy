@@ -166,6 +166,10 @@ Gemini CLI is different. A Gemini provider holds the API key and endpoint, not t
 
 Kimi Code publishes no usage figures at all, so Kimi cards never show badges.
 
+### Switchy stops when Windows runs out of memory
+
+When Windows reaches its commit limit, a memory request Switchy makes can be refused, and Switchy then ends at once without writing `crash.log`; Windows records the crash in its Application log and, on machines that keep local crash dumps, in `%LOCALAPPDATA%\CrashDumps`. Tools routed through the proxy have no endpoint until Switchy is started again, and start at login brings it back only at the next sign-in. On the next start Switchy detects the abnormal exit, restores the live configs and takes them over again. Analysis and options: [docs/finding_low_memory_abort_2026_10_20.md](docs/finding_low_memory_abort_2026_10_20.md).
+
 ## License
 
 MIT — Switchy began as a fork of cc-switch by Jason Young. See [LICENSE](LICENSE).
