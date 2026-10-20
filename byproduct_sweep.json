@@ -1,8 +1,9 @@
 {
-  "notes": "Starter rules: only what the Playwright MCP writes itself (console logs, page snapshots, screenshots); files downloaded into its folder stay. The sweep's judge decides any other untracked image and adds its rules here.",
+  "notes": "Switchy's tracked images are app, tray and UI icons (src-tauri/icons/, src/assets/icons/), all source and kept; the only by-products are what the Playwright MCP writes into .playwright-mcp/ (sign-in flow screenshots, page snapshots, console logs), which is gitignored and has no record value.",
   "rules": [
-    {"path": ".playwright-mcp/*.log", "delete_after_days": 7, "why": "Playwright MCP console logs"},
-    {"path": ".playwright-mcp/*.yml", "delete_after_days": 7, "why": "Playwright MCP page snapshots"},
-    {"path": ".playwright-mcp/*", "images_only": true, "delete_after_days": 7, "why": "Playwright MCP screenshots; downloads saved in the folder stay"}
+    {"path": ".playwright-mcp/*.log", "delete_after_days": 7, "why": "Playwright MCP console logs", "by": "survey 2026-10-20"},
+    {"path": ".playwright-mcp/*.yml", "delete_after_days": 7, "why": "Playwright MCP page snapshots", "by": "survey 2026-10-20"},
+    {"path": ".playwright-mcp/*", "delete_after_days": 7, "images_only": true, "why": "Playwright MCP screenshots of browser test sessions; downloads saved in the folder stay", "by": "survey 2026-10-20"},
+    {"path": ".playwright-mcp/tauri_stub.js", "keep": true, "why": "Hand-written Tauri API stub, probably for testing the UI in a browser, not MCP output", "by": "survey 2026-10-20"}
   ]
 }
