@@ -1,6 +1,6 @@
 # Finding: Switchy aborts when Windows runs out of commit memory
 
-**Status:** cause confirmed from the crash dump. No code change made yet; options ranked below.
+**Status:** cause confirmed from the crash dump. Switchy 1.0.40 ships options 1 and 4 and the first part of option 5.
 **Observed:** 2026-10-20 05:10:37 (Pacific), workstation, Switchy 1.0.39, Windows 11 build 26200.
 
 ## What happened
@@ -41,7 +41,7 @@ The swings come from how each request body is handled. For a body of N bytes, th
 - a clone per provider attempt (`forwarder.rs`, `provider_body`);
 - a clone for model mapping (`forwarder.rs`, `apply_model_mapping(body.clone())`);
 - the serialized body, grown by doubling (`forwarder.rs:1430`, the allocation that failed);
-- a second full serialization made only for a debug log line, run on every request even at the default `info` level (`forwarder.rs:1448`).
+- in 1.0.39, a second full serialization made only for a debug log line, run on every request even at the default `info` level (`forwarder.rs:1448`); 1.0.40 logs the serialized body only when debug logging is on.
 
 Streamed responses add the usage collector, which keeps every parsed SSE event until the stream ends (`response_processor.rs`, `SseUsageCollector`), although usage needs only a few of them. Logs go to disk, not memory. The long-lived maps are keyed by account, provider or Codex window, so none grows with traffic.
 
@@ -51,10 +51,10 @@ The commit limit is 63.4 GB of RAM plus a 192 GB system-managed page file, alrea
 
 ## Options, ranked
 
-1. **Register for Windows' crash restart.** At startup on Windows, call `RegisterApplicationRestart` with `--autostart` and the no-patch and no-reboot flags, so Windows Error Reporting relaunches Switchy into the tray after a crash or a hang. Tested 2026-10-20 with a stand-alone program that registered the same way and then died of a refused allocation (`0xc0000409`, `BEX64`): WER relaunched it 7 seconds after the crash with the registered argument, with no dialog. About ten lines of code. WER restarts only a process that ran for at least 60 seconds, which guards against crash loops, and tries once. It does not fire on a normal quit, `taskkill` or the installer's stop, so it leaves the reinstall procedure alone. The relaunch waits until WER has written its report; on 2026-10-20 the dump took 36 seconds under memory pressure, by which time commit had fallen to 230 GB.
+1. **Register for Windows' crash restart.** At startup on Windows, call `RegisterApplicationRestart` with `--autostart` and the no-patch and no-reboot flags, so Windows Error Reporting relaunches Switchy into the tray after a crash or a hang. Tested 2026-10-20 with a stand-alone program that registered the same way and then died of a refused allocation (`0xc0000409`, `BEX64`): WER relaunched it 7 seconds after the crash with the registered argument, with no dialog. About ten lines of code. WER restarts only a process that ran for at least 60 seconds, which guards against crash loops, and tries once. It does not fire on a normal quit, `taskkill` or the installer's stop, so it leaves the reinstall procedure alone. The relaunch waits until WER has written its report; on 2026-10-20 the dump took 36 seconds under memory pressure, by which time commit had fallen to 230 GB. Shipped in 1.0.40 (`crash_restart.rs`).
 2. **An event-triggered scheduled task.** A task triggered by Application event 1000 for `switchy.exe` starts `switchy.exe --autostart` and retries every minute if the launch fails. It covers the same crashes and keeps retrying, but it is a second mechanism outside the app that Switchy would register and remove alongside start-at-login, and it has no crash-loop guard. Worth adding only if option 1's single attempt proves too little.
 3. **Ride out a brief exhaustion.** A global allocator wrapper that, when an allocation is refused, waits and retries for a few seconds and writes a fixed line (size, time) to a pre-opened `crash.log` before letting the abort go ahead. Commit fell by 25 GB within 36 seconds of this crash, so a short wait might have avoided it entirely; that is not verified. About forty lines of unsafe code that must not itself allocate; while memory is exhausted, the threads involved stall.
-4. **Record the cause on the next start.** Switchy already detects the abnormal exit from takeover leftovers. Writing the Windows crash event (exception code, time) and the dump path into `crash.log` on that start would make the next occurrence explain itself. Diagnostic only.
-5. **Hold fewer copies of each request.** Drop the debug-only serialization, clone the parsed body only when a provider changes it, and keep only usage-bearing SSE events. This lowers Switchy's peaks but cannot prevent the crash: at the machine's limit any allocation fails, however small.
+4. **Record the cause on the next start.** Switchy already detects the abnormal exit from takeover leftovers. Writing the Windows crash event (exception code, time) and the dump path into `crash.log` on that start would make the next occurrence explain itself. Diagnostic only. Shipped in 1.0.40: a run marker (`~/.switchy/running.json`) that a clean exit removes tells the next start to look.
+5. **Hold fewer copies of each request.** Drop the debug-only serialization (done in 1.0.40), clone the parsed body only when a provider changes it, and keep only usage-bearing SSE events. This lowers Switchy's peaks but cannot prevent the crash: at the machine's limit any allocation fails, however small.
 6. **A supervisor process.** Restarts on any exit and retries indefinitely, but needs its own start-at-login entry and changes to single-instance handling, the updater and the stop step of the reinstall procedure, which a supervisor would race. Highest cost and risk for little beyond options 1 and 2.
 7. **Keeping routed tools working while Switchy is down.** Nothing practical: running Claude Code and Codex sessions keep calling `127.0.0.1:15721`, restoring direct configs reaches only new sessions, and a stand-in listener could not serve the pooled logins. Shortening the outage is what helps.

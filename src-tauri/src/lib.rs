@@ -4,6 +4,7 @@ mod auto_launch;
 mod codex_config;
 mod commands;
 mod config;
+mod crash_restart;
 mod database;
 mod error;
 mod gemini_config;
@@ -205,6 +206,12 @@ pub fn run() {
                     }
                 }
             };
+
+            // Report a previous run that did not exit cleanly, and have Windows
+            // restart this one if it crashes
+            crash_restart::begin_run();
+            #[cfg(target_os = "windows")]
+            crash_restart::register_restart();
 
             let app_state = AppState::new(db);
 
@@ -740,6 +747,7 @@ pub fn run() {
 
                 // Wait briefly so all I/O (such as database writes) is flushed to disk
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                crash_restart::end_run();
 
                 // std::process::exit avoids triggering ExitRequested again
                 std::process::exit(0);
@@ -772,6 +780,7 @@ pub fn run() {
                     Ok(Err(e)) => log::error!("Could not hand the live configs back: {e}"),
                     Err(_) => log::error!("Handing the live configs back did not finish in 4 seconds"),
                 }
+                crash_restart::end_run();
                 log::logger().flush();
             }
             return;

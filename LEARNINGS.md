@@ -166,7 +166,7 @@ When planning to call a third-party endpoint that reference clients (sub2api, cl
 
 ## NSIS bundler's "mis-hashed files" error means manual DLL replacement
 
-Tauri's NSIS bundler validates its plugin DLL cache (`%LOCALAPPDATA%\tauri\NSIS\Plugins\x86-unicode\additional\nsis_tauri_utils.dll`) against an expected hash. If the cache file's hash doesn't match (because Tauri updated which upstream commit it pins, or the cache is from an older Tauri version), the bundler tries to redownload from `https://github.com/tauri-apps/nsis-tauri-utils/releases/...`. From this network, that download routinely times out — fails with `failed to bundle project: 'timeout: global'`.
+Tauri's NSIS bundler validates its plugin DLL cache (`%LOCALAPPDATA%\tauri\NSIS\Plugins\x86-unicode\additional\nsis_tauri_utils.dll`) against an expected hash. If the cache file's hash doesn't match (because Tauri updated which upstream commit it pins, or the cache is from an older Tauri version), the bundler tries to redownload from `https://github.com/tauri-apps/nsis-tauri-utils/releases/...`. From this network, that download routinely times out — fails with `failed to bundle project: 'timeout: global'` (or, through the `HTTPS_PROXY` on port 15721, `protocol: http response missing version`). The cache is shared by every Tauri project on the machine, so a build elsewhere pinned to another version replaces it: on 2026-10-20 it had been overwritten that morning and 1.0.40's bundling failed until the v0.5.1 DLL was put back.
 
 **Rule:** When you see `NSIS directory contains mis-hashed files. Redownloading them.` followed by the global-timeout error, don't keep retrying the bundler. Manually download the DLL once and cp it into the cache slot.
 

@@ -1445,11 +1445,11 @@ impl RequestForwarder {
             .and_then(|v| v.as_str())
             .unwrap_or("<none>");
         log::info!("[{tag}] >>> Request URL: {url} (model={request_model})");
-        if let Ok(body_str) = serde_json::to_string(&filtered_body) {
+        if log::log_enabled!(log::Level::Debug) {
             log::debug!(
                 "[{tag}] >>> Request body ({} bytes): {}",
-                body_str.len(),
-                body_str
+                body_bytes.len(),
+                String::from_utf8_lossy(&body_bytes)
             );
         }
 

@@ -2,6 +2,13 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-10-20 — Windows Error Reporting restarts Switchy after a crash; a run marker records why the last run ended
+
+- Context: on 2026-10-20 Windows ran out of commit memory, a refused allocation aborted Switchy (Rust aborts without panicking), and routed tools had no endpoint for 74 minutes until a manual start. Analysis: `docs/finding_low_memory_abort_2026_10_20.md`.
+- Decision: on Windows, Switchy calls `RegisterApplicationRestart` at startup with `--autostart` (no-patch, no-reboot flags), so WER relaunches it into the tray after a crash or hang. Each run writes `~/.switchy/running.json` (pid, version, start time) and a clean exit or session end removes it; a start that finds it looks up the Application Error event for that pid, low-memory events since that run started and the local dump, and appends them to `crash.log`.
+- Why: WER's restart was tested to relaunch a process 7 seconds after the same allocation abort, needs no second process, has a built-in 60-second crash-loop guard, and does not fire on a quit, `taskkill` or the installer's stop, so the reinstall procedure is unaffected. A supervisor process or an event-triggered scheduled task would add a second mechanism to install, stop and keep in step with the app; the scheduled task stays the backstop if WER's single attempt proves too little.
+- Files: `src-tauri/src/crash_restart.rs`, its calls after database init and on both exit paths in `src-tauri/src/lib.rs`.
+
 ## 2026-10-19 — Lock in is a hold with no end, ended by an unlock or another pick by hand
 
 - Context: the user wanted one Claude account used up regardless of rotation's order, with a single button.

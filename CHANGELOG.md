@@ -8,6 +8,27 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.40] — 2026-10-20 — Windows starts Switchy again after a crash
+
+Windows installer: download `Switchy_1.0.40_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): this release has no `.dmg`; the latest one is `Switchy_1.0.39_aarch64.dmg` in the 1.0.39 release. The changes below are for Windows.
+
+### Changed
+
+- **Switchy comes back after a crash.** If Switchy crashes or hangs after
+  running for at least a minute, Windows starts it again in the tray, so tools
+  routed through the proxy get their endpoint back within moments instead of
+  waiting for someone to start it. Quitting Switchy, ending it in Task Manager
+  or installing an update does not bring it back.
+- **`crash.log` says why the last run ended.** When a run ends without
+  shutting down and Windows recorded a crash, the next start adds an entry to
+  `~/.switchy/crash.log` with the time, the exception, whether Windows ran out
+  of memory then, and where Windows kept the crash dump. A crash caused by
+  Windows running out of memory used to leave `crash.log` empty.
+- **Less memory per request.** The proxy no longer encodes each request body a
+  second time for a debug log line that is switched off.
+
 ## [1.0.39] — 2026-10-19 — One click refreshes a Codex terminal
 
 Windows installer: download `Switchy_1.0.39_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
