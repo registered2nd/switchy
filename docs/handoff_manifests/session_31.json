@@ -1,0 +1,90 @@
+{
+  "schema_version": 2,
+  "base": {
+    "context_generated_at": "2026-10-19T18:53:05.718041Z",
+    "context_source_revision": "workstate:handoff/switchy/session_30@sha256:f6d633d6c35c206fb596470cba89a509b5dd6c78836625d3a5f09e141d2a9450",
+    "publication_token": 2219
+  },
+  "session": {
+    "id": "session_31",
+    "title": "Low-memory crash: cause found; 1.0.40 restarts after a crash; laptop updated",
+    "started_at": "2026-10-21T05:58:49Z",
+    "ended_at": "2026-10-21T05:58:49Z",
+    "purpose": "Carry out low_memory_crash_brief.md: find why Switchy 1.0.39 died at 2026-10-20 05:10:37 when Windows ran out of commit memory, measure Switchy's own memory, and rank ways to withstand it. the user then asked for the best-practice fix, its install on the laptop, Switchy and OneDrive quit on the laptop, and the laptop's Orca connected to the workstation's Orca.",
+    "pickup": null,
+    "task_ids": [],
+    "artifact_ids": [],
+    "decision_pointers": [
+      "C:/Projects/Switchy/DECISION_LOG.md"
+    ],
+    "finding_pointers": [
+      "C:/Projects/Switchy/docs/finding_low_memory_abort_2026_10_20.md",
+      "C:/Projects/Switchy/README.md",
+      "C:/Projects/Switchy/LEARNINGS.md"
+    ],
+    "evidence_pointers": [
+      "git:b6d74eb8",
+      "git:925add8e",
+      "git:ea6c952e",
+      "git:fef0ef20",
+      "C:/Users/Administrator/AppData/Local/CrashDumps/switchy.exe.66532.dmp",
+      "C:/Projects/Switchy/brief_archive/low_memory_crash_brief.md",
+      "C:/Projects/Switchy/src-tauri/src/crash_restart.rs"
+    ],
+    "attention": false,
+    "attention_note": null,
+    "outcomes": [
+      "Cause confirmed from the WER minidump: a refused 1,228,800-byte allocation while serde_json re-serialized a ~610 KB Claude request in the forwarder (forwarder.rs:1430) on a tokio worker; commit was at its 255.4 GB limit. Rust aborts on a refused allocation without panicking (__fastfail 7, 0xc0000409/BEX64), so crash.log stayed empty. Frames were named without symbols from the exe's .pdata and panic Location strings (method in LEARNINGS.md).",
+      "Footprint: 75-185 MB private idle, 260-534 MB in request bursts, back within a minute, no rising floor over 52 minutes; 460 MB (peak 953) at the crash after 18 h; WebView2 adds ~224 MB. Each Claude request holds four parsed copies and two serialized copies of its body. About 70 GB of the machine's commit was per-session MCP servers (Playwright, windows-mcp, AdsPower) and 33 GB claude.exe; the page file was already at its 3x-RAM ceiling.",
+      "A stand-alone test program registered with RegisterApplicationRestart and died of the same refused allocation; WER relaunched it 7 s later with no dialog.",
+      "1.0.40 (at the user's request for the best practice): registers with WER for restart (--autostart, no-patch/no-reboot); a run marker (~/.switchy/running.json) removed on clean exit lets the next start append the Windows crash event, any low-memory event and the dump path to crash.log; the debug-only second serialization per request is gone. Unit tests pass; clippy clean on the changed code; the event-log queries find the real 05:10 crash. Recorded in DECISION_LOG, CHANGELOG, the finding doc and README.",
+      "The first 1.0.40 bundle failed: the shared Tauri NSIS plugin cache had been overwritten at 04:38 with another version; restoring nsis_tauri_utils v0.5.1 fixed it (LEARNINGS.md updated).",
+      "Installed 1.0.40 on the workstation by the one-command reinstall; GetApplicationRestartSettings reads back '--autostart', flags 12. Laptop: installed 1.0.40 (same check passed), then Switchy quit cleanly at 08:43 (configs handed back, marker removed) and OneDrive was shut down, both at the user's request.",
+      "Laptop Orca was already the latest patched build (1.4.232, fork features present, app.asar identical to the workstation's); restarted it and confirmed its saved 'workstation' environment is connected through the relay (status ready, worktree list returns the workstation's projects). The workstation's projects show in the laptop's sidebar tagged 'workstation'.",
+      "Not done: 1.0.40 is not published on GitHub and the commits are not pushed; another user's PC and Mac stay on 1.0.39."
+    ],
+    "latest_summary": "1.0.40 makes Windows restart Switchy after a crash and records the cause in crash.log; the 2026-10-20 crash was a refused allocation while Windows was out of commit memory. Installed on the workstation and laptop (Switchy quit on the laptop); unpublished, unpushed."
+  },
+  "context": {
+    "current_focus": {
+      "source": "C:/Projects/Switchy/README.md",
+      "summary": "Switchy 1.0.40 is built and installed but not published: Windows Error Reporting restarts it after a crash or hang (after its first minute, one attempt), and a start after an unclean exit writes the Windows crash event, low-memory event and dump path to ~/.switchy/crash.log. The latest public release is still 1.0.39, and the 1.0.40 commits are local; the user has not said whether to publish or push. The workstation runs 1.0.40; the laptop has 1.0.40 installed with Switchy quit at his request; another user's PC and Mac stay on 1.0.39. On the workstation Claude is locked on registered2nd (ccb19499) at the user's request; he has not said whether to keep that lock or move it to the Apple-relay account that resets 10/22. Await the user's feedback. Renewal, restart, WSL, rotation, proxy-off and crash-restart checks stay pending under their triggers."
+    },
+    "initiative_focus": [],
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/crash_restart.rs",
+        "summary": "CONFIRM THE CRASH RESTART ON THE NEXT REAL CRASH (1.0.40). After any Switchy crash on the workstation: Application log event 1000 for switchy.exe, then within about a minute a new switchy.log starting with '[crash_restart] Windows will restart Switchy after a crash or hang' and the proxy on 15721 without a manual start; switchy.prev.log ends at the crash; ~/.switchy/crash.log gains an [ABNORMAL EXIT] entry naming the exception, any 'Windows ran out of memory' line and the dump path. A restart that did not happen while commit was still exhausted is the known single-attempt limit (finding doc option 2 is the backstop)."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/connect_tunnel.rs",
+        "summary": "Confirm account-proxy coverage on the next natural Claude sign-in or renewal while Owen is selected, without forcing a new login. Claude Code's own exchange should log '[connect_tunnel] platform.claude.com:443 via socks5://82.26.163.142:45001'. For Switchy's renewal, observe '[claude_pool] refreshing login for provider=98e00f12...' and the successful refreshed-login message; the enforced per-account client route is owned by proxy/http_client.rs. Windows/WSL HTTPS_PROXY and NO_PROXY, UK exit probes and telemetry tunnels were verified; a live sign-in/renewal using this route remains unobserved. Connection failures must stop rather than fall back to direct; country observations only warn."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/lib.rs",
+        "summary": "CONFIRM THE RESTART PATH ON STEPHEN'S NEXT WINDOWS RESTART (1.0.29). In C:/Users/Administrator/.switchy/logs/switchy.prev.log after 'Session ending; handing the live configs back': '[session-end] claude/codex/gemini handed back', '[session-end] ... in WSL handed back', then 'Live configs handed back for the session end'. 'did not finish in 4 seconds' with the last [session-end] line shows which step stalls (Windows step = database lock, WSL step = WSL I/O); fix that step. In switchy.log: Switchy started within seconds of login (window hidden, launched with --autostart from HKCU Run), '[auto_launch] start at login on', proxy on 15721, and Claude Code / Codex answer without ECONNREFUSED."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+        "summary": "CONFIRM CLAUDE LOGINS STAY IN STEP WITH WSL (1.0.27). In switchy.log, when an account WSL is signed in to renews: '[claude_pool] provider=... took the newer login from WSL' or 'wrote the refreshed login through to WSL', and no new 'invalid_grant' 'Refresh token not found or invalid' in account_switches/provider_health. WSL's ~/.claude/.credentials.json and ~/.switchy/accounts/<id>/credentials.json for that account should carry the same refreshToken after each renewal."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/codex_ws.rs",
+        "summary": "CONFIRM ROTATION AND CODEX FAILOVER ON LIVE TRAFFIC (1.0.25/1.0.26). In C:/Users/Administrator/.switchy/logs/switchy.log and the switchy.db account_switches table: (a) when an account's five-hour window resets while another serves, a switch back to it with reason 'recovered' and detail \"Another account's weekly limit resets sooner\"; (b) a Codex turn refused for usage that continues an earlier one logs '[CodexWS] provider=... websocket closed (turn refused for usage; Codex resends it in full)' and the turn then completes on the next account with no error in Codex. GET http://127.0.0.1:15721/switchy/accounts shows current account, pool order, quota and atLimit per account."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      }
+    ]
+  },
+  "task_completions": []
+}
