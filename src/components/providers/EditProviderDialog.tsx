@@ -9,6 +9,8 @@ import {
   type ProviderFormValues,
 } from "@/components/providers/forms/ProviderForm";
 import { openclawApi, providersApi, vscodeApi, type AppId } from "@/lib/api";
+import { LoginProviderForm } from "@/components/providers/forms/LoginProviderForm";
+import { isLoginOnlyApp } from "@/lib/api/loginAccount";
 
 interface EditProviderDialogProps {
   open: boolean;
@@ -218,16 +220,25 @@ export function EditProviderDialog({
         </Button>
       }
     >
-      <ProviderForm
-        appId={appId}
-        providerId={provider.id}
-        submitLabel={t("common.save")}
-        onSubmit={handleSubmit}
-        onCancel={() => onOpenChange(false)}
-        onSubmittingChange={setIsFormSubmitting}
-        initialData={initialData}
-        showButtons={false}
-      />
+      {isLoginOnlyApp(appId) ? (
+        <LoginProviderForm
+          appId={appId}
+          initialData={initialData}
+          onSubmit={handleSubmit}
+          onSubmittingChange={setIsFormSubmitting}
+        />
+      ) : (
+        <ProviderForm
+          appId={appId}
+          providerId={provider.id}
+          submitLabel={t("common.save")}
+          onSubmit={handleSubmit}
+          onCancel={() => onOpenChange(false)}
+          onSubmittingChange={setIsFormSubmitting}
+          initialData={initialData}
+          showButtons={false}
+        />
+      )}
     </FullScreenPanel>
   );
 }

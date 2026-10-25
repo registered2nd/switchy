@@ -1681,6 +1681,29 @@ impl ProviderService {
                                     }
                                 }
                             }
+                            if app_type.is_login_only() {
+                                let outcome = crate::services::login_account::reconcile_switch_away(
+                                    &app_type,
+                                    stored_provider,
+                                    &mut current_provider,
+                                    providers,
+                                );
+                                result.warnings.extend(outcome.warnings);
+                                if let Some(rehomed) = outcome.rehomed {
+                                    if let Err(e) =
+                                        state.db.save_provider(app_type.as_str(), &rehomed)
+                                    {
+                                        log::warn!(
+                                            "Re-home of {} login failed: {e}",
+                                            app_type.as_str()
+                                        );
+                                    } else {
+                                        result
+                                            .warnings
+                                            .push(format!("backfill_rehomed:{}", rehomed.id));
+                                    }
+                                }
+                            }
                             if let Err(e) =
                                 state.db.save_provider(app_type.as_str(), &current_provider)
                             {
@@ -1910,6 +1933,7 @@ impl ProviderService {
             AppType::Codex => Self::extract_codex_common_config(&provider.settings_config),
             AppType::Gemini => Self::extract_gemini_common_config(&provider.settings_config),
             AppType::Kimi => Self::extract_kimi_common_config(&provider.settings_config),
+            AppType::Cursor | AppType::Antigravity => Ok(String::new()),
             AppType::OpenCode => Self::extract_opencode_common_config(&provider.settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(&provider.settings_config),
         }
@@ -1925,6 +1949,7 @@ impl ProviderService {
             AppType::Codex => Self::extract_codex_common_config(settings_config),
             AppType::Gemini => Self::extract_gemini_common_config(settings_config),
             AppType::Kimi => Self::extract_kimi_common_config(settings_config),
+            AppType::Cursor | AppType::Antigravity => Ok(String::new()),
             AppType::OpenCode => Self::extract_opencode_common_config(settings_config),
             AppType::OpenClaw => Self::extract_openclaw_common_config(settings_config),
         }
@@ -2248,6 +2273,14 @@ impl ProviderService {
 
     fn validate_provider_settings(app_type: &AppType, provider: &Provider) -> Result<(), AppError> {
         match app_type {
+            AppType::Cursor | AppType::Antigravity => {
+                if !provider.settings_config.is_object() {
+                    return Err(AppError::Message(format!(
+                        "{} configuration must be a JSON object",
+                        app_type.as_str()
+                    )));
+                }
+            }
             AppType::Claude => {
                 if !provider.settings_config.is_object() {
                     return Err(AppError::localized(
@@ -2387,6 +2420,10 @@ impl ProviderService {
 
                 Ok((api_key, base_url))
             }
+            AppType::Cursor | AppType::Antigravity => Err(AppError::Message(format!(
+                "A {} provider is a subscription login with no API key",
+                app_type.as_str()
+            ))),
             AppType::Kimi => {
                 let config_text = provider
                     .settings_config

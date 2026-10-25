@@ -32,6 +32,14 @@ export const TIER_I18N_KEYS: Record<string, string> = {
   gemini_pro: "subscription.geminiPro",
   gemini_flash: "subscription.geminiFlash",
   gemini_flash_lite: "subscription.geminiFlashLite",
+  // Cursor CLI's included usage for the billing month
+  cursor_included: "subscription.cursorIncluded",
+  cursor_auto: "subscription.cursorAuto",
+  cursor_api: "subscription.cursorApi",
+  // Antigravity CLI quota per model family
+  antigravity_gemini: "subscription.antigravityGemini",
+  antigravity_claude: "subscription.antigravityClaude",
+  antigravity_gpt: "subscription.antigravityGpt",
   // Token Plan (five_hour is already in the official map above)
   weekly_limit: "subscription.weeklyLimit",
 };
@@ -369,7 +377,10 @@ export const TierMeter: React.FC<{
   const used = Math.min(Math.max(tier.utilization, 0), 100);
   const countdown = countdownStr(tier.resetsAt);
   return (
-    <div className="w-[118px]" title={formatResetTime(tier.resetsAt, t) ?? undefined}>
+    <div
+      className="w-[118px]"
+      title={formatResetTime(tier.resetsAt, t) ?? undefined}
+    >
       <div className="flex items-baseline justify-between gap-2">
         <span className="truncate text-[11.5px] text-muted-foreground">
           {tierLabel(tier.name, t)}

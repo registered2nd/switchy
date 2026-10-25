@@ -427,6 +427,8 @@
     "codex": "Codex",
     "gemini": "Gemini",
     "kimi": "Kimi",
+    "cursor": "Cursor",
+    "antigravity": "Antigravity",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw"
   },
@@ -1437,6 +1439,12 @@
     "geminiPro": "Pro",
     "geminiFlash": "Flash",
     "geminiFlashLite": "Flash Lite",
+    "cursorIncluded": "套餐内",
+    "cursorAuto": "Auto",
+    "cursorApi": "API",
+    "antigravityGemini": "Gemini",
+    "antigravityClaude": "Claude",
+    "antigravityGpt": "GPT-OSS",
     "weeklyLimit": "每周",
     "utilization": "{{value}}%",
     "resetsIn": "{{time}}后重置",
@@ -1448,7 +1456,9 @@
     "signedOut": "已登出",
     "signedOutHint": {
       "codex": "启用此卡片后，在 Codex 中以此账号登录",
-      "claude": "在 Claude Code 中重新登录此账号，然后保存登录"
+      "claude": "在 Claude Code 中重新登录此账号，然后保存登录",
+      "cursor": "启用此卡片，然后以该账号运行 cursor-agent login",
+      "antigravity": "启用此卡片，然后在 agy 中以该账号登录"
     },
     "resetsInShort": "{{time}} 后重置"
   },
@@ -1506,5 +1516,13 @@
   },
   "rail": {
     "accounts": "账号"
+  },
+  "loginProvider": {
+    "name": "名称",
+    "hint": {
+      "cursor": "启用新卡片后，以目标账号运行 cursor-agent login。Switchy 会把该登录保存在卡片中，并在每次启用卡片时写回。",
+      "antigravity": "启用新卡片后，启动 agy 并以目标账号登录。Switchy 会把该登录保存在卡片中，并在每次启用卡片时写回。"
+    },
+    "editHint": "此卡片保存的是订阅登录，只能修改名称。"
   }
 }

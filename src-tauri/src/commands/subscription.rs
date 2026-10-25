@@ -33,6 +33,14 @@ pub async fn get_subscription_quota_for_provider(
             )
             .await
         }
+        app @ ("cursor" | "antigravity") => {
+            crate::services::subscription::get_login_quota_for_provider(
+                state.inner(),
+                app,
+                &provider_id,
+            )
+            .await
+        }
         other => Ok(SubscriptionQuota::not_found(other)),
     }
 }

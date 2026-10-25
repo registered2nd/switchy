@@ -12,6 +12,8 @@ const ALL_APPS: AppId[] = [
   "codex",
   "gemini",
   "kimi",
+  "cursor",
+  "antigravity",
   "opencode",
   "openclaw",
 ];
@@ -22,6 +24,8 @@ export const APP_ICON: Record<AppId, string> = {
   codex: "openai",
   gemini: "gemini",
   kimi: "kimi",
+  cursor: "cursor",
+  antigravity: "google",
   opencode: "opencode",
   openclaw: "openclaw",
 };
@@ -31,6 +35,8 @@ export const APP_NAME: Record<AppId, string> = {
   codex: "Codex",
   gemini: "Gemini",
   kimi: "Kimi",
+  cursor: "Cursor",
+  antigravity: "Antigravity",
   opencode: "OpenCode",
   openclaw: "OpenClaw",
 };

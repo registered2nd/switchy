@@ -35,6 +35,10 @@ pub struct VisibleApps {
     #[serde(default = "default_true")]
     pub kimi: bool,
     #[serde(default = "default_true")]
+    pub cursor: bool,
+    #[serde(default = "default_true")]
+    pub antigravity: bool,
+    #[serde(default = "default_true")]
     pub opencode: bool,
     /// Hidden by default: OpenClaw is a gateway, not a CLI worth a tab.
     #[serde(default)]
@@ -48,6 +52,8 @@ impl Default for VisibleApps {
             codex: true,
             gemini: true,
             kimi: true,
+            cursor: true,
+            antigravity: true,
             opencode: true,
             openclaw: false,
         }
@@ -62,6 +68,8 @@ impl VisibleApps {
             AppType::Codex => self.codex,
             AppType::Gemini => self.gemini,
             AppType::Kimi => self.kimi,
+            AppType::Cursor => self.cursor,
+            AppType::Antigravity => self.antigravity,
             AppType::OpenCode => self.opencode,
             AppType::OpenClaw => self.openclaw,
         }
@@ -145,6 +153,12 @@ pub struct AppSettings {
     /// Current Kimi provider ID (stored locally; takes precedence over the database is_current)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_kimi: Option<String>,
+    /// Current Cursor CLI provider ID (stored locally; takes precedence over the database is_current)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_provider_cursor: Option<String>,
+    /// Current Antigravity CLI provider ID (stored locally; takes precedence over the database is_current)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_provider_antigravity: Option<String>,
     /// Current OpenCode provider ID (stored locally; may be meaningless for OpenCode but kept for a uniform structure)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_provider_opencode: Option<String>,
@@ -205,6 +219,8 @@ impl Default for AppSettings {
             current_provider_codex: None,
             current_provider_gemini: None,
             current_provider_kimi: None,
+            current_provider_cursor: None,
+            current_provider_antigravity: None,
             current_provider_opencode: None,
             current_provider_openclaw: None,
             backup_interval_hours: None,
@@ -576,6 +592,8 @@ pub fn get_current_provider(app_type: &AppType) -> Option<String> {
         AppType::Codex => settings.current_provider_codex.clone(),
         AppType::Gemini => settings.current_provider_gemini.clone(),
         AppType::Kimi => settings.current_provider_kimi.clone(),
+        AppType::Cursor => settings.current_provider_cursor.clone(),
+        AppType::Antigravity => settings.current_provider_antigravity.clone(),
         AppType::OpenCode => settings.current_provider_opencode.clone(),
         AppType::OpenClaw => settings.current_provider_openclaw.clone(),
     }
@@ -592,6 +610,8 @@ pub fn set_current_provider(app_type: &AppType, id: Option<&str>) -> Result<(), 
         AppType::Codex => settings.current_provider_codex = id_owned.clone(),
         AppType::Gemini => settings.current_provider_gemini = id_owned.clone(),
         AppType::Kimi => settings.current_provider_kimi = id_owned.clone(),
+        AppType::Cursor => settings.current_provider_cursor = id_owned.clone(),
+        AppType::Antigravity => settings.current_provider_antigravity = id_owned.clone(),
         AppType::OpenCode => settings.current_provider_opencode = id_owned.clone(),
         AppType::OpenClaw => settings.current_provider_openclaw = id_owned.clone(),
     })

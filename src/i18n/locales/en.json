@@ -429,6 +429,8 @@
     "codex": "Codex",
     "gemini": "Gemini",
     "kimi": "Kimi",
+    "cursor": "Cursor",
+    "antigravity": "Antigravity",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw"
   },
@@ -1439,6 +1441,12 @@
     "geminiPro": "Pro",
     "geminiFlash": "Flash",
     "geminiFlashLite": "Flash Lite",
+    "cursorIncluded": "Included",
+    "cursorAuto": "Auto",
+    "cursorApi": "API",
+    "antigravityGemini": "Gemini",
+    "antigravityClaude": "Claude",
+    "antigravityGpt": "GPT-OSS",
     "weeklyLimit": "Weekly",
     "utilization": "{{value}}%",
     "resetsIn": "Resets in {{time}}",
@@ -1450,7 +1458,9 @@
     "signedOut": "Signed out",
     "signedOutHint": {
       "codex": "Enable this card, then sign in to Codex as this account",
-      "claude": "Sign in to this account in Claude Code again, then capture it"
+      "claude": "Sign in to this account in Claude Code again, then capture it",
+      "cursor": "Enable this card, then run cursor-agent login as this account",
+      "antigravity": "Enable this card, then sign in to agy as this account"
     },
     "resetsInShort": "resets in {{time}}"
   },
@@ -1508,5 +1518,13 @@
   },
   "rail": {
     "accounts": "Accounts"
+  },
+  "loginProvider": {
+    "name": "Name",
+    "hint": {
+      "cursor": "Enable the new card, then run cursor-agent login as the account you want. Switchy keeps that login with the card and writes it back whenever the card is enabled.",
+      "antigravity": "Enable the new card, then start agy and sign in as the account you want. Switchy keeps that login with the card and writes it back whenever the card is enabled."
+    },
+    "editHint": "This card holds a subscription login; only its name can be edited."
   }
 }

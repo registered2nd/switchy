@@ -1,6 +1,6 @@
 # Switchy
 
-Switchy switches and pools accounts for four command-line coding tools: **Claude Code, Codex, Gemini CLI and Kimi Code**. Each tool gets a list of providers — subscription logins or API keys — and Switchy writes the one you pick into that tool's own config. Route a tool through Switchy's local proxy and several subscription accounts serve it as one pool, moving to the next account before the current one reaches its limit.
+Switchy switches and pools accounts for six command-line coding tools: **Claude Code, Codex, Gemini CLI, Kimi Code, Cursor CLI (`cursor-agent`) and Antigravity CLI (`agy`)**. Each tool gets a list of providers — subscription logins or API keys — and Switchy writes the one you pick into that tool's own config. Pooling through the proxy covers Claude Code, Codex and Gemini CLI. Route a tool through Switchy's local proxy and several subscription accounts serve it as one pool, moving to the next account before the current one reaches its limit.
 
 It is a desktop app for Windows, built with Tauri; it also builds for macOS. Release history is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -8,7 +8,7 @@ It is a desktop app for Windows, built with Tauri; it also builds for macOS. Rel
 
 Each tool has its own list of provider cards. Add a provider from a preset or write a custom config; on first launch, *Import Current Config* saves the tool's existing config as a default provider.
 
-*Enable* on a card, or picking the provider from the tray, writes it into the tool's config. Claude Code picks up a switch without a restart. Codex does too while it is routed through the proxy (see [Switching Codex accounts in an open session](#switching-codex-accounts-in-an-open-session)); otherwise exit and run `codex resume --last`, which brings the conversation back under the new account. Gemini CLI and Kimi Code need a restart.
+*Enable* on a card, or picking the provider from the tray, writes it into the tool's config. Claude Code picks up a switch without a restart. Codex does too while it is routed through the proxy (see [Switching Codex accounts in an open session](#switching-codex-accounts-in-an-open-session)); otherwise exit and run `codex resume --last`, which brings the conversation back under the new account. Gemini CLI, Kimi Code, Cursor CLI and Antigravity CLI need a restart.
 
 A switch changes only what the provider owns — its endpoint, credentials and model — and leaves the rest of the tool's settings file as it is: hooks, plugins, MCP servers, permissions and anything another tool writes stay. The common config snippet (*Edit common config* in the provider form) is for settings you want Switchy to put in place: saving it applies the change to the tool's settings file.
 
@@ -18,7 +18,8 @@ An Official provider holds a subscription login instead of an API key, so switch
 
 - **Claude Code.** Sign in with `claude /login` while the Official provider is current, then click *Capture login* on its line (the button shows on the account in use). Switchy stores that login with the card and puts it back whenever the card is enabled.
 - **Codex and Kimi Code.** Each Official card keeps the login you signed in with while it was current; there is nothing to capture. To add a Codex account, add an OpenAI Official provider, enable it, and run `codex login`.
-- **Usage badges.** An Official card shows the subscription's quota: how much of each window is used and when it resets. What Gemini and Kimi cards can show is under [Known limitations](#what-a-gemini-or-kimi-card-can-show).
+- **Cursor CLI and Antigravity CLI.** Every card on these tabs is a subscription login and nothing else. Add a card, enable it and sign in (`cursor-agent login`, or sign in when `agy` starts); the login is filed with the card that is current, and *Import current config* on an empty tab makes a card of the account signed in now. *Enable* writes the card's login where the CLI reads it: for Cursor, `%APPDATA%\Cursor\auth.json` (`$XDG_CONFIG_HOME/cursor/auth.json` on Linux) and the `authInfo` entry in `~/.cursor/cli-config.json`, whose other settings stay; for Antigravity, the Windows Credential Manager entry `gemini:antigravity`. Before switching away, the live login is filed back into the card being left under the Codex and Claude rules: a removed or older login never replaces a stored one, and another account's login goes to the card holding that account. A card with no login signs the CLI out locally, so the next start asks for a sign-in. The Cursor editor keeps its own sign-in in its own database and is not touched. The Antigravity tab is separate from the Gemini CLI tab, whose providers hold API keys.
+- **Usage badges.** An Official card shows the subscription's quota: how much of each window is used and when it resets. Cursor cards show the billing month's included usage (Included, Auto, API) from Cursor's dashboard API; Antigravity cards show the remaining quota of Gemini, Claude and GPT-OSS models from the model list `agy` itself reads. What Gemini and Kimi cards can show is under [Known limitations](#what-a-gemini-or-kimi-card-can-show).
 
 ### Choosing the browser for sign-in
 
@@ -116,7 +117,7 @@ The two command routes return API keys and logins, so they answer only callers o
 - `switchy.db` — providers and app settings (SQLite)
 - `settings.json` — device-level preferences
 - `backups/` — database backups
-- `accounts/` — captured Claude logins, one directory per provider
+- `accounts/` — captured Claude logins, one directory per provider (Codex, Kimi, Cursor and Antigravity logins are stored with their providers in `switchy.db`)
 
 ## Development
 
@@ -136,7 +137,7 @@ GitHub Actions runs both suites on Linux for every push to `main` and every pull
 
 After reinstalling a running copy, verify port 15721 before using routed sessions; Switchy turns the proxy back on when it starts.
 
-The workstation runs **1.0.40**, installed on 2026-10-20; Windows holds its restart registration (`--autostart`, read back with `GetApplicationRestartSettings`). On 1.0.39 Refresh restarted Codex mid-reply only after the reply ended, in Orca tabs and in terminals outside Orca, on Windows and in WSL, each time on its own conversation with a usable terminal. Its WSL Codex CLI is 0.163.0, the same as Windows. Country observations run in the background and provide warnings. Configured proxies remain mandatory; *Require proxy* is off for this machine's router-proxied Wi-Fi. Claude is locked on registered2nd (`ccb19499`) at the user's request; live Claude requests were served by it after locking, and the lock held across a restart. The control routes list every command and run them, and refuse a request carrying an `Origin` header. The laptop has 1.0.40 installed (2026-10-20 08:41 local; restart registration read back) and Switchy quit there at 08:43 at the user's request, with its tools' configs handed back. another user's PC has 1.0.39 installed and Switchy not running, as it was before. another user's Mac runs 1.0.39 (restarted 2026-10-19 11:50 local from the release DMG; port 15721 open and the control routes answer). The 1.0.40 Windows installers and the 1.0.39 Apple Silicon DMG are in `installers/`; release history is in [CHANGELOG.md](CHANGELOG.md).
+The workstation runs **1.0.41**, installed on 2026-10-24, with a Cursor and an Antigravity card each holding registered2nd@gmail.com's login; Windows holds its restart registration (`--autostart`, read back with `GetApplicationRestartSettings`). On 1.0.39 Refresh restarted Codex mid-reply only after the reply ended, in Orca tabs and in terminals outside Orca, on Windows and in WSL, each time on its own conversation with a usable terminal. Its WSL Codex CLI is 0.163.0, the same as Windows. Country observations run in the background and provide warnings. Configured proxies remain mandatory; *Require proxy* is off for this machine's router-proxied Wi-Fi. Claude is locked on registered2nd (`ccb19499`) at the user's request; live Claude requests were served by it after locking, and the lock held across a restart. The control routes list every command and run them, and refuse a request carrying an `Origin` header. The laptop has 1.0.40 installed (2026-10-20 08:41 local; restart registration read back) and Switchy quit there at 08:43 at the user's request, with its tools' configs handed back. another user's PC has 1.0.39 installed and Switchy not running, as it was before. another user's Mac runs 1.0.39 (restarted 2026-10-19 11:50 local from the release DMG; port 15721 open and the control routes answer). The 1.0.41 Windows installers and the 1.0.39 Apple Silicon DMG are in `installers/`; release history is in [CHANGELOG.md](CHANGELOG.md).
 
 The frontend is React and TypeScript (`src/`), the backend Tauri and Rust (`src-tauri/`). The SQLite database is the store; switching writes the selected provider into each tool's own config files.
 
@@ -165,6 +166,13 @@ Usage badges and account switching both come from signing a tool in with an acco
 Gemini CLI is different. A Gemini provider holds the API key and endpoint, not the Google sign-in, so switching Gemini providers never changes which Google account is signed in. Gemini usage badges appear only while Gemini CLI is signed in with Google (`/auth` → Login with Google); on an API key there is nothing to show.
 
 Kimi Code publishes no usage figures at all, so Kimi cards never show badges.
+
+### Cursor CLI and Antigravity CLI
+
+- **Platforms.** Antigravity accounts switch only on Windows, where `agy` keeps its sign-in in Credential Manager; on macOS and Linux it uses the Keychain or Secret Service, which Switchy does not write. Cursor accounts switch on Windows and Linux; on macOS `cursor-agent` keeps its tokens in the Keychain, which Switchy does not write.
+- **Running sessions.** A running `cursor-agent` or `agy` keeps the account it started with; start it again after a switch. No proxy routing, pooling or automatic switching covers these tools.
+- **How long a login lasts.** A Cursor CLI login is a session token valid for about 60 days from sign-in, with no renewal; after that the account needs `cursor-agent login` again while its card is current. An Antigravity sign-in is a Google refresh token, which Google does not rotate, so the copy on the card stays usable until the account is signed out or access is revoked.
+- **Usage badges use unpublished endpoints.** Cursor's comes from `DashboardService/GetCurrentPeriodUsage`, the call `cursor-agent` makes for its usage screen. Antigravity's comes from `v1internal:fetchAvailableModels` on `daily-cloudcode-pa.googleapis.com`, which answers only a client whose user agent begins with `antigravity`; Switchy renews the one-hour access token for it with `agy`'s own OAuth client. Either may change without notice, and the badge then shows a failed query while switching keeps working.
 
 ### Switchy stops when Windows runs out of memory
 

@@ -427,6 +427,8 @@
     "codex": "Codex",
     "gemini": "Gemini",
     "kimi": "Kimi",
+    "cursor": "Cursor",
+    "antigravity": "Antigravity",
     "opencode": "OpenCode",
     "openclaw": "OpenClaw"
   },
@@ -1437,6 +1439,12 @@
     "geminiPro": "Pro",
     "geminiFlash": "Flash",
     "geminiFlashLite": "Flash Lite",
+    "cursorIncluded": "プラン内",
+    "cursorAuto": "Auto",
+    "cursorApi": "API",
+    "antigravityGemini": "Gemini",
+    "antigravityClaude": "Claude",
+    "antigravityGpt": "GPT-OSS",
     "weeklyLimit": "週間",
     "utilization": "{{value}}%",
     "resetsIn": "{{time}}後にリセット",
@@ -1448,7 +1456,9 @@
     "signedOut": "サインアウト済み",
     "signedOutHint": {
       "codex": "このカードを有効にしてから、Codex でこのアカウントにサインイン",
-      "claude": "Claude Code でこのアカウントに再ログインし、ログインを保存"
+      "claude": "Claude Code でこのアカウントに再ログインし、ログインを保存",
+      "cursor": "このカードを有効にしてから、このアカウントで cursor-agent login を実行してください",
+      "antigravity": "このカードを有効にしてから、このアカウントで agy にサインインしてください"
     },
     "resetsInShort": "{{time}} 後にリセット"
   },
@@ -1506,5 +1516,13 @@
   },
   "rail": {
     "accounts": "アカウント"
+  },
+  "loginProvider": {
+    "name": "名前",
+    "hint": {
+      "cursor": "新しいカードを有効にしてから、使いたいアカウントで cursor-agent login を実行してください。Switchy はそのログインをカードに保存し、カードを有効にするたびに書き戻します。",
+      "antigravity": "新しいカードを有効にしてから agy を起動し、使いたいアカウントでサインインしてください。Switchy はそのログインをカードに保存し、カードを有効にするたびに書き戻します。"
+    },
+    "editHint": "このカードはサブスクリプションのログインを保持しています。編集できるのは名前だけです。"
   }
 }

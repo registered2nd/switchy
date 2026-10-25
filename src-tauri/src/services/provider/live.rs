@@ -561,7 +561,7 @@ fn settings_contain_common_config(app_type: &AppType, settings: &Value, snippet:
             }
             _ => false,
         },
-        AppType::OpenCode | AppType::OpenClaw => false,
+        AppType::OpenCode | AppType::OpenClaw | AppType::Cursor | AppType::Antigravity => false,
     }
 }
 
@@ -631,7 +631,9 @@ pub(crate) fn remove_common_config_from_settings(
             }
             Ok(result)
         }
-        AppType::OpenCode | AppType::OpenClaw => Ok(settings.clone()),
+        AppType::OpenCode | AppType::OpenClaw | AppType::Cursor | AppType::Antigravity => {
+            Ok(settings.clone())
+        }
     }
 }
 
@@ -686,7 +688,9 @@ fn apply_common_config_to_settings(
             }
             Ok(result)
         }
-        AppType::OpenCode | AppType::OpenClaw => Ok(settings.clone()),
+        AppType::OpenCode | AppType::OpenClaw | AppType::Cursor | AppType::Antigravity => {
+            Ok(settings.clone())
+        }
     }
 }
 
@@ -990,6 +994,10 @@ pub(crate) fn write_live_snapshot(app_type: &AppType, provider: &Provider) -> Re
             let config_text = kimi_config_after_switch(&current, config_str)?;
             crate::kimi_config::write_kimi_live_atomic(obj.get("credentials"), &config_text)?;
         }
+        AppType::Cursor => crate::cursor_config::write_cursor_live(&provider.settings_config)?,
+        AppType::Antigravity => {
+            crate::antigravity_config::write_antigravity_live(&provider.settings_config)?
+        }
         AppType::OpenCode => {
             // OpenCode uses additive mode - write provider to config
             use crate::opencode_config;
@@ -1217,6 +1225,8 @@ pub fn read_live_settings(app_type: AppType) -> Result<Value, AppError> {
             }
             crate::kimi_config::read_kimi_live()
         }
+        AppType::Cursor => crate::cursor_config::read_cursor_live(),
+        AppType::Antigravity => crate::antigravity_config::read_antigravity_live(),
         AppType::Gemini => {
             use crate::gemini_config::{
                 env_to_json, get_gemini_env_path, get_gemini_settings_path, read_gemini_env,
@@ -1332,6 +1342,20 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
             }
             crate::kimi_config::read_kimi_live()?
         }
+        AppType::Cursor | AppType::Antigravity => {
+            let live = if matches!(app_type, AppType::Cursor) {
+                crate::cursor_config::read_cursor_live()?
+            } else {
+                crate::antigravity_config::read_antigravity_live()?
+            };
+            if crate::services::login_account::inspect(&app_type, &live).is_none() {
+                return Err(AppError::Message(format!(
+                    "{} is not signed in",
+                    app_type.as_str()
+                )));
+            }
+            live
+        }
         AppType::Gemini => {
             use crate::gemini_config::{
                 env_to_json, get_gemini_env_path, get_gemini_settings_path, read_gemini_env,
@@ -1370,12 +1394,10 @@ pub fn import_default_config(state: &AppState, app_type: AppType) -> Result<bool
         }
     };
 
-    let mut provider = Provider::with_id(
-        "default".to_string(),
-        "default".to_string(),
-        settings_config,
-        None,
-    );
+    let name = crate::services::login_account::inspect(&app_type, &settings_config)
+        .and_then(|login| login.email)
+        .unwrap_or_else(|| "default".to_string());
+    let mut provider = Provider::with_id("default".to_string(), name, settings_config, None);
     provider.category = Some("custom".to_string());
 
     state.db.save_provider(app_type.as_str(), &provider)?;
@@ -1768,7 +1790,10 @@ base_url = \"https://relay.example/v1\"
         assert_eq!(table["model"].as_str(), Some("glm"));
         assert!(table.contains_key("model_providers"));
         assert_eq!(table["approval_policy"].as_str(), Some("never"));
-        assert!(!table.contains_key("sandbox_mode"), "only the relay's own keys are written");
+        assert!(
+            !table.contains_key("sandbox_mode"),
+            "only the relay's own keys are written"
+        );
 
         let back: toml::Table = codex_config_after_switch(&on_relay, "", true)
             .unwrap()
@@ -1776,7 +1801,10 @@ base_url = \"https://relay.example/v1\"
             .unwrap();
         assert!(!back.contains_key("model_provider"));
         assert!(!back.contains_key("model_providers"));
-        assert!(!back.contains_key("model"), "the relay's model goes with it");
+        assert!(
+            !back.contains_key("model"),
+            "the relay's model goes with it"
+        );
         assert_eq!(back["approval_policy"].as_str(), Some("never"));
     }
 
@@ -1794,7 +1822,10 @@ default_permission_mode = \"ask\"
 [providers.b]
 base_url = \"https://b\"
 ";
-        let table: toml::Table = kimi_config_after_switch(live, card).unwrap().parse().unwrap();
+        let table: toml::Table = kimi_config_after_switch(live, card)
+            .unwrap()
+            .parse()
+            .unwrap();
         assert_eq!(table["default_model"].as_str(), Some("b/m"));
         assert!(table["providers"].get("b").is_some());
         assert!(table["providers"].get("a").is_none());

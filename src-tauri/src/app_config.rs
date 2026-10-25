@@ -11,6 +11,8 @@ pub enum AppType {
     Codex,
     Gemini,
     Kimi,
+    Cursor,
+    Antigravity,
     OpenCode,
     OpenClaw,
 }
@@ -22,6 +24,8 @@ impl AppType {
             AppType::Codex => "codex",
             AppType::Gemini => "gemini",
             AppType::Kimi => "kimi",
+            AppType::Cursor => "cursor",
+            AppType::Antigravity => "antigravity",
             AppType::OpenCode => "opencode",
             AppType::OpenClaw => "openclaw",
         }
@@ -33,6 +37,12 @@ impl AppType {
         matches!(self, AppType::OpenCode | AppType::OpenClaw)
     }
 
+    /// Apps whose provider is only a subscription login (Cursor CLI,
+    /// Antigravity CLI): no endpoint, model or common config to switch.
+    pub fn is_login_only(&self) -> bool {
+        matches!(self, AppType::Cursor | AppType::Antigravity)
+    }
+
     /// Every app type.
     pub fn all() -> impl Iterator<Item = AppType> {
         [
@@ -40,6 +50,8 @@ impl AppType {
             AppType::Codex,
             AppType::Gemini,
             AppType::Kimi,
+            AppType::Cursor,
+            AppType::Antigravity,
             AppType::OpenCode,
             AppType::OpenClaw,
         ]
@@ -57,11 +69,13 @@ impl FromStr for AppType {
             "codex" => Ok(AppType::Codex),
             "gemini" => Ok(AppType::Gemini),
             "kimi" => Ok(AppType::Kimi),
+            "cursor" => Ok(AppType::Cursor),
+            "antigravity" => Ok(AppType::Antigravity),
             "opencode" => Ok(AppType::OpenCode),
             "openclaw" => Ok(AppType::OpenClaw),
             other => Err(AppError::localized(
                 "unsupported_app",
-                format!("Unsupported app id: '{other}'. Allowed: claude, codex, gemini, kimi, opencode, openclaw."),
+                format!("Unsupported app id: '{other}'. Allowed: claude, codex, gemini, kimi, cursor, antigravity, opencode, openclaw."),
             )),
         }
     }

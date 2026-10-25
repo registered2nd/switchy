@@ -14,6 +14,8 @@ const ENDPOINT_TIMEOUT_SECS: Record<AppId, number> = {
   claude: 8,
   gemini: 8,
   kimi: 8,
+  cursor: 8,
+  antigravity: 8,
   opencode: 8,
   openclaw: 8,
 };

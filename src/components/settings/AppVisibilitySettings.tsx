@@ -20,6 +20,8 @@ const APP_CONFIG: Array<{
   { id: "codex", icon: "openai", nameKey: "apps.codex" },
   { id: "gemini", icon: "gemini", nameKey: "apps.gemini" },
   { id: "kimi", icon: "kimi", nameKey: "apps.kimi" },
+  { id: "cursor", icon: "cursor", nameKey: "apps.cursor" },
+  { id: "antigravity", icon: "google", nameKey: "apps.antigravity" },
   { id: "opencode", icon: "opencode", nameKey: "apps.opencode" },
   { id: "openclaw", icon: "openclaw", nameKey: "apps.openclaw" },
 ];
@@ -35,6 +37,8 @@ export function AppVisibilitySettings({
     codex: true,
     gemini: true,
     kimi: true,
+    cursor: true,
+    antigravity: true,
     opencode: true,
     openclaw: false,
   };

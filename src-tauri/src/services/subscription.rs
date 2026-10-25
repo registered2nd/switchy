@@ -1669,6 +1669,21 @@ pub async fn get_claude_quota_for_provider(
     .await
 }
 
+/// Cursor CLI or Antigravity CLI usage of a provider's own account.
+pub async fn get_login_quota_for_provider(
+    state: &crate::store::AppState,
+    app: &str,
+    provider_id: &str,
+) -> Result<SubscriptionQuota, String> {
+    use std::str::FromStr;
+    let app_type = crate::app_config::AppType::from_str(app).map_err(|e| e.to_string())?;
+    with_last_good(
+        format!("{app}:{provider_id}"),
+        crate::services::login_account::quota_for_provider(state, &app_type, provider_id),
+    )
+    .await
+}
+
 // ── Helpers ───────────────────────────────────────────────
 
 fn now_millis() -> i64 {

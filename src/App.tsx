@@ -40,6 +40,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SettingsPage } from "@/components/settings/SettingsPage";
 import { EnvWarningBanner } from "@/components/env/EnvWarningBanner";
 import { ProxyToggle } from "@/components/proxy/ProxyToggle";
+import { isLoginOnlyApp } from "@/lib/api/loginAccount";
 import { FailoverToggle } from "@/components/proxy/FailoverToggle";
 import UsageScriptModal from "@/components/UsageScriptModal";
 import { UniversalProviderPanel } from "@/components/universal";
@@ -71,6 +72,8 @@ const VALID_APPS: AppId[] = [
   "codex",
   "gemini",
   "kimi",
+  "cursor",
+  "antigravity",
   "opencode",
   "openclaw",
 ];
@@ -166,6 +169,8 @@ function App() {
     codex: true,
     gemini: true,
     kimi: true,
+    cursor: true,
+    antigravity: true,
     opencode: true,
     openclaw: false,
   };
@@ -175,6 +180,8 @@ function App() {
     if (visibleApps.codex) return "codex";
     if (visibleApps.gemini) return "gemini";
     if (visibleApps.kimi) return "kimi";
+    if (visibleApps.cursor) return "cursor";
+    if (visibleApps.antigravity) return "antigravity";
     if (visibleApps.opencode) return "opencode";
     if (visibleApps.openclaw) return "openclaw";
     return "claude"; // fallback
@@ -838,16 +845,18 @@ function App() {
           className="ml-auto flex items-center gap-2"
           style={{ WebkitAppRegion: "no-drag" } as any}
         >
-          {activeApp !== "opencode" && activeApp !== "openclaw" && (
-            <>
-              {settingsData?.enableLocalProxy && (
-                <ProxyToggle activeApp={activeApp} />
-              )}
-              {settingsData?.enableFailoverToggle && (
-                <FailoverToggle activeApp={activeApp} />
-              )}
-            </>
-          )}
+          {activeApp !== "opencode" &&
+            activeApp !== "openclaw" &&
+            !isLoginOnlyApp(activeApp) && (
+              <>
+                {settingsData?.enableLocalProxy && (
+                  <ProxyToggle activeApp={activeApp} />
+                )}
+                {settingsData?.enableFailoverToggle && (
+                  <FailoverToggle activeApp={activeApp} />
+                )}
+              </>
+            )}
           {activeApp === "openclaw" && (
             <div className="flex items-center gap-1">
               <Button

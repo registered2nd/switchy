@@ -66,7 +66,7 @@ pub struct TrayAppSection {
 /// Suffix of the Auto menu item
 pub const AUTO_SUFFIX: &str = "auto";
 
-pub const TRAY_SECTIONS: [TrayAppSection; 4] = [
+pub const TRAY_SECTIONS: [TrayAppSection; 6] = [
     TrayAppSection {
         app_type: AppType::Claude,
         prefix: "claude_",
@@ -94,6 +94,20 @@ pub const TRAY_SECTIONS: [TrayAppSection; 4] = [
         empty_id: "kimi_empty",
         header_label: "Kimi",
         log_name: "Kimi",
+    },
+    TrayAppSection {
+        app_type: AppType::Cursor,
+        prefix: "cursor_",
+        empty_id: "cursor_empty",
+        header_label: "Cursor",
+        log_name: "Cursor",
+    },
+    TrayAppSection {
+        app_type: AppType::Antigravity,
+        prefix: "antigravity_",
+        empty_id: "antigravity_empty",
+        header_label: "Antigravity",
+        log_name: "Antigravity",
     },
 ];
 

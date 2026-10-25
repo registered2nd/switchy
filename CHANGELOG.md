@@ -8,6 +8,35 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.41] — 2026-10-24 — Cursor CLI and Antigravity CLI accounts
+
+Windows installer: download `Switchy_1.0.41_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): this release has no `.dmg`; the latest one is `Switchy_1.0.39_aarch64.dmg` in the 1.0.39 release. The new tabs switch accounts only on Windows and Linux (Cursor) and on Windows (Antigravity).
+
+### Added
+
+- **Cursor CLI tab.** Keep several Cursor accounts for `cursor-agent` and switch
+  between them. Each card holds one account's login and names its email;
+  *Enable* writes that login where `cursor-agent` reads it and leaves your CLI
+  settings (approval mode, model and the rest) as they are. The Cursor editor
+  keeps its own sign-in and is not affected. Each card shows the account's
+  included usage for the billing month (Included, Auto, API) and when it
+  resets.
+- **Antigravity CLI tab.** The same for `agy`, Google's terminal agent: each
+  card holds one Google account's sign-in, kept in Windows Credential Manager
+  where `agy` looks for it, and shows that account's remaining quota for
+  Gemini, Claude and GPT-OSS models and when it resets. The Gemini CLI tab is
+  unchanged.
+- **Signing a new account in.** Add a card on either tab, enable it, then sign
+  in with `cursor-agent login` or in `agy`; the login is kept with that card.
+  A login made while a card is in use is filed with that card, and switching
+  away never files one account's login under another account's card.
+  *Import current config* on an empty tab makes a card of the account
+  signed in now.
+- Restart `cursor-agent` or `agy` after a switch; a running session keeps the
+  account it started with.
+
 ## [1.0.40] — 2026-10-20 — Windows starts Switchy again after a crash
 
 Windows installer: download `Switchy_1.0.40_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

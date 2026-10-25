@@ -256,6 +256,12 @@ impl StreamCheckService {
                 )
                 .await
             }
+            AppType::Cursor | AppType::Antigravity => {
+                return Err(AppError::Message(format!(
+                    "Stream check is not supported for {}",
+                    app_type.as_str()
+                )));
+            }
             AppType::Kimi => {
                 return Err(AppError::localized(
                     "kimi_no_stream_check",
@@ -668,6 +674,7 @@ impl StreamCheckService {
             AppType::Gemini => Self::extract_env_model(provider, "GEMINI_MODEL")
                 .unwrap_or_else(|| config.gemini_model.clone()),
             AppType::Kimi => Self::extract_kimi_model(provider).unwrap_or_else(|| "k3".to_string()),
+            AppType::Cursor | AppType::Antigravity => String::new(),
             AppType::OpenCode => {
                 // OpenCode uses models map in settings_config
                 // Try to extract first model from the models object

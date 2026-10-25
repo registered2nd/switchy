@@ -1,3 +1,4 @@
+mod antigravity_config;
 mod app_config;
 mod app_store;
 mod auto_launch;
@@ -5,6 +6,7 @@ mod codex_config;
 mod commands;
 mod config;
 mod crash_restart;
+mod cursor_config;
 mod database;
 mod error;
 mod gemini_config;
@@ -503,6 +505,7 @@ pub fn run() {
             commands::clear_claude_account,
             commands::get_captured_claude_identity,
             commands::get_codex_account_identity,
+            commands::get_login_account_identity,
             commands::remove_provider_from_live_config,
             commands::switch_provider,
             commands::lock_account,

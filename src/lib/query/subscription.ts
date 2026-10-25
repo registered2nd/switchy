@@ -34,7 +34,10 @@ export function useSubscriptionQuotaForProvider(
   return useQuery({
     queryKey: ["subscription", "quota", "provider", appId, providerId],
     queryFn: () => subscriptionApi.getQuotaForProvider(appId, providerId),
-    enabled: enabled && !!providerId && ["claude", "codex"].includes(appId),
+    enabled:
+      enabled &&
+      !!providerId &&
+      ["claude", "codex", "cursor", "antigravity"].includes(appId),
     refetchInterval: REFETCH_INTERVAL,
     refetchOnWindowFocus: true,
     staleTime: REFETCH_INTERVAL,

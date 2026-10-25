@@ -4,5 +4,7 @@ export type AppId =
   | "codex"
   | "gemini"
   | "kimi"
+  | "cursor"
+  | "antigravity"
   | "opencode"
   | "openclaw";

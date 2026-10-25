@@ -22,6 +22,8 @@ import {
   extractKimiBaseUrl,
 } from "@/utils/providerConfigUtils";
 import { kimiProviderPresets } from "@/config/kimiProviderPresets";
+import { LoginProviderForm } from "@/components/providers/forms/LoginProviderForm";
+import { isLoginOnlyApp } from "@/lib/api/loginAccount";
 import type { OpenClawSuggestedDefaults } from "@/config/openclawProviderPresets";
 import type { UniversalProviderPreset } from "@/config/universalProviderPresets";
 
@@ -44,8 +46,10 @@ export function AddProviderDialog({
   onSubmit,
 }: AddProviderDialogProps) {
   const { t } = useTranslation();
-  // OpenCode and OpenClaw don't support universal providers
-  const showUniversalTab = appId !== "opencode" && appId !== "openclaw";
+  // OpenCode, OpenClaw and the login-only apps don't support universal providers
+  const isLoginOnly = isLoginOnlyApp(appId);
+  const showUniversalTab =
+    appId !== "opencode" && appId !== "openclaw" && !isLoginOnly;
   const [activeTab, setActiveTab] = useState<"app-specific" | "universal">(
     "app-specific",
   );
@@ -306,7 +310,13 @@ export function AddProviderDialog({
       onClose={() => onOpenChange(false)}
       footer={footer}
     >
-      {showUniversalTab ? (
+      {isLoginOnly ? (
+        <LoginProviderForm
+          appId={appId}
+          onSubmit={handleSubmit}
+          onSubmittingChange={setIsFormSubmitting}
+        />
+      ) : showUniversalTab ? (
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as "app-specific" | "universal")}

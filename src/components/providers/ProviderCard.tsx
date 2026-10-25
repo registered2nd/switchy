@@ -22,6 +22,8 @@ import {
   isKimiOfficialConfig,
 } from "@/utils/providerConfigUtils";
 import { useCodexAccountIdentity } from "@/lib/query/codexAccount";
+import { useLoginAccountIdentity } from "@/lib/query/loginAccount";
+import { isLoginOnlyApp } from "@/lib/api/loginAccount";
 import { useProviderHealth } from "@/lib/query/failover";
 import { useUsageQuery } from "@/lib/query/queries";
 import { claudeAccountApi, type CaptureOutcome } from "@/lib/api/claudeAccount";
@@ -68,6 +70,8 @@ interface ProviderCardProps {
 /** Whether this is an official provider (no custom base URL or API key; talks to the official API directly) */
 function isOfficialProvider(provider: Provider, appId: AppId): boolean {
   const config = provider.settingsConfig as Record<string, any>;
+  // A Cursor or Antigravity provider is always a subscription login.
+  if (isLoginOnlyApp(appId)) return true;
   if (appId === "claude") {
     // Handing Claude Code back from the proxy names Anthropic's own address,
     // which is still the official login.
@@ -196,6 +200,12 @@ export function ProviderCard({
     provider.id,
     appId === "codex" && isOfficial,
   );
+  const isLoginOnly = isLoginOnlyApp(appId);
+  const { data: loginAccount } = useLoginAccountIdentity(
+    appId,
+    provider.id,
+    isLoginOnly,
+  );
   // Non-current Official cards read their own login rather than the live one.
   // So does the current card while the proxy serves the app: the proxy
   // presents the card's login, not the one the CLI has saved. A non-current
@@ -204,14 +214,17 @@ export function ProviderCard({
   // shows the live login's usage unless another card holds that account.
   const hasOwnLogin =
     (appId === "claude" && !!provider.meta?.capturedClaudeAccount) ||
-    (appId === "codex" && !!codexAccount);
+    (appId === "codex" && !!codexAccount) ||
+    (isLoginOnly && !!loginAccount);
+  // Cursor and Antigravity usage is always read from the card's own provider,
+  // which the backend keeps in step with the live login while it is current.
   const quotaProviderId =
-    appId === "claude" && isCurrent && !hasOwnLogin
+    isLoginOnly || (appId === "claude" && isCurrent && !hasOwnLogin)
       ? provider.id
       : (isCurrent && !isProxyTakeover) || !hasOwnLogin
         ? undefined
         : provider.id;
-  const showQuota = isCurrent || hasOwnLogin;
+  const showQuota = isLoginOnly ? hasOwnLogin : isCurrent || hasOwnLogin;
 
   // Fetch usage to tell whether there are multiple plans
   // Additive-mode apps (OpenCode/OpenClaw): use isInConfig instead of isCurrent
@@ -322,7 +335,9 @@ export function ProviderCard({
       ? provider.meta.capturedClaudeAccount.emailAddress
       : appId === "codex" && codexAccount
         ? (codexAccount.email ?? codexAccount.accountId ?? "")
-        : "";
+        : isLoginOnly && loginAccount
+          ? (loginAccount.email ?? loginAccount.account ?? "")
+          : "";
 
   return (
     <div
@@ -417,12 +432,14 @@ export function ProviderCard({
                   </button>
                 ) : null}
               </span>
-              {isAutoFailoverEnabled && isInFailoverQueue && failoverPriority && (
-                <FailoverPriorityBadge
-                  priority={failoverPriority}
-                  className="shrink-0 whitespace-nowrap"
-                />
-              )}
+              {isAutoFailoverEnabled &&
+                isInFailoverQueue &&
+                failoverPriority && (
+                  <FailoverPriorityBadge
+                    priority={failoverPriority}
+                    className="shrink-0 whitespace-nowrap"
+                  />
+                )}
             </div>
           </div>
         </div>
@@ -504,7 +521,9 @@ export function ProviderCard({
                   : undefined
               }
               onDisableOmo={handleDisableAnyOmo}
-              onCaptureLogin={canCapture ? () => captureLogin(false) : undefined}
+              onCaptureLogin={
+                canCapture ? () => captureLogin(false) : undefined
+              }
               isCapturing={capturing}
               isLocked={isLocked}
               onToggleLock={canLock ? toggleLock : undefined}

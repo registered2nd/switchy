@@ -691,7 +691,7 @@ impl ProxyService {
             AppType::Claude => self.read_claude_live()?,
             AppType::Codex => self.read_codex_live()?,
             AppType::Gemini => self.read_gemini_live()?,
-            AppType::OpenCode | AppType::Kimi => {
+            AppType::OpenCode | AppType::Kimi | AppType::Cursor | AppType::Antigravity => {
                 // OpenCode doesn't support proxy features
                 return Err("OpenCode cannot be proxied".to_string());
             }
@@ -914,7 +914,7 @@ impl ProxyService {
                     }
                 }
             }
-            AppType::OpenCode | AppType::Kimi => {
+            AppType::OpenCode | AppType::Kimi | AppType::Cursor | AppType::Antigravity => {
                 // OpenCode doesn't support proxy features, skip silently
             }
             AppType::OpenClaw => {
@@ -1136,7 +1136,7 @@ impl ProxyService {
             AppType::Claude => ("claude", self.read_claude_live()?),
             AppType::Codex => ("codex", self.read_codex_live()?),
             AppType::Gemini => ("gemini", self.read_gemini_live()?),
-            AppType::OpenCode | AppType::Kimi => {
+            AppType::OpenCode | AppType::Kimi | AppType::Cursor | AppType::Antigravity => {
                 // OpenCode doesn't support proxy features
                 return Err("OpenCode cannot be proxied".to_string());
             }
@@ -1274,7 +1274,7 @@ impl ProxyService {
                 self.write_gemini_live(&live_config)?;
                 log::info!("Gemini live config taken over, proxy address: {proxy_url}");
             }
-            AppType::OpenCode | AppType::Kimi => {
+            AppType::OpenCode | AppType::Kimi | AppType::Cursor | AppType::Antigravity => {
                 // OpenCode doesn't support proxy features
                 return Err("OpenCode cannot be proxied".to_string());
             }
@@ -1327,7 +1327,7 @@ impl ProxyService {
                     let _ = self.write_gemini_live(&live_config);
                 }
             }
-            AppType::OpenCode | AppType::Kimi => {
+            AppType::OpenCode | AppType::Kimi | AppType::Cursor | AppType::Antigravity => {
                 // OpenCode doesn't support proxy features, skip silently
             }
             AppType::OpenClaw => {
@@ -1489,7 +1489,7 @@ impl ProxyService {
             AppType::Claude => self.write_claude_live(config),
             AppType::Codex => self.write_codex_live(config),
             AppType::Gemini => self.write_gemini_live(config),
-            AppType::OpenCode | AppType::Kimi => {
+            AppType::OpenCode | AppType::Kimi | AppType::Cursor | AppType::Antigravity => {
                 // OpenCode doesn't support proxy features
                 Err("OpenCode cannot be proxied".to_string())
             }
@@ -1514,7 +1514,7 @@ impl ProxyService {
                 Ok(config) => Self::is_gemini_live_taken_over(&config),
                 Err(_) => false,
             },
-            AppType::OpenCode | AppType::Kimi => {
+            AppType::OpenCode | AppType::Kimi | AppType::Cursor | AppType::Antigravity => {
                 // OpenCode doesn't support proxy takeover
                 false
             }
@@ -1575,7 +1575,7 @@ impl ProxyService {
             AppType::Claude => self.cleanup_claude_takeover_placeholders_in_live(),
             AppType::Codex => self.cleanup_codex_takeover_placeholders_in_live(),
             AppType::Gemini => self.cleanup_gemini_takeover_placeholders_in_live(),
-            AppType::OpenCode | AppType::Kimi => {
+            AppType::OpenCode | AppType::Kimi | AppType::Cursor | AppType::Antigravity => {
                 // OpenCode doesn't support proxy features
                 Ok(())
             }
@@ -1880,7 +1880,11 @@ impl ProxyService {
                 serde_json::to_string(&env_backup)
                     .map_err(|e| format!("Could not serialize the Gemini config: {e}"))?
             }
-            AppType::OpenCode | AppType::OpenClaw | AppType::Kimi => {
+            AppType::OpenCode
+            | AppType::OpenClaw
+            | AppType::Kimi
+            | AppType::Cursor
+            | AppType::Antigravity => {
                 return Err(format!("Unknown app type: {app_type}"));
             }
         };
@@ -3125,7 +3129,9 @@ model = "gpt-5.1-codex"
         let db = Arc::new(Database::memory().expect("init db"));
         let mut config = db.get_proxy_config().await.expect("proxy config");
         config.listen_port = 0;
-        db.update_proxy_config(config).await.expect("save proxy config");
+        db.update_proxy_config(config)
+            .await
+            .expect("save proxy config");
         let service = ProxyService::new(db.clone());
 
         service.listen_for_control().await.expect("open the port");

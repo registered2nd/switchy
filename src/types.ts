@@ -192,6 +192,8 @@ export interface VisibleApps {
   codex: boolean;
   gemini: boolean;
   kimi: boolean;
+  cursor: boolean;
+  antigravity: boolean;
   opencode: boolean;
   openclaw: boolean;
 }
