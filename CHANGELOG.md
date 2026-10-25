@@ -8,11 +8,9 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
-## [1.0.44] — 2026-10-25 — Coding plans from Z.ai, MiniMax, Kimi, Alibaba Cloud, Tencent Cloud, BytePlus, OpenCode Go and Command Code
+## [1.0.44] — 2026-10-25 — Coding plans from Z.ai, MiniMax, Kimi, Alibaba Cloud, Tencent Cloud, BytePlus, OpenCode Go and Command Code (withdrawn)
 
-Windows installer: download `Switchy_1.0.44_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
-
-macOS (Apple Silicon): download `Switchy_1.0.44_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+**Withdrawn on 2026-10-25, the day it was published.** The release, its Windows installers and its macOS DMG were taken down; 1.0.43 is the latest release.
 
 ### Added
 
