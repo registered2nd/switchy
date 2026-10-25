@@ -390,16 +390,79 @@ async fn query_cursor(settings: &Value) -> SubscriptionQuota {
     }
 }
 
-/// `agy`'s own OAuth client (public values from the `agy` binary), needed to
-/// renew a stored login's one-hour access token. Google does not rotate the
-/// refresh token on renewal, so renewing here does not affect `agy`'s copy.
-const ANTIGRAVITY_OAUTH_CLIENT_ID: &str =
-    "REMOVED.apps.googleusercontent.com";
-const ANTIGRAVITY_OAUTH_CLIENT_SECRET: &str = "GOCSPX-REMOVED";
-
 /// The service refuses this endpoint (403) to a client whose user agent does
 /// not begin with `antigravity`; the version after it is not checked.
 const ANTIGRAVITY_USER_AGENT: &str = "antigravity";
+
+/// The installed `agy` executable.
+fn agy_binary() -> Option<std::path::PathBuf> {
+    let installed = std::env::var_os("LOCALAPPDATA").map(|dir| {
+        std::path::PathBuf::from(dir)
+            .join("agy")
+            .join("bin")
+            .join("agy.exe")
+    });
+    if let Some(path) = installed.filter(|p| p.is_file()) {
+        return Some(path);
+    }
+    let exe = if cfg!(windows) { "agy.exe" } else { "agy" };
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(exe))
+            .find(|p| p.is_file())
+    })
+}
+
+/// Every OAuth client id and secret in `agy`'s executable. A stored login's
+/// one-hour access token is renewed with `agy`'s own client, which is read
+/// from the installed binary rather than kept in Switchy's source. The file
+/// is about 200 MB, so it is scanned in chunks, once per run.
+fn agy_oauth_clients() -> &'static [(String, String)] {
+    static CLIENTS: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    CLIENTS.get_or_init(|| {
+        use std::io::Read;
+        let ids_re =
+            regex::bytes::Regex::new(r"[0-9]{6,}-[a-z0-9]{32}\.apps\.googleusercontent\.com")
+                .expect("valid regex");
+        let secrets_re =
+            regex::bytes::Regex::new(r"GOCSPX-[A-Za-z0-9_-]{28}").expect("valid regex");
+        let mut ids = std::collections::BTreeSet::new();
+        let mut secrets = std::collections::BTreeSet::new();
+        let Some(mut file) = agy_binary().and_then(|p| std::fs::File::open(p).ok()) else {
+            return Vec::new();
+        };
+        const CHUNK: usize = 8 << 20;
+        const OVERLAP: usize = 128;
+        let mut buf = vec![0u8; CHUNK + OVERLAP];
+        let mut carried = 0;
+        loop {
+            let n = match file.read(&mut buf[carried..]) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => n,
+            };
+            let window = &buf[..carried + n];
+            for m in ids_re.find_iter(window) {
+                ids.insert(String::from_utf8_lossy(m.as_bytes()).into_owned());
+            }
+            for m in secrets_re.find_iter(window) {
+                secrets.insert(String::from_utf8_lossy(m.as_bytes()).into_owned());
+            }
+            carried = window.len().min(OVERLAP);
+            let from = window.len() - carried;
+            buf.copy_within(from..from + carried, 0);
+        }
+        ids.iter()
+            .flat_map(|id| {
+                secrets
+                    .iter()
+                    .map(move |secret| (id.clone(), secret.clone()))
+            })
+            .collect()
+    })
+}
+
+/// The `agy` client that last renewed a login, tried first next time.
+static AGY_CLIENT: std::sync::Mutex<Option<(String, String)>> = std::sync::Mutex::new(None);
 
 /// Access tokens renewed for usage reads, by refresh token, until they expire.
 static RENEWED: once_cell::sync::Lazy<
@@ -438,45 +501,57 @@ async fn antigravity_access_token(credential: &Value) -> Renewal {
             return Renewal::Token(access);
         }
     }
-    let resp = crate::proxy::http_client::get()
-        .post("https://oauth2.googleapis.com/token")
-        .form(&[
-            ("client_id", ANTIGRAVITY_OAUTH_CLIENT_ID),
-            ("client_secret", ANTIGRAVITY_OAUTH_CLIENT_SECRET),
-            ("refresh_token", refresh),
-            ("grant_type", "refresh_token"),
-        ])
-        .timeout(std::time::Duration::from_secs(10))
-        .send()
-        .await;
-    let resp = match resp {
-        Ok(r) => r,
-        Err(e) => return Renewal::Failed(format!("Network error renewing the login: {e}")),
-    };
-    if resp.status() == reqwest::StatusCode::BAD_REQUEST
-        || resp.status() == reqwest::StatusCode::UNAUTHORIZED
-    {
-        return Renewal::Refused;
+    let clients = tokio::task::spawn_blocking(agy_oauth_clients)
+        .await
+        .unwrap_or(&[]);
+    if clients.is_empty() {
+        return Renewal::Failed(
+            "agy is not installed here, so its login cannot be renewed".to_string(),
+        );
     }
-    if !resp.status().is_success() {
-        return Renewal::Failed(format!(
-            "Renewing the login failed (HTTP {})",
-            resp.status()
-        ));
+    let remembered = AGY_CLIENT.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let ordered = remembered
+        .iter()
+        .chain(clients.iter().filter(|c| Some(*c) != remembered.as_ref()));
+    for (client_id, client_secret) in ordered {
+        let resp = crate::proxy::http_client::get()
+            .post("https://oauth2.googleapis.com/token")
+            .form(&[
+                ("client_id", client_id.as_str()),
+                ("client_secret", client_secret.as_str()),
+                ("refresh_token", refresh),
+                ("grant_type", "refresh_token"),
+            ])
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await;
+        let resp = match resp {
+            Ok(r) => r,
+            Err(e) => return Renewal::Failed(format!("Network error renewing the login: {e}")),
+        };
+        let status = resp.status();
+        let body: Value = resp.json().await.unwrap_or(Value::Null);
+        if !status.is_success() {
+            match body["error"].as_str() {
+                // Another of agy's clients issued this login.
+                Some("invalid_client" | "unauthorized_client") => continue,
+                Some("invalid_grant") => return Renewal::Refused,
+                _ => return Renewal::Failed(format!("Renewing the login failed (HTTP {status})")),
+            }
+        }
+        let Some(access) = body["access_token"].as_str() else {
+            return Renewal::Failed("The renewal carried no access token".to_string());
+        };
+        *AGY_CLIENT.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some((client_id.clone(), client_secret.clone()));
+        let until = now + body["expires_in"].as_i64().unwrap_or(3600);
+        RENEWED
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(refresh.to_string(), (access.to_string(), until));
+        return Renewal::Token(access.to_string());
     }
-    let body: Value = match resp.json().await {
-        Ok(b) => b,
-        Err(e) => return Renewal::Failed(format!("Could not parse the renewal: {e}")),
-    };
-    let Some(access) = body["access_token"].as_str() else {
-        return Renewal::Failed("The renewal carried no access token".to_string());
-    };
-    let until = now + body["expires_in"].as_i64().unwrap_or(3600);
-    RENEWED
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(refresh.to_string(), (access.to_string(), until));
-    Renewal::Token(access.to_string())
+    Renewal::Failed("None of agy's OAuth clients renewed this login".to_string())
 }
 
 /// Antigravity's quota per model family: the lowest remaining share among a
