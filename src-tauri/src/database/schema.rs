@@ -269,6 +269,22 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        // Each account's quota windows over time, one row per whole-point change.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS quota_readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, provider_id TEXT NOT NULL,
+            limit_name TEXT, window_minutes INTEGER NOT NULL, used_percent REAL NOT NULL,
+            reset_at INTEGER, observed_at INTEGER NOT NULL
+        )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_quota_readings_provider ON quota_readings(provider_id, observed_at)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
         // 17. Usage Daily Rollups table (daily aggregates)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS usage_daily_rollups (

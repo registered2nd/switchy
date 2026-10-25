@@ -8,6 +8,21 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.42] — 2026-10-25 — Quota history
+
+Windows installer: download `Switchy_1.0.42_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): this release has no `.dmg`; the latest one is `Switchy_1.0.39_aarch64.dmg` in the 1.0.39 release.
+
+### Added
+
+- **Each account's quota is kept over time.** Whenever a Claude or Codex
+  answer reports that an account's share of a limit window has moved by a
+  whole point, or that a new window has started, Switchy records the reading
+  (window, percentage used, reset time) in `switchy.db` for 90 days. How much
+  of a week an account had used before it reset can then be looked up later;
+  until now the readings were kept only in memory.
+
 ## [1.0.41] — 2026-10-24 — Cursor CLI and Antigravity CLI accounts
 
 Windows installer: download `Switchy_1.0.41_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

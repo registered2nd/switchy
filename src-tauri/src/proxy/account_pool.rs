@@ -332,6 +332,7 @@ static MODEL_SCOPES: Lazy<RwLock<HashMap<String, Vec<String>>>> =
 /// replaces only its own earlier reading, since a response for another model
 /// does not carry it. `model` is the model the response answered, when known.
 pub fn record_windows(provider_id: &str, model: Option<&str>, windows: Vec<QuotaWindow>) {
+    let changed = changed_readings(provider_id, &windows);
     if let Some(model) = model {
         let scoped = windows
             .iter()
@@ -347,6 +348,66 @@ pub fn record_windows(provider_id: &str, model: Option<&str>, windows: Vec<Quota
     merge_windows(entry, windows);
     entry.observed_at = chrono::Utc::now().timestamp();
     entry.limited_until = None;
+    let observed_at = entry.observed_at;
+    drop(quotas);
+    save_readings(provider_id, &changed, observed_at);
+}
+
+/// Where readings are kept; set once the database is open.
+static QUOTA_HISTORY: std::sync::OnceLock<std::sync::Arc<crate::database::Database>> =
+    std::sync::OnceLock::new();
+
+/// Starts keeping each account's quota readings in the database.
+pub fn keep_quota_history(db: std::sync::Arc<crate::database::Database>) {
+    let _ = QUOTA_HISTORY.set(db);
+}
+
+/// The windows worth a history row: a whole-point change in the share used,
+/// or a new window (its reset moved by more than an hour).
+fn changed_readings(provider_id: &str, windows: &[QuotaWindow]) -> Vec<QuotaWindow> {
+    if QUOTA_HISTORY.get().is_none() {
+        return Vec::new();
+    }
+    let quotas = QUOTAS.read().unwrap_or_else(|e| e.into_inner());
+    let previous = quotas
+        .get(provider_id)
+        .map(|q| q.windows.as_slice())
+        .unwrap_or(&[]);
+    windows
+        .iter()
+        .filter(|new| {
+            !previous.iter().any(|old| {
+                old.limit_name == new.limit_name
+                    && old.window_minutes == new.window_minutes
+                    && old.used_percent.floor() == new.used_percent.floor()
+                    && match (old.reset_at, new.reset_at) {
+                        (Some(a), Some(b)) => (a - b).abs() <= 3600,
+                        (a, b) => a == b,
+                    }
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+fn save_readings(provider_id: &str, windows: &[QuotaWindow], observed_at: i64) {
+    let Some(db) = QUOTA_HISTORY.get() else {
+        return;
+    };
+    for w in windows {
+        if let Err(e) = db.record_quota_reading(
+            provider_id,
+            w.limit_name.as_deref(),
+            w.window_minutes,
+            w.used_percent,
+            w.reset_at,
+            observed_at,
+        ) {
+            log::warn!(
+                "[account_pool] could not save the quota reading of provider={provider_id}: {e}"
+            );
+        }
+    }
 }
 
 fn merge_windows(entry: &mut AccountQuota, windows: Vec<QuotaWindow>) {
@@ -544,6 +605,39 @@ pub fn quota_snapshot() -> HashMap<String, AccountQuota> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reading_is_kept_once_per_whole_point_and_per_new_window() {
+        let db = std::sync::Arc::new(crate::database::Database::memory().unwrap());
+        keep_quota_history(db.clone());
+        let db = QUOTA_HISTORY.get().unwrap();
+        let id = "quota-history-test";
+        let week = |used: f64, reset: i64| {
+            record_windows(
+                id,
+                None,
+                vec![QuotaWindow {
+                    limit_name: None,
+                    window_minutes: 10080,
+                    used_percent: used,
+                    reset_at: Some(reset),
+                }],
+            )
+        };
+        week(10.2, 1_000_000);
+        week(10.8, 1_000_010);
+        week(11.0, 1_000_020);
+        week(0.0, 1_600_000);
+        let conn = db.conn.lock().unwrap();
+        let used: Vec<f64> = conn
+            .prepare("SELECT used_percent FROM quota_readings WHERE provider_id = ?1 ORDER BY id")
+            .unwrap()
+            .query_map([id], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(used, vec![10.2, 11.0, 0.0]);
+    }
 
     #[test]
     fn unsupported_country_is_advisory() {

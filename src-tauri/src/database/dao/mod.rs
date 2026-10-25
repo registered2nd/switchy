@@ -6,6 +6,7 @@ pub mod account_switches;
 pub mod failover;
 pub mod providers;
 pub mod proxy;
+pub mod quota_readings;
 pub mod settings;
 pub mod stream_check;
 pub mod universal_providers;
