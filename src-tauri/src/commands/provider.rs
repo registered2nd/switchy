@@ -255,14 +255,17 @@ pub async fn queryProviderUsage(
 
     // -- Coding Plan path --
     if template_type == TEMPLATE_TYPE_TOKEN_PLAN {
-        // Extract the API key and base URL from the provider config
+        // Extract the API key and base URL from the provider config: a Claude
+        // provider's `env`, or an OpenCode provider's `options`
         let settings_config = provider
             .map(|p| &p.settings_config)
             .cloned()
             .unwrap_or_default();
         let env = settings_config.get("env");
+        let options = settings_config.get("options");
         let base_url = env
             .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
+            .or_else(|| options.and_then(|o| o.get("baseURL")))
             .and_then(|v| v.as_str())
             .unwrap_or("");
         let api_key = env
@@ -270,6 +273,7 @@ pub async fn queryProviderUsage(
                 e.get("ANTHROPIC_AUTH_TOKEN")
                     .or_else(|| e.get("ANTHROPIC_API_KEY"))
             })
+            .or_else(|| options.and_then(|o| o.get("apiKey")))
             .and_then(|v| v.as_str())
             .unwrap_or("");
 

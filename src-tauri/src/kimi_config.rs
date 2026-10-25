@@ -1,10 +1,12 @@
 //! Kimi Code CLI configuration paths and live-file helpers.
 //!
 //! Kimi keeps everything under `~/.kimi-code/` (`$KIMI_CODE_HOME`):
-//! `config.toml` (providers, models, `default_model`), `credentials/kimi-code.json`
-//! (the OAuth login for the managed `managed:kimi-code` provider), `mcp.json`,
-//! `AGENTS.md`, `skills/`, `sessions/`. A Switchy Kimi provider stores
-//! `{ "config": "<config.toml text>", "credentials": <kimi-code.json | null> }`.
+//! `config.toml` (providers, models, `default_model`), `credentials/<name>.json`
+//! (the OAuth login for the managed `managed:kimi-code` provider, named by its
+//! `oauth.key = "oauth/<name>"`: `kimi-code` for a kimi.com login, a scoped
+//! `kimi-code-env-…` for a kimi.ai one), `mcp.json`, `AGENTS.md`, `skills/`,
+//! `sessions/`. A Switchy Kimi provider stores
+//! `{ "config": "<config.toml text>", "credentials": <that login | null> }`.
 
 use std::path::{Path, PathBuf};
 
@@ -25,8 +27,36 @@ pub fn get_kimi_config_path() -> PathBuf {
     get_kimi_dir().join("config.toml")
 }
 
+/// The login file of the live config.
 pub fn get_kimi_credentials_path() -> PathBuf {
-    get_kimi_dir().join("credentials").join("kimi-code.json")
+    kimi_credentials_path_for(&read_kimi_config_text().unwrap_or_default())
+}
+
+/// The login file `config_text`'s managed provider names; `kimi-code.json`
+/// when it names none.
+pub fn kimi_credentials_path_for(config_text: &str) -> PathBuf {
+    let name = managed_oauth_name(config_text).unwrap_or_else(|| "kimi-code".to_string());
+    get_kimi_dir()
+        .join("credentials")
+        .join(format!("{name}.json"))
+}
+
+/// `<name>` of `[providers."managed:kimi-code".oauth] key = "oauth/<name>"`,
+/// when it is a plain file name, as kimi-code requires.
+fn managed_oauth_name(config_text: &str) -> Option<String> {
+    let doc = toml::from_str::<toml::Table>(config_text).ok()?;
+    let key = doc
+        .get("providers")?
+        .get("managed:kimi-code")?
+        .get("oauth")?
+        .get("key")?
+        .as_str()?;
+    let name = key.strip_prefix("oauth/")?;
+    let plain = !name.is_empty()
+        && !name.starts_with('.')
+        && !name.contains(['/', '\\', ':'])
+        && !name.contains("..");
+    plain.then(|| name.to_string())
 }
 
 /// Reads `config.toml`; an absent file is an empty config.
@@ -56,7 +86,11 @@ pub fn read_and_validate_kimi_config_text() -> Result<String, AppError> {
 
 /// Reads the managed-provider login; `Ok(None)` when there is no login.
 pub fn read_kimi_credentials() -> Result<Option<Value>, AppError> {
-    let path = get_kimi_credentials_path();
+    read_kimi_credentials_for(&read_kimi_config_text()?)
+}
+
+fn read_kimi_credentials_for(config_text: &str) -> Result<Option<Value>, AppError> {
+    let path = kimi_credentials_path_for(config_text);
     if !path.exists() {
         return Ok(None);
     }
@@ -66,7 +100,7 @@ pub fn read_kimi_credentials() -> Result<Option<Value>, AppError> {
         .map_err(|e| AppError::json(&path, e))
 }
 
-/// Writes `config.toml` and `credentials/kimi-code.json` together, rolling the
+/// Writes `config.toml` and the login file it names together, rolling the
 /// credentials back if the config write fails. `credentials == None` (or JSON
 /// null) means "no login": the credentials file is removed, the way switching
 /// to a fresh Official Codex provider blanks `auth.json`.
@@ -74,7 +108,7 @@ pub fn write_kimi_live_atomic(
     credentials: Option<&Value>,
     config_text: &str,
 ) -> Result<(), AppError> {
-    let cred_path = get_kimi_credentials_path();
+    let cred_path = kimi_credentials_path_for(config_text);
     let config_path = get_kimi_config_path();
 
     validate_config_toml(config_text)?;
@@ -114,7 +148,7 @@ pub fn write_kimi_live_atomic(
 /// Live `{ config, credentials }` as a Switchy provider stores it.
 pub fn read_kimi_live() -> Result<Value, AppError> {
     let config = read_and_validate_kimi_config_text()?;
-    let credentials = read_kimi_credentials()?.unwrap_or(Value::Null);
+    let credentials = read_kimi_credentials_for(&config)?.unwrap_or(Value::Null);
     Ok(serde_json::json!({ "config": config, "credentials": credentials }))
 }
 
@@ -135,5 +169,31 @@ mod tests {
         assert_eq!(default_provider_id(cfg).as_deref(), Some("kimi-code"));
         assert_eq!(default_provider_id("x = 1\n"), None);
         assert_eq!(default_provider_id("default_model = \"noslash\"\n"), None);
+    }
+
+    #[test]
+    fn the_login_file_follows_the_managed_oauth_key() {
+        let file = |cfg: &str| {
+            kimi_credentials_path_for(cfg)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        let global = r#"[providers."managed:kimi-code"]
+type = "kimi"
+base_url = "https://api.kimi.ai/coding/v1"
+
+[providers."managed:kimi-code".oauth]
+storage = "file"
+key = "oauth/kimi-code-env-0e4f99c69cc27850"
+oauthHost = "https://auth.kimi.ai"
+"#;
+        assert_eq!(file(global), "kimi-code-env-0e4f99c69cc27850.json");
+        let mainland = "[providers.\"managed:kimi-code\".oauth]\nkey = \"oauth/kimi-code\"\n";
+        assert_eq!(file(mainland), "kimi-code.json");
+        assert_eq!(file(""), "kimi-code.json");
+        let escape = "[providers.\"managed:kimi-code\".oauth]\nkey = \"oauth/../x\"\n";
+        assert_eq!(file(escape), "kimi-code.json");
     }
 }

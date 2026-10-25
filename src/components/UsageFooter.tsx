@@ -70,17 +70,43 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
     return () => clearInterval(interval);
   }, [lastQueriedAt]);
 
-  // Show only when the usage query is enabled and there is data
-  if (!usageEnabled || !usage) return null;
+  if (!usageEnabled) return null;
+
+  // The first reading is still on its way: say so, rather than showing a
+  // card that looks as if it has no usage.
+  if (!usage && loading) {
+    return (
+      <div
+        className={
+          inline
+            ? "inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+            : "mt-3 flex items-center gap-2 text-xs text-muted-foreground"
+        }
+      >
+        <RefreshCw size={12} className="animate-spin" />
+        <span>{t("common.loading")}</span>
+      </div>
+    );
+  }
+
+  if (!usage) return null;
 
   // Error state
   if (!usage.success) {
     if (inline) {
       return (
-        <div className="inline-flex items-center gap-2 text-xs rounded-lg border border-border-default bg-card px-3 py-2 shadow-sm">
+        <div
+          className="inline-flex items-center gap-2 text-xs rounded-lg border border-border-default bg-card px-3 py-2 shadow-sm"
+          title={usage.error || undefined}
+        >
           <div className="flex items-center gap-1.5 text-red-500 dark:text-red-400">
             <AlertCircle size={12} />
-            <span>{t("usage.queryFailed")}</span>
+            {/* A short reason (such as "No API key") fits the line; a long one is on hover */}
+            <span>
+              {usage.error && usage.error.length <= 32
+                ? usage.error
+                : t("usage.queryFailed")}
+            </span>
           </div>
           <button
             onClick={() => refetch()}

@@ -42,6 +42,7 @@ export const TIER_I18N_KEYS: Record<string, string> = {
   antigravity_gpt: "subscription.antigravityGpt",
   // Token Plan (five_hour is already in the official map above)
   weekly_limit: "subscription.weeklyLimit",
+  monthly_limit: "subscription.monthlyLimit",
 };
 
 /** Color class for a usage percentage */

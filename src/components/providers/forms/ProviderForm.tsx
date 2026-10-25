@@ -27,6 +27,7 @@ import type {
 import {
   providerPresets,
   type ProviderPreset,
+  type TokenPlanProvider,
 } from "@/config/claudeProviderPresets";
 import {
   codexProviderPresets,
@@ -167,6 +168,7 @@ export function ProviderForm({
     category?: ProviderCategory;
     partnerPromotionKey?: string;
     suggestedDefaults?: OpenClawSuggestedDefaults;
+    tokenPlan?: TokenPlanProvider;
   } | null>(null);
   const [isEndpointModalOpen, setIsEndpointModalOpen] = useState(false);
   const [isCodexEndpointModalOpen, setIsCodexEndpointModalOpen] =
@@ -1165,6 +1167,20 @@ export function ProviderForm({
       capturedClaudeAccount: capturedIdentity ?? undefined,
     };
 
+    // A card made from a coding-plan preset shows the plan's quota from the
+    // start, read with the key it was given.
+    if (!initialData && activePreset?.tokenPlan && !payload.meta.usage_script) {
+      payload.meta.usage_script = {
+        enabled: true,
+        language: "javascript",
+        code: "",
+        timeout: 10,
+        templateType: "token_plan",
+        codingPlanProvider: activePreset.tokenPlan,
+        autoQueryInterval: 5,
+      };
+    }
+
     await onSubmit(payload);
   };
 
@@ -1306,6 +1322,10 @@ export function ProviderForm({
       partnerPromotionKey:
         appId === "gemini"
           ? (entry.preset as GeminiProviderPreset).partnerPromotionKey
+          : undefined,
+      tokenPlan:
+        appId === "claude" || appId === "opencode"
+          ? (entry.preset as ProviderPreset | OpenCodeProviderPreset).tokenPlan
           : undefined,
     });
 

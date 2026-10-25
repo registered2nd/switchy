@@ -1,5 +1,9 @@
 import type { ProviderCategory, OpenCodeProviderConfig } from "../types";
-import type { PresetTheme, TemplateValueConfig } from "./claudeProviderPresets";
+import type {
+  PresetTheme,
+  TemplateValueConfig,
+  TokenPlanProvider,
+} from "./claudeProviderPresets";
 
 export interface OpenCodeProviderPreset {
   name: string;
@@ -14,6 +18,8 @@ export interface OpenCodeProviderPreset {
   icon?: string;
   iconColor?: string;
   isCustomTemplate?: boolean;
+  // Coding plan whose quota a card made from this preset shows
+  tokenPlan?: TokenPlanProvider;
 }
 
 export const opencodeNpmPackages = [
@@ -350,29 +356,31 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Zhipu GLM en",
-    websiteUrl: "https://z.ai",
+    name: "Z.ai GLM Coding Plan",
+    websiteUrl: "https://docs.z.ai/devpack/tool/opencode",
     apiKeyUrl: "https://z.ai/subscribe",
     settingsConfig: {
       npm: "@ai-sdk/openai-compatible",
-      name: "Zhipu GLM en",
+      name: "Z.ai GLM Coding Plan",
       options: {
-        baseURL: "https://api.z.ai/v1",
+        baseURL: "https://api.z.ai/api/coding/paas/v4",
         apiKey: "",
         setCacheKey: true,
       },
       models: {
-        "glm-5": { name: "GLM-5" },
+        "glm-5.3": { name: "GLM-5.3" },
+        "glm-5.3-flash": { name: "GLM-5.3-Flash" },
       },
     },
     category: "cn_official",
     icon: "zhipu",
     iconColor: "#0F62FE",
+    tokenPlan: "zhipu",
     templateValues: {
       baseURL: {
         label: "Base URL",
-        placeholder: "https://api.z.ai/v1",
-        defaultValue: "https://api.z.ai/v1",
+        placeholder: "https://api.z.ai/api/coding/paas/v4",
+        defaultValue: "https://api.z.ai/api/coding/paas/v4",
         editorValue: "",
       },
       apiKey: {
@@ -447,29 +455,32 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "Kimi For Coding",
-    websiteUrl: "https://www.kimi.com/coding/docs/",
-    apiKeyUrl: "https://platform.moonshot.cn/console/api-keys",
+    // Kimi Code membership on kimi.ai, with its Kimi Code Console key
+    name: "Kimi Code Plan",
+    websiteUrl: "https://www.kimi.ai/code",
     settingsConfig: {
       npm: "@ai-sdk/anthropic",
-      name: "Kimi For Coding",
+      name: "Kimi Code Plan",
       options: {
-        baseURL: "https://api.kimi.com/coding/v1",
+        baseURL: "https://api.kimi.ai/coding/v1",
         apiKey: "",
         setCacheKey: true,
       },
       models: {
+        "k3.1-pro": { name: "K3.1 Pro" },
+        k3: { name: "K3" },
         "kimi-for-coding": { name: "Kimi For Coding" },
       },
     },
     category: "cn_official",
     icon: "kimi",
     iconColor: "#6366F1",
+    tokenPlan: "kimi",
     templateValues: {
       baseURL: {
         label: "Base URL",
-        placeholder: "https://api.kimi.com/coding/v1",
-        defaultValue: "https://api.kimi.com/coding/v1",
+        placeholder: "https://api.kimi.ai/coding/v1",
+        defaultValue: "https://api.kimi.ai/coding/v1",
         editorValue: "",
       },
       apiKey: {
@@ -678,19 +689,23 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
   },
   {
-    name: "MiniMax en",
-    websiteUrl: "https://platform.minimax.io",
-    apiKeyUrl: "https://platform.minimax.io/subscribe/coding-plan",
+    // minimax.io M Plan; its Subscription Key (sk-cp-…)
+    name: "MiniMax M Plan",
+    websiteUrl: "https://platform.minimax.io/docs/m-plan/opencode",
+    apiKeyUrl: "https://www.minimax.io/m-plan",
     settingsConfig: {
-      npm: "@ai-sdk/openai-compatible",
-      name: "MiniMax en",
+      npm: "@ai-sdk/anthropic",
+      name: "MiniMax M Plan",
       options: {
-        baseURL: "https://api.minimax.io/v1",
+        baseURL: "https://api.minimax.io/anthropic/v1",
         apiKey: "",
         setCacheKey: true,
       },
       models: {
-        "MiniMax-M2.7": { name: "MiniMax M2.7" },
+        "MiniMax-M3.1-Flash": {
+          name: "MiniMax M3.1 Flash",
+          limit: { context: 524288 },
+        },
       },
     },
     category: "cn_official",
@@ -700,6 +715,70 @@ export const opencodeProviderPresets: OpenCodeProviderPreset[] = [
     },
     icon: "minimax",
     iconColor: "#FF6B6B",
+    tokenPlan: "minimax",
+    templateValues: {
+      apiKey: {
+        label: "API Key",
+        placeholder: "sk-cp-...",
+        editorValue: "",
+      },
+    },
+  },
+  {
+    // OpenCode Go's Chat Completions models (OpenCode's built-in
+    // `opencode-go` provider also serves the Messages and Responses ones)
+    name: "OpenCode Go",
+    websiteUrl: "https://opencode.ai/v2/docs/console/go/",
+    apiKeyUrl: "https://opencode.ai/go",
+    settingsConfig: {
+      npm: "@ai-sdk/openai-compatible",
+      name: "OpenCode Go",
+      options: {
+        baseURL: "https://opencode.ai/inference/go/openai/v1",
+        apiKey: "",
+      },
+      models: {
+        "glm-5.3": { name: "GLM-5.3" },
+        "kimi-k3.1-pro": { name: "Kimi K3.1 Pro" },
+        "deepseek-v4-pro": { name: "DeepSeek V4 Pro" },
+        "deepseek-v4.1-flash": { name: "DeepSeek V4.1 Flash" },
+        "minimax-m3.1-flash": { name: "MiniMax M3.1 Flash" },
+        "mimo-v2.6-pro": { name: "MiMo V2.6 Pro" },
+      },
+    },
+    category: "aggregator",
+    icon: "opencode",
+    iconColor: "#211E1E",
+    templateValues: {
+      apiKey: {
+        label: "API Key",
+        placeholder: "oc_sk_...",
+        editorValue: "",
+      },
+    },
+  },
+  {
+    // Command Code's API (GOAT, Pro, Max and Provider plans; Go is CLI-only)
+    name: "Command Code",
+    websiteUrl: "https://commandcode.ai/docs/provider",
+    apiKeyUrl: "https://commandcode.ai/pricing",
+    settingsConfig: {
+      npm: "@ai-sdk/openai-compatible",
+      name: "Command Code",
+      options: {
+        baseURL: "https://api.commandcode.ai/provider/v1",
+        apiKey: "",
+      },
+      models: {
+        "zai-org/GLM-5.3": { name: "GLM-5.3" },
+        "moonshotai/Kimi-K3.1-Pro": { name: "Kimi K3.1 Pro" },
+        "deepseek/deepseek-v4-pro": { name: "DeepSeek V4 Pro" },
+        "MiniMaxAI/MiniMax-M3": { name: "MiniMax M3" },
+        "Qwen/Qwen3.8-Max": { name: "Qwen3.8 Max" },
+      },
+    },
+    category: "aggregator",
+    tokenPlan: "commandcode",
     templateValues: {
       apiKey: {
         label: "API Key",

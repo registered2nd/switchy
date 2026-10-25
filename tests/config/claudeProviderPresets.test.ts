@@ -76,3 +76,54 @@ describe("AWS Bedrock Provider Presets", () => {
     expect(bedrockApiKey!.category).toBe("cloud_provider");
   });
 });
+
+describe("Coding plan presets", () => {
+  const plans: Array<[string, string, string | undefined]> = [
+    ["Z.ai GLM Coding Plan", "https://api.z.ai/api/anthropic", "zhipu"],
+    ["MiniMax M Plan", "https://api.minimax.io/anthropic", "minimax"],
+    ["Kimi Code Plan", "https://api.kimi.ai/coding/", "kimi"],
+    ["Command Code", "https://api.commandcode.ai/provider", "commandcode"],
+    ["OpenCode Go", "https://opencode.ai/inference/go/anthropic", undefined],
+    [
+      "Alibaba Cloud Token Plan",
+      "https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic",
+      undefined,
+    ],
+    [
+      "Alibaba Cloud Coding Plan",
+      "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic",
+      undefined,
+    ],
+    [
+      "Tencent Cloud Token Plan",
+      "https://tokenhub-intl.tencentcloudmaas.com/plan/anthropic",
+      undefined,
+    ],
+    [
+      "BytePlus ModelArk Coding Plan",
+      "https://ark.ap-southeast.bytepluses.com/api/coding",
+      undefined,
+    ],
+    ["DeepSeek", "https://api.deepseek.com/anthropic", undefined],
+  ];
+
+  it.each(plans)(
+    "%s uses its international endpoint",
+    (name, baseUrl, tokenPlan) => {
+      const preset = providerPresets.find((p) => p.name === name);
+      expect(preset).toBeDefined();
+      const env = (preset!.settingsConfig as any).env;
+      expect(env.ANTHROPIC_BASE_URL).toBe(baseUrl);
+      expect(preset!.tokenPlan).toBe(tokenPlan);
+    },
+  );
+
+  it("Kimi Code Plan takes its key in ANTHROPIC_API_KEY", () => {
+    const kimi = providerPresets.find((p) => p.name === "Kimi Code Plan")!;
+    expect(kimi.apiKeyField).toBe("ANTHROPIC_API_KEY");
+    expect((kimi.settingsConfig as any).env).toHaveProperty(
+      "ANTHROPIC_API_KEY",
+      "",
+    );
+  });
+});

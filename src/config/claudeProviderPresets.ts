@@ -58,7 +58,14 @@ export interface ProviderPreset {
 
   // Hide this preset from the list (it still exists)
   hidden?: boolean;
+
+  // Coding plan whose quota a card made from this preset shows (the Token
+  // Plan usage query, read with the plan's own key)
+  tokenPlan?: TokenPlanProvider;
 }
+
+/** Coding plans whose quota Switchy reads with the plan key */
+export type TokenPlanProvider = "kimi" | "zhipu" | "minimax" | "commandcode";
 
 export const providerPresets: ProviderPreset[] = [
   {
@@ -80,14 +87,18 @@ export const providerPresets: ProviderPreset[] = [
   {
     name: "DeepSeek",
     websiteUrl: "https://platform.deepseek.com",
+    apiKeyUrl: "https://platform.deepseek.com/api_keys",
+    // DeepSeek's Claude Code guide; it maps claude-opus-* to deepseek-v4-pro
     settingsConfig: {
       env: {
         ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic",
         ANTHROPIC_AUTH_TOKEN: "",
-        ANTHROPIC_MODEL: "DeepSeek-V3.2",
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: "DeepSeek-V3.2",
-        ANTHROPIC_DEFAULT_SONNET_MODEL: "DeepSeek-V3.2",
-        ANTHROPIC_DEFAULT_OPUS_MODEL: "DeepSeek-V3.2",
+        ANTHROPIC_MODEL: "deepseek-flash[1m]",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "deepseek-flash",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-flash[1m]",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "deepseek-flash[1m]",
+        CLAUDE_CODE_SUBAGENT_MODEL: "deepseek-flash",
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW: "786432",
       },
     },
     category: "cn_official",
@@ -113,22 +124,25 @@ export const providerPresets: ProviderPreset[] = [
     iconColor: "#0F62FE",
   },
   {
-    name: "Zhipu GLM en",
-    websiteUrl: "https://z.ai",
+    name: "Z.ai GLM Coding Plan",
+    websiteUrl: "https://docs.z.ai/devpack/overview",
     apiKeyUrl: "https://z.ai/subscribe",
+    // Z.ai's manual Claude Code configuration
     settingsConfig: {
       env: {
         ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic",
         ANTHROPIC_AUTH_TOKEN: "",
-        ANTHROPIC_MODEL: "glm-5",
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-5",
-        ANTHROPIC_DEFAULT_SONNET_MODEL: "glm-5",
-        ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-5.3-flash[1m]",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "glm-5.3[1m]",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5.3[1m]",
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1000000",
+        API_TIMEOUT_MS: "3000000",
       },
     },
     category: "cn_official",
     icon: "zhipu",
     iconColor: "#0F62FE",
+    tokenPlan: "zhipu",
   },
   {
     name: "Bailian",
@@ -158,6 +172,66 @@ export const providerPresets: ProviderPreset[] = [
     iconColor: "#624AFF",
   },
   {
+    // Model Studio international (Singapore), the successor of its Coding Plan
+    name: "Alibaba Cloud Token Plan",
+    websiteUrl:
+      "https://www.alibabacloud.com/help/en/model-studio/token-plan-personal-overview",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL:
+          "https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "auto",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "qwen3.6-flash",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "qwen3.8-flash",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "qwen3.8-max",
+        CLAUDE_CODE_SUBAGENT_MODEL: "auto",
+      },
+    },
+    category: "cn_official",
+    icon: "qwen",
+    iconColor: "#624AFF",
+  },
+  {
+    // Model Studio international's Coding Plan Pro, sold while slots last
+    name: "Alibaba Cloud Coding Plan",
+    websiteUrl: "https://www.alibabacloud.com/help/en/model-studio/coding-plan",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL:
+          "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "qwen3.7-plus",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "qwen3.7-plus",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "qwen3.7-plus",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "qwen3.7-plus",
+        CLAUDE_CODE_SUBAGENT_MODEL: "qwen3.7-plus",
+      },
+    },
+    category: "cn_official",
+    icon: "qwen",
+    iconColor: "#624AFF",
+  },
+  {
+    // Tencent Cloud international (Singapore) Token Plan Personal
+    name: "Tencent Cloud Token Plan",
+    websiteUrl: "https://www.tencentcloud.com/document/product/1300/81315",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL:
+          "https://tokenhub-intl.tencentcloudmaas.com/plan/anthropic",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "glm-5.2",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-5.3-flash",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "glm-5.2",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5.2",
+      },
+    },
+    category: "cn_official",
+    icon: "tencent",
+    iconColor: "#00A4FF",
+  },
+  {
     name: "Kimi",
     websiteUrl: "https://platform.moonshot.cn/console",
     settingsConfig: {
@@ -175,17 +249,28 @@ export const providerPresets: ProviderPreset[] = [
     iconColor: "#6366F1",
   },
   {
-    name: "Kimi For Coding",
-    websiteUrl: "https://www.kimi.com/coding/docs/",
+    // Kimi Code membership on kimi.ai, with its Kimi Code Console key
+    name: "Kimi Code Plan",
+    websiteUrl: "https://www.kimi.ai/code",
+    apiKeyField: "ANTHROPIC_API_KEY",
     settingsConfig: {
       env: {
-        ANTHROPIC_BASE_URL: "https://api.kimi.com/coding/",
-        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_BASE_URL: "https://api.kimi.ai/coding/",
+        ANTHROPIC_API_KEY: "",
+        ANTHROPIC_MODEL: "k3.1-pro",
+        ANTHROPIC_DEFAULT_FABLE_MODEL: "k3.1-pro",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "k3.1-pro",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "k3.1-pro",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "k3.1-pro",
+        CLAUDE_CODE_SUBAGENT_MODEL: "k3.1-pro",
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144",
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS: "262144",
       },
     },
     category: "cn_official",
     icon: "kimi",
     iconColor: "#6366F1",
+    tokenPlan: "kimi",
   },
   {
     name: "StepFun",
@@ -295,19 +380,20 @@ export const providerPresets: ProviderPreset[] = [
     iconColor: "#FF6B6B",
   },
   {
-    name: "MiniMax en",
-    websiteUrl: "https://platform.minimax.io",
-    apiKeyUrl: "https://platform.minimax.io/subscribe/coding-plan",
+    // minimax.io M Plan; its Subscription Key (sk-cp-…)
+    name: "MiniMax M Plan",
+    websiteUrl: "https://platform.minimax.io/docs/m-plan/claude-code",
+    apiKeyUrl: "https://www.minimax.io/m-plan",
     settingsConfig: {
       env: {
         ANTHROPIC_BASE_URL: "https://api.minimax.io/anthropic",
         ANTHROPIC_AUTH_TOKEN: "",
         API_TIMEOUT_MS: "3000000",
-        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: 1,
-        ANTHROPIC_MODEL: "MiniMax-M2.7",
-        ANTHROPIC_DEFAULT_SONNET_MODEL: "MiniMax-M2.7",
-        ANTHROPIC_DEFAULT_OPUS_MODEL: "MiniMax-M2.7",
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: "MiniMax-M2.7",
+        ANTHROPIC_MODEL: "MiniMax-M3.1-Flash[1m]",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "MiniMax-M3.1-Flash[1m]",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "MiniMax-M3.1-Flash[1m]",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "MiniMax-M3.1-Flash[1m]",
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW: "524288",
       },
     },
     category: "cn_official",
@@ -317,6 +403,7 @@ export const providerPresets: ProviderPreset[] = [
     },
     icon: "minimax",
     iconColor: "#FF6B6B",
+    tokenPlan: "minimax",
   },
   {
     name: "DouBaoSeed",
@@ -336,6 +423,65 @@ export const providerPresets: ProviderPreset[] = [
     category: "cn_official",
     icon: "doubao",
     iconColor: "#3370FF",
+  },
+  {
+    // BytePlus ModelArk Coding Plan; the model is chosen in the ModelArk console
+    name: "BytePlus ModelArk Coding Plan",
+    websiteUrl: "https://docs.byteplus.com/en/docs/ModelArk/1928262",
+    apiKeyUrl: "https://www.byteplus.com/en/activity/codingplan",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL: "https://ark.ap-southeast.bytepluses.com/api/coding",
+        ANTHROPIC_AUTH_TOKEN: "",
+        API_TIMEOUT_MS: "3000000",
+        ANTHROPIC_MODEL: "ark-code-latest",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "ark-code-latest",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "ark-code-latest",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "ark-code-latest",
+      },
+    },
+    category: "cn_official",
+    icon: "bytedance",
+    iconColor: "#3370FF",
+  },
+  {
+    // OpenCode Go: only Messages-API models reach Claude Code
+    name: "OpenCode Go",
+    websiteUrl: "https://opencode.ai/v2/docs/console/harnesses/claude-code/",
+    apiKeyUrl: "https://opencode.ai/go",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL: "https://opencode.ai/inference/go/anthropic",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "minimax-m3",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "minimax-m3",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "qwen3.8-max",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-5-5",
+        CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+      },
+    },
+    category: "aggregator",
+    icon: "opencode",
+    iconColor: "#211E1E",
+  },
+  {
+    // Command Code's API (GOAT, Pro, Max and Provider plans; Go is CLI-only).
+    // Claude models answer on its Messages endpoint only.
+    name: "Command Code",
+    websiteUrl: "https://commandcode.ai/docs/provider",
+    apiKeyUrl: "https://commandcode.ai/pricing",
+    settingsConfig: {
+      env: {
+        ANTHROPIC_BASE_URL: "https://api.commandcode.ai/provider",
+        ANTHROPIC_AUTH_TOKEN: "",
+        ANTHROPIC_MODEL: "claude-sonnet-5-5",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5-5",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-5-5",
+      },
+    },
+    category: "aggregator",
+    tokenPlan: "commandcode",
   },
   {
     name: "BaiLing",

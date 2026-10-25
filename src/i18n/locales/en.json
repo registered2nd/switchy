@@ -1448,6 +1448,7 @@
     "antigravityClaude": "Claude",
     "antigravityGpt": "GPT-OSS",
     "weeklyLimit": "Weekly",
+    "monthlyLimit": "Monthly",
     "utilization": "{{value}}%",
     "resetsIn": "Resets in {{time}}",
     "extraUsage": "Extra Usage",

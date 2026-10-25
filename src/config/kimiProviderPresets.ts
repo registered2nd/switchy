@@ -73,17 +73,23 @@ provider = "${cleanProviderId}"
 model = "${model}"`;
 }
 
-/** Official (managed login) config.toml: the provider and model tables kimi-code 0.26 writes */
+/**
+ * Official (managed login) config.toml: the provider and model tables kimi-code
+ * writes for a kimi.ai (international) login. The OAuth key is the one kimi-code
+ * derives for auth.kimi.ai and api.kimi.ai, so `kimi login` signs in there
+ * rather than on mainland kimi.com, whose login uses `oauth/kimi-code`.
+ */
 export const KIMI_OFFICIAL_CONFIG = `default_model = "kimi-code/kimi-for-coding"
 
 [providers."managed:kimi-code"]
 type = "kimi"
 api_key = ""
-base_url = "https://api.kimi.com/coding/v1"
+base_url = "https://api.kimi.ai/coding/v1"
 
 [providers."managed:kimi-code".oauth]
 storage = "file"
-key = "oauth/kimi-code"
+key = "oauth/kimi-code-env-0e4f99c69cc27850"
+oauthHost = "https://auth.kimi.ai"
 
 [models."kimi-code/kimi-for-coding"]
 provider = "managed:kimi-code"
@@ -122,7 +128,7 @@ default_effort = "high"`;
 export const kimiProviderPresets: KimiProviderPreset[] = [
   {
     name: "Kimi Code",
-    websiteUrl: "https://www.kimi.com/code",
+    websiteUrl: "https://www.kimi.ai/code",
     isOfficial: true,
     category: "official",
     config: KIMI_OFFICIAL_CONFIG,

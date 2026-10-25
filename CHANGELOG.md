@@ -8,6 +8,45 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.44] — 2026-10-25 — Coding plans from Z.ai, MiniMax, Kimi, Alibaba Cloud, Tencent Cloud, BytePlus, OpenCode Go and Command Code
+
+Windows installer: download `Switchy_1.0.44_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+### Added
+
+- **Presets for the coding plans of the international services.** The
+  Claude Code tab has *Z.ai GLM Coding Plan*, *MiniMax M Plan*, *Kimi Code
+  Plan*, *Alibaba Cloud Token Plan*, *Alibaba Cloud Coding Plan*, *Tencent
+  Cloud Token Plan*, *BytePlus ModelArk Coding Plan*, *OpenCode Go* and
+  *Command Code*; the OpenCode tab has the Z.ai, MiniMax, Kimi, OpenCode Go
+  and Command Code ones. Each has the provider's international endpoint and
+  the models its own Claude Code guide gives; paste the plan's key and
+  enable the card. The README's *Coding plans* section lists the plans,
+  prices, keys and terms.
+- **Plan quota on the card.** A card made from the Z.ai, MiniMax, Kimi or
+  Command Code preset shows how much of its 5-hour, weekly (and for Kimi,
+  monthly) window is used and when each resets, read with the card's key.
+  It says *Loading...* while the figures are on their way and *No API key*
+  when the card has none.
+
+### Changed
+
+- **Kimi Code signs in on kimi.ai.** A new Kimi Code card points Kimi Code
+  at the international service, so `kimi login` signs in there, and a
+  kimi.ai login now switches between cards the way a kimi.com one does.
+- **The DeepSeek preset uses DeepSeek's current models** (`deepseek-flash`,
+  as DeepSeek's Claude Code guide sets them).
+- **A switch carries a provider's context window.** The context-window,
+  subagent-model and experimental-beta settings some providers need in
+  Claude Code are written with the provider and removed when you switch
+  away from it.
+
+### Fixed
+
+- **MiniMax plan quota** is read from the endpoint minimax.io documents for
+  plan keys, and Z.ai's weekly window is no longer shown as a second 5-hour
+  one.
+
 ## [1.0.43] — 2026-10-25 — Usage badges say when they are loading; Cursor and Antigravity sign-in links stay in the terminal
 
 Windows installer: download `Switchy_1.0.43_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

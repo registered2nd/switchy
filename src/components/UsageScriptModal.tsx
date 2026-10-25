@@ -111,7 +111,11 @@ const TEMPLATE_NAME_KEYS: Record<string, string> = {
 
 /** Coding Plan provider options */
 const TOKEN_PLAN_PROVIDERS = [
-  { id: "kimi", label: "Kimi For Coding", pattern: /api\.kimi\.com\/coding/i },
+  {
+    id: "kimi",
+    label: "Kimi Code",
+    pattern: /api\.kimi\.(ai|com)\/coding/i,
+  },
   {
     id: "zhipu",
     label: "Zhipu GLM",
@@ -121,6 +125,11 @@ const TOKEN_PLAN_PROVIDERS = [
     id: "minimax",
     label: "MiniMax",
     pattern: /api\.minimaxi?\.com|api\.minimax\.io/i,
+  },
+  {
+    id: "commandcode",
+    label: "Command Code",
+    pattern: /api\.commandcode\.ai/i,
   },
 ] as const;
 
@@ -179,6 +188,13 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
         return {
           apiKey: env.GEMINI_API_KEY,
           baseUrl: env.GOOGLE_GEMINI_BASE_URL,
+        };
+      } else if (appId === "opencode") {
+        // OpenCode: { options: { baseURL, apiKey } }
+        const options = (config as any).options || {};
+        return {
+          apiKey: options.apiKey,
+          baseUrl: options.baseURL,
         };
       }
       return { apiKey: undefined, baseUrl: undefined };
@@ -369,12 +385,8 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
     try {
       // Coding Plan uses a dedicated API
       if (selectedTemplate === TEMPLATE_TYPES.TOKEN_PLAN) {
-        const config = provider.settingsConfig as Record<string, any>;
-        const baseUrl: string = config?.env?.ANTHROPIC_BASE_URL ?? "";
-        const apiKey: string =
-          config?.env?.ANTHROPIC_AUTH_TOKEN ??
-          config?.env?.ANTHROPIC_API_KEY ??
-          "";
+        const baseUrl = providerCredentials.baseUrl ?? "";
+        const apiKey = providerCredentials.apiKey ?? "";
         const { subscriptionApi } = await import("@/lib/api/subscription");
         const quota = await subscriptionApi.getCodingPlanQuota(baseUrl, apiKey);
         if (quota.success && quota.tiers.length > 0) {

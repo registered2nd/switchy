@@ -1,6 +1,6 @@
 [package]
 name = "switchy"
-version = "1.0.43"
+version = "1.0.44"
 description = "All-in-One Assistant for Claude Code, Codex & Gemini CLI"
 authors = ["registered2nd"]
 license = "MIT"

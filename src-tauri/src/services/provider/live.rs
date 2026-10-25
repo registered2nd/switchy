@@ -55,6 +55,12 @@ pub(crate) fn is_claude_connection_env_key(key: &str) -> bool {
                 | "AWS_SECRET_ACCESS_KEY"
                 | "AWS_SESSION_TOKEN"
                 | "ENABLE_TOOL_SEARCH"
+                // The context window and subagent model of a non-Claude
+                // model, and the betas such a model refuses.
+                | "CLAUDE_CODE_AUTO_COMPACT_WINDOW"
+                | "CLAUDE_CODE_MAX_CONTEXT_TOKENS"
+                | "CLAUDE_CODE_SUBAGENT_MODEL"
+                | "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"
         )
 }
 

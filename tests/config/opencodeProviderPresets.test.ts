@@ -66,18 +66,38 @@ describe("AWS Bedrock OpenCode Provider Presets", () => {
     ).toBe(true);
   });
 
-  it("Kimi For Coding preset should use Anthropic with the coding endpoint", () => {
+  it("Kimi Code Plan preset should use Anthropic with the kimi.ai coding endpoint", () => {
     const kimiForCodingPreset = opencodeProviderPresets.find(
-      (p) => p.name === "Kimi For Coding",
+      (p) => p.name === "Kimi Code Plan",
     );
 
     expect(kimiForCodingPreset).toBeDefined();
     expect(kimiForCodingPreset!.settingsConfig.npm).toBe("@ai-sdk/anthropic");
     expect(kimiForCodingPreset!.settingsConfig.options?.baseURL).toBe(
-      "https://api.kimi.com/coding/v1",
+      "https://api.kimi.ai/coding/v1",
     );
     expect(kimiForCodingPreset!.templateValues?.baseURL.defaultValue).toBe(
-      "https://api.kimi.com/coding/v1",
+      "https://api.kimi.ai/coding/v1",
     );
+    expect(kimiForCodingPreset!.tokenPlan).toBe("kimi");
   });
+});
+
+describe("Coding plan presets", () => {
+  const plans: Array<[string, string, string | undefined]> = [
+    ["Z.ai GLM Coding Plan", "https://api.z.ai/api/coding/paas/v4", "zhipu"],
+    ["MiniMax M Plan", "https://api.minimax.io/anthropic/v1", "minimax"],
+    ["OpenCode Go", "https://opencode.ai/inference/go/openai/v1", undefined],
+    ["Command Code", "https://api.commandcode.ai/provider/v1", "commandcode"],
+  ];
+
+  it.each(plans)(
+    "%s uses its international endpoint",
+    (name, baseURL, tokenPlan) => {
+      const preset = opencodeProviderPresets.find((p) => p.name === name);
+      expect(preset).toBeDefined();
+      expect(preset!.settingsConfig.options?.baseURL).toBe(baseURL);
+      expect(preset!.tokenPlan).toBe(tokenPlan);
+    },
+  );
 });
