@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, X } from "lucide-react";
@@ -64,6 +65,10 @@ interface ProviderListProps {
   isProxyTakeover?: boolean; // proxy takeover mode (the live config is taken over)
   activeProviderId?: string; // provider ID the proxy is actually using (green border in failover mode)
   onSetAsDefault?: (provider: Provider) => void; // OpenClaw: set as default model
+  /** The program these accounts run in, shown on each card. */
+  programLabel?: string;
+  /** More "Used in" choices under a card. */
+  renderExtraUsedIn?: (provider: Provider) => ReactNode;
 }
 
 export function ProviderList({
@@ -86,6 +91,8 @@ export function ProviderList({
   isProxyTakeover = false,
   activeProviderId,
   onSetAsDefault,
+  programLabel,
+  renderExtraUsedIn,
 }: ProviderListProps) {
   const { t } = useTranslation();
   const { checkProvider, isChecking } = useStreamCheck(appId);
@@ -368,6 +375,8 @@ export function ProviderList({
                 onSetAsDefault={
                   onSetAsDefault ? () => onSetAsDefault(provider) : undefined
                 }
+                programLabel={programLabel}
+                extraUsedIn={renderExtraUsedIn?.(provider)}
               />
             );
           })}
@@ -497,6 +506,8 @@ interface SortableProviderCardProps {
   // OpenClaw: default model
   isDefaultModel?: boolean;
   onSetAsDefault?: () => void;
+  programLabel?: string;
+  extraUsedIn?: ReactNode;
 }
 
 function SortableProviderCard({
@@ -527,6 +538,8 @@ function SortableProviderCard({
   activeProviderId,
   isDefaultModel,
   onSetAsDefault,
+  programLabel,
+  extraUsedIn,
 }: SortableProviderCardProps) {
   const {
     setNodeRef,
@@ -580,6 +593,8 @@ function SortableProviderCard({
         // OpenClaw: default model
         isDefaultModel={isDefaultModel}
         onSetAsDefault={onSetAsDefault}
+        programLabel={programLabel}
+        extraUsedIn={extraUsedIn}
       />
     </div>
   );

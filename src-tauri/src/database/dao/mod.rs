@@ -3,6 +3,7 @@
 //! Database access operations for each domain
 
 pub mod account_switches;
+pub mod accounts;
 pub mod failover;
 pub mod providers;
 pub mod proxy;
@@ -15,4 +16,5 @@ pub mod usage_rollup;
 // All DAO methods live on the Database impl, so nothing else needs exporting
 // Export FailoverQueueItem for external use
 pub use account_switches::{AccountSwitch, SwitchReason};
+pub use accounts::{Account, BalanceReading};
 pub use failover::FailoverQueueItem;

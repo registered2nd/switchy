@@ -105,7 +105,7 @@ export function CodexFormFields({
       {/* Codex API key input */}
       <ApiKeySection
         id="codexApiKey"
-        label="API Key"
+        label="Key"
         value={codexApiKey}
         onChange={onApiKeyChange}
         category={category}
@@ -113,7 +113,7 @@ export function CodexFormFields({
         websiteUrl={websiteUrl}
         placeholder={{
           official: t("providerForm.codexOfficialNoApiKey", {
-            defaultValue: "Official does not require API Key, save directly",
+            defaultValue: "Official needs no key; just save",
           }),
           thirdParty: t("providerForm.codexApiKeyAutoFill", {
             defaultValue:

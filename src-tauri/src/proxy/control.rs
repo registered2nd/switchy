@@ -28,13 +28,11 @@ pub async fn accounts(State(state): State<ProxyState>) -> Json<Value> {
     let now = chrono::Utc::now().timestamp();
     let mut apps = serde_json::Map::new();
     for app in POOLED_APPS {
-        let current = AppType::from_str(app)
-            .ok()
-            .and_then(|t| {
-                crate::settings::get_effective_current_provider(&state.db, &t)
-                    .ok()
-                    .flatten()
-            });
+        let current = AppType::from_str(app).ok().and_then(|t| {
+            crate::settings::get_effective_current_provider(&state.db, &t)
+                .ok()
+                .flatten()
+        });
         let order = match state.provider_router.select_providers(app, None).await {
             Ok(providers) => providers
                 .into_iter()
@@ -85,7 +83,10 @@ pub async fn switch(
 ) -> (StatusCode, Json<Value>) {
     let fail = |status: StatusCode, message: String| (status, Json(json!({ "error": message })));
     let Ok(app_type) = AppType::from_str(&request.app) else {
-        return fail(StatusCode::BAD_REQUEST, format!("unknown app {}", request.app));
+        return fail(
+            StatusCode::BAD_REQUEST,
+            format!("unknown app {}", request.app),
+        );
     };
     let Some(app) = state.app_handle.clone() else {
         return fail(StatusCode::SERVICE_UNAVAILABLE, "no app window".to_string());
@@ -93,8 +94,11 @@ pub async fn switch(
     let provider = request.provider.clone();
     let switched = tokio::task::spawn_blocking(move || {
         let app_state = app.state::<crate::store::AppState>();
-        let result =
-            crate::services::provider::ProviderService::switch(app_state.inner(), app_type, &provider);
+        let result = crate::services::provider::ProviderService::switch(
+            app_state.inner(),
+            app_type,
+            &provider,
+        );
         if result.is_ok() {
             if let Ok(menu) = crate::tray::create_tray_menu(&app, app_state.inner()) {
                 if let Some(tray) = app.tray_by_id("main") {
@@ -171,16 +175,36 @@ pub async fn invoke(
         return fail(StatusCode::SERVICE_UNAVAILABLE, "no app window".to_string());
     };
     let Some(window) = app.get_webview_window("main") else {
-        return fail(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "the main window is closed (lightweight mode)".to_string(),
-        );
+        // Lightweight mode closed the window: the commands that bring it back
+        // or quit run without it; the rest need it.
+        return match request.command.as_str() {
+            "exit_lightweight_mode" | "show_main_window" => {
+                match crate::lightweight::exit_lightweight_mode(&app) {
+                    Ok(()) => (StatusCode::OK, Json(json!({ "result": null }))),
+                    Err(e) => fail(StatusCode::INTERNAL_SERVER_ERROR, e),
+                }
+            }
+            "is_lightweight_mode" => (StatusCode::OK, Json(json!({ "result": true }))),
+            "quit_app" => {
+                crate::commands::quit_app(app.clone());
+                (StatusCode::OK, Json(json!({ "result": null })))
+            }
+            _ => fail(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "the main window is closed (lightweight mode): run exit_lightweight_mode first"
+                    .to_string(),
+            ),
+        };
     };
     let url = match window.url() {
         Ok(url) => url,
         Err(e) => return fail(StatusCode::SERVICE_UNAVAILABLE, e.to_string()),
     };
-    let args = if request.args.is_null() { json!({}) } else { request.args };
+    let args = if request.args.is_null() {
+        json!({})
+    } else {
+        request.args
+    };
     let message = tauri::webview::InvokeRequest {
         cmd: request.command.clone(),
         callback: CallbackFn(0),
@@ -206,12 +230,18 @@ pub async fn invoke(
         match tokio::time::timeout(std::time::Duration::from_secs(INVOKE_TIMEOUT_SECS), rx).await {
             Ok(Ok(response)) => response,
             Ok(Err(_)) => {
-                return fail(StatusCode::INTERNAL_SERVER_ERROR, "the command gave no answer".to_string())
+                return fail(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "the command gave no answer".to_string(),
+                )
             }
             Err(_) => {
                 return fail(
                     StatusCode::GATEWAY_TIMEOUT,
-                    format!("{} did not finish in {INVOKE_TIMEOUT_SECS} seconds", request.command),
+                    format!(
+                        "{} did not finish in {INVOKE_TIMEOUT_SECS} seconds",
+                        request.command
+                    ),
                 )
             }
         };

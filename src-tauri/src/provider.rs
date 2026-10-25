@@ -313,6 +313,11 @@ pub struct ProviderMeta {
         skip_serializing_if = "Option::is_none"
     )]
     pub captured_claude_account: Option<CapturedClaudeAccountMeta>,
+
+    /// The plan account (accounts table) this provider puts into its app:
+    /// the card's "Used in" choice for that program.
+    #[serde(rename = "accountId", skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

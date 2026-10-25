@@ -121,6 +121,9 @@ pub struct AppSettings {
     // ===== Apps shown on the main page =====
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible_apps: Option<VisibleApps>,
+    /// Companies left out of the sidebar (catalog ids).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_companies: Vec<String>,
 
     // ===== Device-level directory overrides =====
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -207,6 +210,7 @@ impl Default for AppSettings {
             failover_confirmed: None,
             language: None,
             visible_apps: None,
+            hidden_companies: Vec::new(),
             claude_config_dir: None,
             claude_mirror_config_dir: None,
             codex_config_dir: None,

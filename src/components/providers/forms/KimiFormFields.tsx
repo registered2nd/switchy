@@ -101,7 +101,7 @@ export function KimiFormFields({
       {/* Kimi API key input */}
       <ApiKeySection
         id="kimiApiKey"
-        label="API Key"
+        label="Key"
         value={kimiApiKey}
         onChange={onApiKeyChange}
         category={category}
@@ -110,10 +110,10 @@ export function KimiFormFields({
         placeholder={{
           official: t("providerForm.kimiOfficialNoApiKey", {
             defaultValue:
-              "Official provider signs in with `kimi login`; no API Key needed",
+              "Official provider signs in with `kimi login`; no key needed",
           }),
           thirdParty: t("providerForm.kimiApiKeyAutoFill", {
-            defaultValue: "Enter API Key; it is written into config.toml",
+            defaultValue: "Enter the key; it is written to config.toml",
           }),
         }}
       />

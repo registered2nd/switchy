@@ -423,7 +423,7 @@ requires_openai_auth = true`;
 
           <div className="space-y-2">
             <Label htmlFor="apiKey">
-              {t("universalProvider.apiKey", { defaultValue: "API Key" })}
+              {t("universalProvider.apiKey", { defaultValue: "Key" })}
             </Label>
             <div className="relative">
               <Input

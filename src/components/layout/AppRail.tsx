@@ -1,41 +1,26 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, BarChart2, Settings as SettingsIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  BarChart2,
+  MoreHorizontal,
+  Settings as SettingsIcon,
+} from "lucide-react";
 import type { AppId } from "@/lib/api";
-import type { VisibleApps } from "@/types";
+import type { SidebarEntryId } from "@/config/companies";
+import type { SidebarEntry } from "@/components/companies/useSidebarEntries";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { cn } from "@/lib/utils";
 
-// OpenClaw is hidden by default (Settings → App visibility can bring it back).
-const ALL_APPS: AppId[] = [
-  "claude",
-  "codex",
-  "gemini",
-  "kimi",
-  "cursor",
-  "antigravity",
-  "opencode",
-  "openclaw",
-];
-const STORAGE_KEY = "switchy-last-app";
+const STORAGE_KEY = "switchy-last-company";
 
-export const APP_ICON: Record<AppId, string> = {
-  claude: "claude",
-  codex: "openai",
-  gemini: "gemini",
-  kimi: "kimi",
-  cursor: "cursor",
-  antigravity: "google",
-  opencode: "opencode",
-  openclaw: "openclaw",
-};
-
+/** The programs' display names, kept for the places that still name a program. */
 export const APP_NAME: Record<AppId, string> = {
-  claude: "Claude",
+  claude: "Claude Code",
   codex: "Codex",
-  gemini: "Gemini",
-  kimi: "Kimi",
-  cursor: "Cursor",
+  gemini: "Gemini CLI",
+  kimi: "Kimi Code",
+  cursor: "Cursor CLI",
   antigravity: "Antigravity",
   opencode: "OpenCode",
   openclaw: "OpenClaw",
@@ -43,6 +28,7 @@ export const APP_NAME: Record<AppId, string> = {
 
 export const SETTINGS_SECTIONS = [
   "general",
+  "programs",
   "pool",
   "data",
   "advanced",
@@ -53,9 +39,9 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 interface AppRailProps {
   view: "providers" | "settings" | "other";
-  activeApp: AppId;
-  visibleApps?: VisibleApps;
-  onSelectApp: (app: AppId) => void;
+  entries: SidebarEntry[];
+  activeEntry: SidebarEntryId;
+  onSelectEntry: (entry: SidebarEntryId) => void;
   settingsSection: SettingsSection;
   onOpenSettings: (section: SettingsSection) => void;
   onBack: () => void;
@@ -65,11 +51,13 @@ function RailItem({
   active,
   onClick,
   icon,
+  inUse = false,
   children,
 }: {
   active: boolean;
   onClick: () => void;
   icon?: ReactNode;
+  inUse?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -89,24 +77,30 @@ function RailItem({
       )}
       {icon}
       <span className="truncate">{children}</span>
+      {inUse && (
+        <span
+          aria-hidden
+          className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70"
+        />
+      )}
     </button>
   );
 }
 
 export function AppRail({
   view,
-  activeApp,
-  visibleApps,
-  onSelectApp,
+  entries,
+  activeEntry,
+  onSelectEntry,
   settingsSection,
   onOpenSettings,
   onBack,
 }: AppRailProps) {
   const { t } = useTranslation();
-  const apps = ALL_APPS.filter((app) => !visibleApps || visibleApps[app]);
 
   const sectionLabel: Record<SettingsSection, string> = {
     general: t("settings.tabGeneral"),
+    programs: t("settings.tabPrograms", { defaultValue: "Programs" }),
     pool: t("settings.tabPool"),
     data: t("settings.advanced.data.title"),
     advanced: t("settings.tabAdvanced"),
@@ -151,20 +145,33 @@ export function AppRail({
         </div>
       ) : (
         <>
-          <div className="flex flex-1 flex-col gap-0.5">
-            {apps.map((app) => (
+          <div className="-mr-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pr-2">
+            {entries.map((entry) => (
               <RailItem
-                key={app}
-                active={view === "providers" && activeApp === app}
+                key={entry.id}
+                active={view === "providers" && activeEntry === entry.id}
+                inUse={entry.inUse}
                 onClick={() => {
-                  localStorage.setItem(STORAGE_KEY, app);
-                  onSelectApp(app);
+                  try {
+                    localStorage.setItem(STORAGE_KEY, entry.id);
+                  } catch {
+                    // The choice is only remembered when storage works.
+                  }
+                  onSelectEntry(entry.id);
                 }}
                 icon={
-                  <ProviderIcon icon={APP_ICON[app]} name={APP_NAME[app]} size={17} />
+                  entry.icon ? (
+                    <ProviderIcon
+                      icon={entry.icon}
+                      name={entry.name}
+                      size={17}
+                    />
+                  ) : (
+                    <MoreHorizontal className="h-4 w-4" />
+                  )
                 }
               >
-                {APP_NAME[app]}
+                {entry.name}
               </RailItem>
             ))}
           </div>

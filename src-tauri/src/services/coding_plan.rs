@@ -1,8 +1,8 @@
 //! Plan quota queries for API-key coding plans
 //!
 //! Supports the quota of Kimi Code (kimi.ai, and kimi.com in mainland China),
-//! the Z.ai / Zhipu GLM Coding Plan, the MiniMax plans and Command Code, each
-//! read with the plan's own API key.
+//! the Z.ai / Zhipu GLM Coding Plan, the MiniMax plans, Command Code and
+//! OpenCode Go, each read with the plan's own key.
 //! Reuses the SubscriptionQuota / QuotaTier types from the subscription module.
 
 use super::subscription::{CredentialStatus, QuotaTier, SubscriptionQuota};
@@ -19,6 +19,7 @@ enum CodingPlanProvider {
     MiniMaxCn,
     MiniMaxEn,
     CommandCode,
+    OpenCodeGo,
 }
 
 fn detect_provider(base_url: &str) -> Option<CodingPlanProvider> {
@@ -37,6 +38,8 @@ fn detect_provider(base_url: &str) -> Option<CodingPlanProvider> {
         Some(CodingPlanProvider::MiniMaxEn)
     } else if url.contains("api.commandcode.ai") {
         Some(CodingPlanProvider::CommandCode)
+    } else if url.contains("opencode.ai/inference/go") || url.contains("opencode.ai/zen/go") {
+        Some(CodingPlanProvider::OpenCodeGo)
     } else {
         None
     }
@@ -95,7 +98,7 @@ fn auth_failed(detail: String) -> SubscriptionQuota {
     SubscriptionQuota {
         tool: "coding_plan".to_string(),
         credential_status: CredentialStatus::Expired,
-        credential_message: Some("Invalid API key".to_string()),
+        credential_message: Some("Invalid key".to_string()),
         success: false,
         tiers: vec![],
         extra_usage: None,
@@ -119,7 +122,9 @@ fn quota_ok(tiers: Vec<QuotaTier>, credential_message: Option<String>) -> Subscr
 
 /// Sends `request` and returns its JSON body, or the quota to show when the
 /// request fails, the key is refused or the body is not JSON.
-async fn fetch_json(request: reqwest::RequestBuilder) -> Result<serde_json::Value, SubscriptionQuota> {
+async fn fetch_json(
+    request: reqwest::RequestBuilder,
+) -> Result<serde_json::Value, SubscriptionQuota> {
     let resp = request
         .timeout(std::time::Duration::from_secs(10))
         .send()
@@ -226,7 +231,9 @@ async fn query_kimi(api_key: &str, is_cn: bool) -> SubscriptionQuota {
 /// are the 5-hour pool (`unit` 3, `number` 5) and the weekly one (`unit` 6);
 /// `percentage` is the share used. The plan tier is `data.level`. Every answer
 /// is HTTP 200, so a refused key shows only in `success` and `code`.
-fn parse_zhipu(body: &serde_json::Value) -> Result<(Vec<QuotaTier>, Option<String>), SubscriptionQuota> {
+fn parse_zhipu(
+    body: &serde_json::Value,
+) -> Result<(Vec<QuotaTier>, Option<String>), SubscriptionQuota> {
     if body.get("success").and_then(|v| v.as_bool()) == Some(false) {
         let code = body.get("code").and_then(|v| v.as_i64()).unwrap_or(-1);
         let msg = body
@@ -428,24 +435,74 @@ async fn query_minimax(api_key: &str, is_cn: bool) -> SubscriptionQuota {
 
 const COMMAND_CODE_API: &str = "https://api.commandcode.ai";
 
-/// `alpha/billing/credits`: `credits.windowLimits.fiveHour` and `.weekly`,
-/// each `{ used, cap, resetAt }` in dollars, as Command Code's CLI shows them
-/// under `/usage`. A plan without windows (the Provider plan) has none.
-fn parse_command_code_credits(body: &serde_json::Value) -> Vec<QuotaTier> {
-    let Some(windows) = body
-        .get("credits")
-        .and_then(|c| c.get("windowLimits"))
-        .filter(|v| v.is_object())
-    else {
-        return vec![];
+/// Monthly plan credits of each Command Code plan, as its CLI counts them.
+fn command_code_plan_total(plan_id: &str) -> Option<f64> {
+    let plan = plan_id.strip_prefix("individual-").unwrap_or(plan_id);
+    Some(match plan {
+        "go" => 10.0,
+        "goat" => 70.0,
+        "pro" => 30.0,
+        "pro-v1" => 80.0,
+        "provider" => 15.0,
+        "max" => 150.0,
+        "ultra" => 300.0,
+        "teams-pro" => 40.0,
+        _ => return None,
+    })
+}
+
+/// `alpha/billing/credits`, read the way Command Code's CLI shows it under
+/// `/usage`: the month's credits used, out of the plan's credits plus the
+/// extra ones (`credits.monthlyCredits`, `.purchasedCredits` and
+/// `.freeCredits` are what remains of each), and, when the plan is
+/// window-limited, the 5-hour and weekly meters (`windowLimits.fiveHour` and
+/// `.weekly`, `{ used, cap, resetAt }`). The plan and the extra credits left
+/// go into the message.
+fn parse_command_code_credits(body: &serde_json::Value) -> (Vec<QuotaTier>, Option<String>) {
+    let mut tiers = Vec::new();
+    let credits = body.get("credits");
+    let remaining = |key: &str| {
+        credits
+            .and_then(|c| c.get(key))
+            .and_then(parse_f64)
+            .unwrap_or(0.0)
     };
-    [("fiveHour", "five_hour"), ("weekly", "weekly_limit")]
-        .into_iter()
-        .filter_map(|(key, name)| {
-            let window = windows.get(key)?;
-            let cap = window.get("cap").and_then(parse_f64)?;
+    let (monthly, purchased, free) = (
+        remaining("monthlyCredits"),
+        remaining("purchasedCredits"),
+        remaining("freeCredits"),
+    );
+    let plan_id = credits
+        .and_then(|c| c.get("planId"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if let Some(total) = command_code_plan_total(plan_id) {
+        let pool = total.max(monthly) + purchased + free;
+        let left = monthly + purchased + free;
+        tiers.push(QuotaTier {
+            name: "monthly_limit".to_string(),
+            utilization: if pool > 0.0 {
+                ((pool - left) / pool * 100.0).clamp(0.0, 100.0)
+            } else {
+                0.0
+            },
+            resets_at: None,
+        });
+    }
+
+    if let Some(windows) = body
+        .get("windowLimits")
+        .filter(|w| w.get("limited").and_then(|v| v.as_bool()) != Some(false))
+    {
+        for (key, name) in [("fiveHour", "five_hour"), ("weekly", "weekly_limit")] {
+            let Some(window) = windows.get(key) else {
+                continue;
+            };
+            let Some(cap) = window.get("cap").and_then(parse_f64) else {
+                continue;
+            };
             let used = window.get("used").and_then(parse_f64).unwrap_or(0.0);
-            Some(QuotaTier {
+            tiers.push(QuotaTier {
                 name: name.to_string(),
                 utilization: if cap > 0.0 {
                     (used / cap * 100.0).min(100.0)
@@ -453,9 +510,19 @@ fn parse_command_code_credits(body: &serde_json::Value) -> Vec<QuotaTier> {
                     0.0
                 },
                 resets_at: window.get("resetAt").and_then(extract_reset_time),
-            })
-        })
-        .collect()
+            });
+        }
+    }
+
+    let plan = plan_id.strip_prefix("individual-").unwrap_or(plan_id);
+    let extra = purchased + free;
+    let message = match (plan.is_empty(), extra > 0.0) {
+        (true, false) => None,
+        (false, false) => Some(format!("{plan} plan")),
+        (true, true) => Some(format!("Extra credits ${extra:.2}")),
+        (false, true) => Some(format!("{plan} plan · extra credits ${extra:.2}")),
+    };
+    (tiers, message)
 }
 
 async fn query_command_code(api_key: &str) -> SubscriptionQuota {
@@ -489,7 +556,48 @@ async fn query_command_code(api_key: &str) -> SubscriptionQuota {
     )
     .await
     {
-        Ok(body) => quota_ok(parse_command_code_credits(&body), None),
+        Ok(body) => {
+            let (tiers, message) = parse_command_code_credits(&body);
+            quota_ok(tiers, message)
+        }
+        Err(quota) => quota,
+    }
+}
+
+// ── OpenCode Go ─────────────────────────────────────────────
+
+/// `zen/go/v1/usage`: `usage.rolling` (the 5-hour window), `usage.weekly` and
+/// `usage.monthly`, each `{ status, percent, resetsAt }`. OpenCode reports one
+/// figure per window for the whole subscription, each model's spend weighted
+/// by its own monthly limit.
+fn parse_opencode_go(body: &serde_json::Value) -> Vec<QuotaTier> {
+    let Some(usage) = body.get("usage") else {
+        return vec![];
+    };
+    [
+        ("rolling", "five_hour"),
+        ("weekly", "weekly_limit"),
+        ("monthly", "monthly_limit"),
+    ]
+    .into_iter()
+    .filter_map(|(key, name)| {
+        let window = usage.get(key)?;
+        Some(QuotaTier {
+            name: name.to_string(),
+            utilization: window.get("percent").and_then(parse_f64)?.clamp(0.0, 100.0),
+            resets_at: window.get("resetsAt").and_then(extract_reset_time),
+        })
+    })
+    .collect()
+}
+
+async fn query_opencode_go(api_key: &str) -> SubscriptionQuota {
+    let request = crate::proxy::http_client::get()
+        .get("https://opencode.ai/zen/go/v1/usage")
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Accept", "application/json");
+    match fetch_json(request).await {
+        Ok(body) => quota_ok(parse_opencode_go(&body), None),
         Err(quota) => quota,
     }
 }
@@ -508,7 +616,7 @@ pub async fn get_coding_plan_quota(
             success: false,
             tiers: vec![],
             extra_usage: None,
-            error: Some("No API key".to_string()),
+            error: Some("No key".to_string()),
             queried_at: None,
         });
     }
@@ -536,6 +644,7 @@ pub async fn get_coding_plan_quota(
         CodingPlanProvider::MiniMaxCn => query_minimax(api_key, true).await,
         CodingPlanProvider::MiniMaxEn => query_minimax(api_key, false).await,
         CodingPlanProvider::CommandCode => query_command_code(api_key).await,
+        CodingPlanProvider::OpenCodeGo => query_opencode_go(api_key).await,
     };
 
     Ok(quota)
@@ -568,7 +677,11 @@ mod tests {
             detect_provider("https://api.commandcode.ai/provider"),
             Some(CodingPlanProvider::CommandCode)
         );
-        assert_eq!(detect_provider("https://opencode.ai/inference/go/anthropic"), None);
+        assert_eq!(
+            detect_provider("https://opencode.ai/inference/go/anthropic"),
+            Some(CodingPlanProvider::OpenCodeGo)
+        );
+        assert_eq!(detect_provider("https://www.packyapi.com"), None);
     }
 
     #[test]
@@ -664,20 +777,46 @@ mod tests {
     }
 
     #[test]
-    fn command_code_reads_its_window_limits() {
-        let tiers = parse_command_code_credits(&json!({
+    fn command_code_reads_plan_credits_and_window_limits() {
+        let (tiers, message) = parse_command_code_credits(&json!({
             "credits": {
-                "monthlyCredits": 80, "planId": "pro",
-                "windowLimits": {
-                    "fiveHour": { "used": 4, "cap": 16, "resetAt": 1790000000000_i64 },
-                    "weekly": { "used": 30, "cap": 40, "resetAt": 1790500000000_i64 }
-                }
+                "monthlyCredits": 21, "purchasedCredits": 4, "freeCredits": 1, "planId": "individual-pro"
+            },
+            "windowLimits": {
+                "limited": true,
+                "fiveHour": { "used": 4, "cap": 16, "resetAt": 1790000000000_i64 },
+                "weekly": { "used": 30, "cap": 40, "resetAt": 1790500000000_i64 }
             }
         }));
-        assert_eq!(tiers.len(), 2);
-        assert!((tiers[0].utilization - 25.0).abs() < 1e-9);
-        assert!((tiers[1].utilization - 75.0).abs() < 1e-9);
-        assert!(parse_command_code_credits(&json!({ "credits": { "windowLimits": null } })).is_empty());
+        let names: Vec<_> = tiers.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["monthly_limit", "five_hour", "weekly_limit"]);
+        // Pool 30 + 4 + 1 = 35, 26 left: 9 used.
+        assert!((tiers[0].utilization - 9.0 / 35.0 * 100.0).abs() < 1e-9);
+        assert!((tiers[1].utilization - 25.0).abs() < 1e-9);
+        assert!((tiers[2].utilization - 75.0).abs() < 1e-9);
+        assert_eq!(message.as_deref(), Some("pro plan · extra credits $5.00"));
+
+        let (tiers, _) = parse_command_code_credits(&json!({
+            "credits": { "monthlyCredits": 15, "planId": "provider" },
+            "windowLimits": { "limited": false }
+        }));
+        assert_eq!(tiers.len(), 1);
+        assert!(tiers[0].utilization.abs() < 1e-9);
+    }
+
+    #[test]
+    fn opencode_go_reads_its_three_windows() {
+        let tiers = parse_opencode_go(&json!({
+            "usage": {
+                "rolling": { "status": "ok", "percent": 12, "resetsAt": "2026-10-25T18:00:00Z" },
+                "weekly": { "status": "ok", "percent": 40.5, "resetsAt": "2026-10-27T00:00:00Z" },
+                "monthly": { "status": "rate-limited", "percent": 100, "resetsAt": "2026-11-01T00:00:00Z" }
+            }
+        }));
+        let names: Vec<_> = tiers.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["five_hour", "weekly_limit", "monthly_limit"]);
+        assert!((tiers[1].utilization - 40.5).abs() < 1e-9);
+        assert_eq!(tiers[2].resets_at.as_deref(), Some("2026-11-01T00:00:00Z"));
     }
 
     #[tokio::test]
@@ -686,7 +825,10 @@ mod tests {
             .await
             .unwrap();
         assert!(!quota.success);
-        assert!(matches!(quota.credential_status, CredentialStatus::NotFound));
-        assert_eq!(quota.error.as_deref(), Some("No API key"));
+        assert!(matches!(
+            quota.credential_status,
+            CredentialStatus::NotFound
+        ));
+        assert_eq!(quota.error.as_deref(), Some("No key"));
     }
 }

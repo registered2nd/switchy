@@ -33,9 +33,9 @@
     "notSet": "未設定"
   },
   "apiKeyInput": {
-    "placeholder": "API Key を入力",
-    "show": "API Key を表示",
-    "hide": "API Key を隠す"
+    "placeholder": "キー を入力",
+    "show": "キー を表示",
+    "hide": "キー を隠す"
   },
   "jsonEditor": {
     "mustBeObject": "設定はオブジェクト形式の JSON で入力してください（配列や他の型は不可）",
@@ -61,7 +61,7 @@
     "tabUniversal": "統一プロバイダー",
     "noProviders": "まだプロバイダーがありません",
     "noProvidersDescription": "既存の設定がある場合は「現在の設定をインポート」をクリックすると、デフォルトプロバイダーとして保存されます。",
-    "noProvidersDescriptionSnippet": "API キーとリクエスト URL 以外のデータ（プラグインなど）は共通設定スニペットに保存され、プロバイダー間で共有できます",
+    "noProvidersDescriptionSnippet": "キーとリクエスト URL 以外のデータ（プラグインなど）は共通設定スニペットに保存され、プロバイダー間で共有できます",
     "importCurrent": "現在の設定をインポート",
     "importCurrentDescription": "現在使用中の設定をデフォルトプロバイダーとしてインポート",
     "enable": "有効化",
@@ -101,7 +101,7 @@
       "gemini": {
         "model": "モデル",
         "oauthTitle": "OAuth 認証モード",
-        "oauthHint": "Google 公式は OAuth 個人認証を使用するため API Key は不要です。初回利用時にブラウザが開きます。"
+        "oauthHint": "Google 公式は OAuth 個人認証を使用するため キー は不要です。初回利用時にブラウザが開きます。"
       }
     },
     "duplicateLiveIdsLoadFailed": "設定からプロバイダー識別子の読み込みに失敗しました。設定を修正してから再度お試しください。",
@@ -163,7 +163,7 @@
     },
     "streamCheck": {
       "title": "モデルヘルスチェック",
-      "message": "ヘルスチェックは API リクエストを直接送信してプロバイダーの接続性をテストします。以下の場合、チェックが失敗する可能性があります：\n\n• 公式プロバイダー（OAuth ログイン使用、独立した API キーなし）\n• 一部の中継サービス（リクエストが Claude Code CLI からのものか検証）\n• AWS Bedrock（IAM 署名認証を使用）\n\nチェック失敗はプロバイダーが使用不能であることを意味しません。独立したリクエストでの検証ができないことを示すだけです。アプリ内の実際の動作を基準にしてください。",
+      "message": "ヘルスチェックは API リクエストを直接送信してプロバイダーの接続性をテストします。以下の場合、チェックが失敗する可能性があります：\n\n• 公式プロバイダー（OAuth ログイン使用、独立した キーなし）\n• 一部の中継サービス（リクエストが Claude Code CLI からのものか検証）\n• AWS Bedrock（IAM 署名認証を使用）\n\nチェック失敗はプロバイダーが使用不能であることを意味しません。独立したリクエストでの検証ができないことを示すだけです。アプリ内の実際の動作を基準にしてください。",
       "confirm": "理解しました、続行する"
     }
   },
@@ -322,7 +322,9 @@
     "minimizeToTrayDescription": "チェックすると閉じるボタンでトレイに隠し、オフならアプリを終了します。",
     "appVisibility": {
       "title": "ホームページ表示",
-      "description": "ホームページに表示するアプリを選択"
+      "description": "サイドバーに表示する会社を選びます",
+      "companiesDescription": "サイドバーの会社。既定でオフの会社はアカウントを持つと表示されます。",
+      "whenHolding": "アカウントを持つと表示"
     },
     "terminal": {
       "title": "優先ターミナル",
@@ -410,17 +412,19 @@
     },
     "saveFailedGeneric": "保存に失敗しました。もう一度お試しください",
     "page": {
-      "general": "言語、外観、トレイ、サイドバーに表示するアプリ。",
+      "general": "言語、外観、トレイ、サイドバーに表示する会社。",
       "pool": "Switchy がリクエストをどう中継し、アカウント間をどう切り替えるか。",
       "advanced": "各ツールの設定の場所、プロバイダーのテスト、ログ、セッション修復。",
-      "usage": "Switchy が中継したリクエストをこのマシン上で集計します。どこにも送信されません。"
+      "usage": "Switchy が中継したリクエストをこのマシン上で集計します。どこにも送信されません。",
+      "programs": "アカウントが動くプログラム：それぞれが使っているアカウントと、プログラム自体の設定。"
     },
     "data": {
       "backups": "バックアップ",
       "backupsDescription": "Switchy は定期的にデータベースを ~/.switchy/backups にコピーします。復元すると以前のコピーに戻します。",
       "move": "別のマシンへ移行",
-      "moveDescription": "エクスポートは API キーと Codex のログインを含むデータベース全体を 1 つのファイルに書き出します。インポートするとこのマシンのデータベースが置き換わります。"
-    }
+      "moveDescription": "エクスポートは キーと Codex のログインを含むデータベース全体を 1 つのファイルに書き出します。インポートするとこのマシンのデータベースが置き換わります。"
+    },
+    "tabPrograms": "プログラム"
   },
   "apps": {
     "claude": "Claude",
@@ -438,17 +442,17 @@
     "apiEndpointPlaceholder": "https://your-api-endpoint.com",
     "codexApiEndpointPlaceholder": "https://your-api-endpoint.com/v1",
     "manageAndTest": "管理・テスト",
-    "officialNoApiKey": "公式ログインは API Key 不要です。そのまま保存できます",
-    "codexOfficialNoApiKey": "公式は API Key 不要です。そのまま保存してください",
+    "officialNoApiKey": "公式ログインは キー 不要です。そのまま保存できます",
+    "codexOfficialNoApiKey": "公式は キー 不要です。そのまま保存してください",
     "codexApiKeyAutoFill": "ここに入力すれば auth.json も自動で埋まります",
     "apiKeyAutoFill": "ここに入力すれば下の設定も自動で埋まります",
-    "cnOfficialApiKeyHint": "💡 API Key のみ入力すれば OK。エンドポイントはプリセット済みです",
-    "aggregatorApiKeyHint": "💡 API Key のみ入力すれば OK。エンドポイントはプリセット済みです",
-    "thirdPartyApiKeyHint": "💡 API Key のみ入力すれば OK。エンドポイントはプリセット済みです",
+    "cnOfficialApiKeyHint": "💡 キー のみ入力すれば OK。エンドポイントはプリセット済みです",
+    "aggregatorApiKeyHint": "💡 キー のみ入力すれば OK。エンドポイントはプリセット済みです",
+    "thirdPartyApiKeyHint": "💡 キー のみ入力すれば OK。エンドポイントはプリセット済みです",
     "customApiKeyHint": "💡 カスタム設定では必要な項目をすべて手動で入力してください",
     "omoHint": "💡 OMO 設定は Agent のモデル割り当てを管理し、oh-my-openagent.jsonc / oh-my-opencode.jsonc の両方に対応します",
-    "officialHint": "💡 公式プロバイダーはブラウザログインで、API Key は不要です",
-    "getApiKey": "API Key を取得",
+    "officialHint": "💡 公式プロバイダーはブラウザログインで、キー は不要です",
+    "getApiKey": "キー を取得",
     "presets": {
       "ucloud": "Compshare"
     },
@@ -460,7 +464,7 @@
     "fillSupplierName": "プロバイダー名を入力してください",
     "fillParameter": "{{label}} を入力してください",
     "endpointRequired": "公式以外は API エンドポイントが必須です",
-    "apiKeyRequired": "公式以外は API Key が必須です",
+    "apiKeyRequired": "公式以外は キー が必須です",
     "anthropicModel": "メインモデル",
     "anthropicReasoningModel": "推論モデル（Thinking）",
     "apiFormat": "API フォーマット",
@@ -492,15 +496,15 @@
     "fetchModelsSuccess": "{{count}}件のモデルを取得",
     "fetchModelsFailed": "モデル一覧の取得に失敗しました",
     "fetchModelsEmpty": "モデルが見つかりません",
-    "fetchModelsNeedApiKey": "先に API Key を入力してください",
+    "fetchModelsNeedApiKey": "先に キー を入力してください",
     "fetchModelsNeedEndpoint": "先に API エンドポイントを入力してください",
-    "fetchModelsNeedConfig": "先に API エンドポイントと API Key を入力してください",
-    "fetchModelsAuthFailed": "API Key が無効か、権限がありません",
+    "fetchModelsNeedConfig": "先に API エンドポイントと キー を入力してください",
+    "fetchModelsAuthFailed": "キー が無効か、権限がありません",
     "fetchModelsNotSupported": "このプロバイダーはモデル一覧の取得に対応していません",
     "fetchModelsTimeout": "リクエストがタイムアウトしました。ネットワーク接続を確認してください",
     "providerKeyStatusLoading": "プロバイダー識別子ステータスを読み込み中です。しばらくお待ちください。",
-    "kimiOfficialNoApiKey": "公式プロバイダーは kimi login でサインインします。API キーは不要です",
-    "kimiApiKeyAutoFill": "API キーを入力すると config.toml に書き込まれます",
+    "kimiOfficialNoApiKey": "公式プロバイダーは kimi login でサインインします。キーは不要です",
+    "kimiApiKeyAutoFill": "キーを入力すると config.toml に書き込まれます",
     "kimiApiEndpointPlaceholder": "例: https://api.example.com/v1",
     "kimiApiHint": "config.toml の現在のプロバイダーの base_url に書き込みます",
     "invalidWebsiteUrl": "有効な URL を入力してください",
@@ -613,7 +617,7 @@
   "kimiConfig": {
     "credentialsJson": "認証情報 (kimi-code.json)",
     "credentialsJsonPlaceholder": "null",
-    "credentialsJsonHint": "kimi login が書き込む OAuth 認証情報。null は未ログインまたは API キー利用",
+    "credentialsJsonHint": "kimi login が書き込む OAuth 認証情報。null は未ログインまたは キー利用",
     "configToml": "config.toml (TOML)",
     "configTomlHint": "Kimi Code の config.toml 内容：default_model、[providers.*]、[models.*]",
     "writeCommonConfig": "共通設定を書き込む",
@@ -825,13 +829,13 @@
     "templateCopilot": "GitHub Copilot",
     "templateTokenPlan": "Token Plan",
     "copilotAutoAuth": "OAuth 認証を自動使用、手動設定不要",
-    "tokenPlanHint": "プロバイダーのAPI KeyとBase URLを使用してToken Planクォータを自動クエリ",
+    "tokenPlanHint": "プロバイダーのキーとBase URLを使用してToken Planクォータを自動クエリ",
     "resetDate": "リセット日",
     "premiumRequests": "Premium リクエスト",
     "credentialsConfig": "認証情報",
     "credentialsHint": "空欄の場合はプロバイダー設定を使用",
     "optional": "任意",
-    "apiKeyPlaceholder": "空欄の場合はプロバイダーの API Key を使用",
+    "apiKeyPlaceholder": "空欄の場合はプロバイダーの キー を使用",
     "baseUrlPlaceholder": "空欄の場合はプロバイダーの Base URL を使用",
     "baseUrl": "Base URL",
     "accessToken": "Access Token",
@@ -959,7 +963,7 @@
     "userAgentHint": "一部のプロバイダーはブラウザの User-Agent ヘッダーが必要です。",
     "env": {
       "title": "環境変数",
-      "description": "openclaw.json の環境変数設定を管理（APIキー、カスタム変数など）",
+      "description": "openclaw.json の環境変数設定を管理（キー、カスタム変数など）",
       "editorHint": "env セクション全体を JSON として編集します。env.vars や env.shellEnv などのネストしたオブジェクトにも対応しています。",
       "objectRequired": "OpenClaw の env は JSON オブジェクトである必要があります。",
       "invalidJson": "OpenClaw の env は有効な JSON である必要があります。",
@@ -1293,7 +1297,7 @@
     "name": "名前",
     "namePlaceholder": "例: My NewAPI",
     "baseUrl": "API URL",
-    "apiKey": "API キー",
+    "apiKey": "キー",
     "websiteUrl": "ウェブサイト URL",
     "websiteUrlPlaceholder": "https://example.com（任意。リストに表示されます）",
     "notes": "メモ",
@@ -1525,5 +1529,80 @@
       "antigravity": "新しいカードを有効にしてから agy を起動し、使いたいアカウントでサインインしてください。Switchy はそのログインをカードに保存し、カードを有効にするたびに書き戻します。"
     },
     "editHint": "このカードはサブスクリプションのログインを保持しています。編集できるのは名前だけです。"
+  },
+  "account": {
+    "add": "アカウントを追加",
+    "addConsoleKey": "コンソールキーを追加すると、このプランを Claude Code や OpenCode で使えます",
+    "addMonitor": "{{company}} の残高を監視",
+    "addMonitorItem": "従量課金の残高モニター",
+    "addPlan": "{{plan}} アカウント",
+    "addPlanAccount": "{{company}} アカウントを追加",
+    "addRelayTitle": "{{program}} 用のリレーまたはゲートウェイを追加",
+    "balance": "残高",
+    "balancePart": {
+      "granted": "付与",
+      "toppedUp": "チャージ",
+      "cash": "現金",
+      "voucher": "クーポン"
+    },
+    "deleteMessage": "{{name}} を削除しますか？使っているプログラムからも外れます。",
+    "deleteMonitorMessage": "{{name}} の監視をやめますか？",
+    "deleteMonitorTitle": "残高モニターを削除",
+    "deleteTitle": "アカウントを削除",
+    "deleteWhileInUse": "削除する前に {{program}} を別のアカウントに切り替えてください。",
+    "editAccount": "アカウントを編集",
+    "editConsoleKey": "コンソールキー",
+    "editMonitor": "残高モニターを編集",
+    "empty": "{{company}} のアカウントはまだありません。「アカウントを追加」で追加してください。",
+    "getKey": "{{company}} コンソールで取得",
+    "importSignIn": "{{program}} で今サインインしているアカウントを取り込む",
+    "inUseIn": "{{program}} で使用中",
+    "key": "キー",
+    "monitorHint": "残高と使った額を表示するためだけに読み取ります。Switchy はこれで何も実行しません。",
+    "monitorsHeading": "従量課金の残高（監視のみ）",
+    "name": "名前",
+    "namePlaceholder": "例：契約したメールアドレス",
+    "nameRequired": "アカウントに名前を付けてください",
+    "nowUsedIn": "{{name}} を {{program}} で使っています",
+    "openConsole": "コンソールを開く",
+    "other": "その他",
+    "otherHint": "プログラムに設定された従量課金のキーです。Switchy が実行するのはサブスクリプションのアカウントで、従量課金は残高の監視だけです。会社の下に残高モニターを追加すると、残りと使った額がわかります。",
+    "payAsYouGo": "従量課金",
+    "plan": "プラン",
+    "planHint": "プランで発行されたキー。どこで使うかはカードで選びます。",
+    "region": "サービス",
+    "regions": {
+      "intl": "国際版",
+      "cn": "中国本土"
+    },
+    "relayFor": "{{program}} 用…",
+    "relays": "リレーとゲートウェイ",
+    "removeFrom": "{{program}} から外す",
+    "signInAdded": "追加しました。{{program}} で使ってからそこでサインインしてください。サインインはこのカードに保存されます。",
+    "signInKind": {
+      "claude": "Claude サブスクリプション（Claude Code）",
+      "codex": "ChatGPT サブスクリプション（Codex）",
+      "gemini": "Google サインイン（Gemini CLI）",
+      "antigravity": "Google AI サブスクリプション（Antigravity）",
+      "kimi": "Kimi Code サインイン",
+      "cursor": "Cursor サブスクリプション（Cursor CLI）"
+    },
+    "spendPending": "次の読み取り後に表示",
+    "spendSince": "{{date}} からの残高記録から計算",
+    "spent": "今日 / 今月の利用額",
+    "usageInConsole": "コンソールで使用量を見る",
+    "useIn": "{{program}} で使う",
+    "usedIn": "{{program}} で使用中",
+    "usedInLabel": "使用先：",
+    "importOpenCode": "OpenCode の設定にあるプロバイダーを取り込む",
+    "importOpenClaw": "OpenClaw の設定にあるプロバイダーを取り込む",
+    "universalRelay": "Claude Code・Codex・Gemini CLI 共通のリレー…"
+  },
+  "programs": {
+    "noneInUse": "使用中のアカウントはありません",
+    "omoProfiles": "Oh My OpenCode プロファイル",
+    "open": "開く",
+    "openclawHint": "独自のプロバイダーを持つゲートウェイ。既定ではオフです。",
+    "opencodeHint": "複数のアカウントを同時に持てます。カードの「使用先」で追加・削除します。"
   }
 }

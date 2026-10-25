@@ -8,6 +8,64 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.45] — 2026-10-25 — Accounts by company: plans, relays and balances, each used where you choose
+
+Windows installer: download `Switchy_1.0.45_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.45_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Changed
+
+- **The sidebar lists companies, not tools.** Claude, OpenAI, Google, Kimi,
+  Cursor, Z.ai GLM, MiniMax, DeepSeek, OpenCode and Command Code, plus
+  Alibaba Cloud, Tencent Cloud, BytePlus and StepFun once they hold an
+  account. A company's page lists its accounts, each with a **Used in**
+  row naming the programs it runs in. Settings → General → Homepage
+  Display turns companies off.
+- **Your subscription sign-ins sit under their company.** Claude accounts
+  under Claude, ChatGPT accounts under OpenAI, Antigravity and Gemini CLI
+  sign-ins under Google, Kimi Code sign-ins under Kimi, Cursor under
+  Cursor, with their usage, pool and lock as before.
+- **Relays sit with the company whose program they serve:** relays for
+  Claude Code under Claude, for Codex under OpenAI, for Gemini CLI under
+  Google, for OpenCode under OpenCode.
+- **Programs moved to Settings → Programs:** which account each program
+  runs on, its proxy and failover switches, Oh My OpenCode profiles, and
+  OpenClaw.
+- **Cards you had are filed for you.** A card on a coding plan's endpoint
+  becomes that plan's account (the same key in two programs becomes one
+  account) and stays in use where it was. A DeepSeek, Moonshot or StepFun
+  key set up in a program gets a balance monitor, and its card keeps
+  working under Other.
+
+### Added
+
+- **Plan accounts, used where you choose.** Add a Z.ai, MiniMax, Command
+  Code, OpenCode Go, Alibaba Cloud, Tencent Cloud, BytePlus or StepFun
+  plan with its key and service (international or mainland China), then
+  pick Claude Code or OpenCode on its card; the program runs on that
+  account. A new key reaches every program it is used in.
+- **A Kimi card is your `kimi login`, and its console key is optional on
+  the same card**, which then also offers Claude Code and OpenCode and
+  shows the membership's quota.
+- **Pay-as-you-go balances.** A balance monitor for DeepSeek, Moonshot
+  (under Kimi) or StepFun shows what is left and what was spent today and
+  this month. It runs nothing.
+- **OpenCode Go usage**: the 5-hour, weekly and monthly windows, as
+  OpenCode reports them for the whole subscription.
+- **Agents can do everything the window and tray do** through the control
+  routes, including adding a sign-in card, a plan account or a balance
+  monitor, choosing where an account is used, reading its usage, showing
+  the window, setting the theme and language, and quitting. The README
+  has a recipe for each company.
+
+### Fixed
+
+- **Command Code's usage** now reads its 5-hour and weekly windows where
+  Command Code sends them, and adds the month's plan credits, with extra
+  credits named in the hover.
+- **No form says "API key" any more**; a key is a key.
+
 ## [1.0.44] — 2026-10-25 — Coding plans from Z.ai, MiniMax, Kimi, Alibaba Cloud, Tencent Cloud, BytePlus, OpenCode Go and Command Code (withdrawn)
 
 **Withdrawn on 2026-10-25, the day it was published.** The release, its Windows installers and its macOS DMG were taken down; 1.0.43 is the latest release.

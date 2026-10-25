@@ -1,0 +1,47 @@
+{
+  "claude": {
+    "name": "Claude",
+    "icon": "claude",
+    "settingsConfig": {
+      "env": {}
+    }
+  },
+  "codex": {
+    "name": "ChatGPT",
+    "icon": "openai",
+    "settingsConfig": {
+      "auth": {},
+      "config": ""
+    }
+  },
+  "gemini": {
+    "name": "Gemini CLI",
+    "icon": "gemini",
+    "settingsConfig": {
+      "env": {}
+    }
+  },
+  "kimi": {
+    "name": "Kimi Code",
+    "icon": "kimi",
+    "settingsConfig": {
+      "config": "default_model = \"kimi-code/kimi-for-coding\"\n\n[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\napi_key = \"\"\nbase_url = \"https://api.kimi.ai/coding/v1\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/kimi-code-env-0e4f99c69cc27850\"\noauthHost = \"https://auth.kimi.ai\"\n\n[models.\"kimi-code/kimi-for-coding\"]\nprovider = \"managed:kimi-code\"\nmodel = \"kimi-for-coding\"\nmax_context_size = 1048576\ncapabilities = [ \"thinking\", \"always_thinking\", \"image_in\", \"video_in\", \"tool_use\" ]\ndisplay_name = \"K2.8 Preview\"\nsupport_efforts = [ \"low\", \"high\", \"max\" ]\ndefault_effort = \"max\"\n\n[models.\"kimi-code/kimi-for-coding-highspeed\"]\nprovider = \"managed:kimi-code\"\nmodel = \"kimi-for-coding-highspeed\"\nmax_context_size = 262144\ncapabilities = [ \"thinking\", \"always_thinking\", \"image_in\", \"video_in\", \"tool_use\" ]\ndisplay_name = \"K2.7 Code Highspeed\"\n\n[models.\"kimi-code/k3\"]\nprovider = \"managed:kimi-code\"\nmodel = \"k3\"\nmax_context_size = 1048576\ncapabilities = [ \"thinking\", \"always_thinking\", \"image_in\", \"video_in\", \"tool_use\" ]\ndisplay_name = \"K3\"\nsupport_efforts = [ \"low\", \"high\", \"max\" ]\ndefault_effort = \"high\"\n\n[models.\"kimi-code/k3-256k\"]\nprovider = \"managed:kimi-code\"\nmodel = \"k3-256k\"\nmax_context_size = 262144\ncapabilities = [ \"thinking\", \"always_thinking\", \"image_in\", \"tool_use\" ]\ndisplay_name = \"K3-256k\"\nsupport_efforts = [ \"low\", \"high\", \"max\" ]\ndefault_effort = \"high\"",
+      "credentials": null
+    }
+  },
+  "cursor": {
+    "name": "Cursor",
+    "icon": "cursor",
+    "settingsConfig": {
+      "auth": null,
+      "authInfo": null
+    }
+  },
+  "antigravity": {
+    "name": "Antigravity",
+    "icon": "google",
+    "settingsConfig": {
+      "credential": null
+    }
+  }
+}

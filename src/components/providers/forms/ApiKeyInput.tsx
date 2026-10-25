@@ -18,7 +18,7 @@ const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
   placeholder,
   disabled = false,
   required = false,
-  label = "API Key",
+  label = "Key",
   id = "apiKey",
 }) => {
   const { t } = useTranslation();

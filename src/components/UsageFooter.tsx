@@ -101,7 +101,7 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
         >
           <div className="flex items-center gap-1.5 text-red-500 dark:text-red-400">
             <AlertCircle size={12} />
-            {/* A short reason (such as "No API key") fits the line; a long one is on hover */}
+            {/* A short reason (such as "No key") fits the line; a long one is on hover */}
             <span>
               {usage.error && usage.error.length <= 32
                 ? usage.error

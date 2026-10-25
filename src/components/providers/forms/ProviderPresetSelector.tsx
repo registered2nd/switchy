@@ -50,19 +50,19 @@ export function ProviderPresetSelector({
       case "official":
         return t("providerForm.officialHint", {
           defaultValue:
-            "💡 Official provider uses browser login, no API Key needed",
+            "💡 Official provider uses browser login, no key needed",
         });
       case "cn_official":
         return t("providerForm.cnOfficialApiKeyHint", {
-          defaultValue: "💡 Only need to fill in API Key, endpoint is preset",
+          defaultValue: "💡 Just enter the key; the endpoint is preset",
         });
       case "aggregator":
         return t("providerForm.aggregatorApiKeyHint", {
-          defaultValue: "💡 Only need to fill in API Key, endpoint is preset",
+          defaultValue: "💡 Just enter the key; the endpoint is preset",
         });
       case "third_party":
         return t("providerForm.thirdPartyApiKeyHint", {
-          defaultValue: "💡 Only need to fill in API Key, endpoint is preset",
+          defaultValue: "💡 Just enter the key; the endpoint is preset",
         });
       case "custom":
         return t("providerForm.customApiKeyHint", {

@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod claude_account;
 pub mod codex_account;
 pub mod coding_plan;

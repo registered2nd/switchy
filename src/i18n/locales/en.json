@@ -33,9 +33,9 @@
     "notSet": "Not Set"
   },
   "apiKeyInput": {
-    "placeholder": "Enter API Key",
-    "show": "Show API Key",
-    "hide": "Hide API Key"
+    "placeholder": "Enter the key",
+    "show": "Show key",
+    "hide": "Hide key"
   },
   "jsonEditor": {
     "mustBeObject": "Configuration must be a JSON object, not an array or other type",
@@ -61,7 +61,7 @@
     "tabUniversal": "Universal",
     "noProviders": "No providers added yet",
     "noProvidersDescription": "Have an existing config? Click \"Import Current Config\" to save it as the default provider.",
-    "noProvidersDescriptionSnippet": "Settings other than the API key and endpoint (such as plugins) go into a common config snippet shared across providers",
+    "noProvidersDescriptionSnippet": "Settings other than the key and endpoint (such as plugins) go into a common config snippet shared across providers",
     "importCurrent": "Import Current Config",
     "importCurrentDescription": "Import the live config as the default provider",
     "enable": "Enable",
@@ -101,7 +101,7 @@
       "gemini": {
         "model": "Model",
         "oauthTitle": "OAuth Authentication Mode",
-        "oauthHint": "Google Official signs in over OAuth with your Google account, so no API key is needed. A browser opens to sign in on first use."
+        "oauthHint": "Google Official signs in over OAuth with your Google account, so no key is needed. A browser opens to sign in on first use."
       }
     },
     "duplicateLiveIdsLoadFailed": "Failed to read provider IDs from the config. Fix the config and try again.",
@@ -163,7 +163,7 @@
     },
     "streamCheck": {
       "title": "Model Health Check",
-      "message": "The health check sends a direct API request to test the provider. It can fail for:\n\n• Official providers (OAuth login, no standalone API key)\n• Some relay services (they check that requests come from Claude Code CLI)\n• AWS Bedrock (IAM signature authentication)\n\nA failed check does not mean the provider is unusable, only that a standalone request could not verify it. Go by how it behaves in the app.",
+      "message": "The health check sends a direct API request to test the provider. It can fail for:\n\n• Official providers (OAuth login, no standalone key)\n• Some relay services (they check that requests come from Claude Code CLI)\n• AWS Bedrock (IAM signature authentication)\n\nA failed check does not mean the provider is unusable, only that a standalone request could not verify it. Go by how it behaves in the app.",
       "confirm": "I understand, proceed"
     }
   },
@@ -322,7 +322,9 @@
     "minimizeToTrayDescription": "Closing the window hides Switchy to the tray instead of quitting.",
     "appVisibility": {
       "title": "Homepage Display",
-      "description": "Choose which apps to show on the homepage"
+      "description": "Choose which companies the sidebar lists",
+      "companiesDescription": "Companies in the sidebar. The ones off by default appear once they hold an account.",
+      "whenHolding": "Shown once it holds an account"
     },
     "terminal": {
       "title": "Preferred Terminal",
@@ -412,17 +414,19 @@
     },
     "saveFailedGeneric": "Save failed. Try again.",
     "page": {
-      "general": "Language, appearance, the tray and which apps show in the sidebar.",
+      "general": "Language, appearance, the tray and which companies show in the sidebar.",
       "pool": "How Switchy routes requests and moves between your accounts.",
       "advanced": "Where each tool keeps its configuration, provider tests, logging and session repair.",
-      "usage": "Requests Switchy routed, counted on this machine. Nothing is sent anywhere."
+      "usage": "Requests Switchy routed, counted on this machine. Nothing is sent anywhere.",
+      "programs": "The programs your accounts run in: the account each is using, and their own settings."
     },
     "data": {
       "backups": "Backups",
       "backupsDescription": "Switchy copies its database to ~/.switchy/backups on a schedule. Restore puts an earlier copy back.",
       "move": "Move to another machine",
-      "moveDescription": "Export writes the whole database, API keys and Codex logins included, to one file. Import replaces this machine's database with it."
-    }
+      "moveDescription": "Export writes the whole database, keys and Codex logins included, to one file. Import replaces this machine's database with it."
+    },
+    "tabPrograms": "Programs"
   },
   "apps": {
     "claude": "Claude",
@@ -440,17 +444,17 @@
     "apiEndpointPlaceholder": "https://your-api-endpoint.com",
     "codexApiEndpointPlaceholder": "https://your-api-endpoint.com/v1",
     "manageAndTest": "Manage & Test",
-    "officialNoApiKey": "Official login needs no API key; just save",
-    "codexOfficialNoApiKey": "Official needs no API key; just save",
+    "officialNoApiKey": "Official login needs no key; just save",
+    "codexOfficialNoApiKey": "Official needs no key; just save",
     "codexApiKeyAutoFill": "Fill this in; auth.json below updates automatically",
     "apiKeyAutoFill": "Fill this in; the config below updates automatically",
-    "cnOfficialApiKeyHint": "💡 Just enter the API key; the endpoint is preset",
-    "aggregatorApiKeyHint": "💡 Just enter the API key; the endpoint is preset",
-    "thirdPartyApiKeyHint": "💡 Just enter the API key; the endpoint is preset",
+    "cnOfficialApiKeyHint": "💡 Just enter the key; the endpoint is preset",
+    "aggregatorApiKeyHint": "💡 Just enter the key; the endpoint is preset",
+    "thirdPartyApiKeyHint": "💡 Just enter the key; the endpoint is preset",
     "customApiKeyHint": "💡 Custom config: fill in all required fields yourself",
     "omoHint": "💡 OMO config manages Agent model assignments and supports both oh-my-openagent.jsonc and oh-my-opencode.jsonc",
-    "officialHint": "💡 Official providers sign in through the browser; no API key needed",
-    "getApiKey": "Get API Key",
+    "officialHint": "💡 Official providers sign in through the browser; no key needed",
+    "getApiKey": "Get the key",
     "presets": {
       "ucloud": "Compshare"
     },
@@ -462,7 +466,7 @@
     "fillSupplierName": "Enter a provider name",
     "fillParameter": "Enter {{label}}",
     "endpointRequired": "API endpoint is required for non-official providers",
-    "apiKeyRequired": "API Key is required for non-official providers",
+    "apiKeyRequired": "Key is required for non-official providers",
     "anthropicModel": "Main Model",
     "anthropicReasoningModel": "Reasoning Model (Thinking)",
     "apiFormat": "API Format",
@@ -475,7 +479,7 @@
     "authField": "Auth Field",
     "authFieldAuthToken": "ANTHROPIC_AUTH_TOKEN (Default)",
     "authFieldApiKey": "ANTHROPIC_API_KEY",
-    "authFieldHint": "Environment variable the API key is written to",
+    "authFieldHint": "Environment variable the key is written to",
     "apiHintResponses": "💡 Enter an OpenAI Responses API-compatible endpoint, without a trailing slash",
     "anthropicDefaultHaikuModel": "Default Haiku Model",
     "anthropicDefaultSonnetModel": "Default Sonnet Model",
@@ -494,15 +498,15 @@
     "fetchModelsSuccess": "Found {{count}} models",
     "fetchModelsFailed": "Failed to fetch models",
     "fetchModelsEmpty": "No models found",
-    "fetchModelsNeedApiKey": "Enter the API key first",
+    "fetchModelsNeedApiKey": "Enter the key first",
     "fetchModelsNeedEndpoint": "Enter the API endpoint first",
-    "fetchModelsNeedConfig": "Enter the API endpoint and API key first",
-    "fetchModelsAuthFailed": "API Key is invalid or lacks permission",
+    "fetchModelsNeedConfig": "Enter the endpoint and key first",
+    "fetchModelsAuthFailed": "Key is invalid or lacks permission",
     "fetchModelsNotSupported": "This provider does not offer a model list",
     "fetchModelsTimeout": "Request timed out. Check your network connection.",
     "providerKeyStatusLoading": "Still loading provider IDs. Try again in a moment.",
-    "kimiOfficialNoApiKey": "Official provider signs in with `kimi login`; no API Key needed",
-    "kimiApiKeyAutoFill": "Enter the API key; it is written to config.toml",
+    "kimiOfficialNoApiKey": "Official provider signs in with `kimi login`; no key needed",
+    "kimiApiKeyAutoFill": "Enter the key; it is written to config.toml",
     "kimiApiEndpointPlaceholder": "e.g., https://api.example.com/v1",
     "kimiApiHint": "Written as base_url of the active provider in config.toml",
     "invalidWebsiteUrl": "Enter a valid URL",
@@ -827,13 +831,13 @@
     "templateCopilot": "GitHub Copilot",
     "templateTokenPlan": "Token Plan",
     "copilotAutoAuth": "Uses OAuth automatically; no credentials to enter",
-    "tokenPlanHint": "Queries the Token Plan quota with the provider's API key and base URL",
+    "tokenPlanHint": "Queries the Token Plan quota with the provider's key and base URL",
     "resetDate": "Reset date",
     "premiumRequests": "Premium Requests",
     "credentialsConfig": "Credentials",
     "credentialsHint": "Leave empty to use the provider's config",
     "optional": "optional",
-    "apiKeyPlaceholder": "Leave empty to use the provider's API key",
+    "apiKeyPlaceholder": "Leave empty to use the provider's key",
     "baseUrlPlaceholder": "Leave empty to use the provider's base URL",
     "baseUrl": "Base URL",
     "accessToken": "Access Token",
@@ -961,7 +965,7 @@
     "userAgentHint": "Some providers only work with a browser User-Agent header.",
     "env": {
       "title": "Environment Variables",
-      "description": "Environment variables in openclaw.json (API keys, custom variables and so on)",
+      "description": "Environment variables in openclaw.json (keys, custom variables and so on)",
       "editorHint": "Edit the full env section as JSON. Nested objects such as env.vars and env.shellEnv are supported.",
       "objectRequired": "OpenClaw env must be a JSON object.",
       "invalidJson": "OpenClaw env must be valid JSON.",
@@ -1295,7 +1299,7 @@
     "name": "Name",
     "namePlaceholder": "e.g., My NewAPI",
     "baseUrl": "API URL",
-    "apiKey": "API Key",
+    "apiKey": "Key",
     "websiteUrl": "Website URL",
     "websiteUrlPlaceholder": "https://example.com (optional, displayed in the list)",
     "notes": "Notes",
@@ -1527,5 +1531,80 @@
       "antigravity": "Enable the new card, then start agy and sign in as the account you want. Switchy keeps that login with the card and writes it back whenever the card is enabled."
     },
     "editHint": "This card holds a subscription login; only its name can be edited."
+  },
+  "account": {
+    "add": "Add account",
+    "addConsoleKey": "Add its console key to use the plan in Claude Code or OpenCode",
+    "addMonitor": "Monitor a {{company}} balance",
+    "addMonitorItem": "Pay-as-you-go balance monitor",
+    "addPlan": "{{plan}} account",
+    "addPlanAccount": "Add a {{company}} account",
+    "addRelayTitle": "Add a relay or gateway for {{program}}",
+    "balance": "Balance",
+    "balancePart": {
+      "granted": "granted",
+      "toppedUp": "topped up",
+      "cash": "cash",
+      "voucher": "voucher"
+    },
+    "deleteMessage": "Delete {{name}}? The programs it is used in lose it too.",
+    "deleteMonitorMessage": "Stop monitoring {{name}}?",
+    "deleteMonitorTitle": "Delete balance monitor",
+    "deleteTitle": "Delete account",
+    "deleteWhileInUse": "Switch {{program}} to another account before deleting this one.",
+    "editAccount": "Edit account",
+    "editConsoleKey": "Console key",
+    "editMonitor": "Edit balance monitor",
+    "empty": "No {{company}} accounts yet. Add one with Add account.",
+    "getKey": "From the {{company}} console",
+    "importSignIn": "Import the {{program}} account signed in now",
+    "inUseIn": "In use in {{program}}",
+    "key": "Key",
+    "monitorHint": "Read only to show the balance and what was spent; Switchy runs nothing with it.",
+    "monitorsHeading": "Pay-as-you-go balance (monitor only)",
+    "name": "Name",
+    "namePlaceholder": "e.g. the email you subscribed with",
+    "nameRequired": "Give the account a name",
+    "nowUsedIn": "{{name}} is now used in {{program}}",
+    "openConsole": "Open console",
+    "other": "Other",
+    "otherHint": "Pay-as-you-go keys set up in a program. Switchy runs subscription accounts and only monitors pay-as-you-go balances: add a balance monitor under the company to see what is left and what was spent.",
+    "payAsYouGo": "Pay as you go",
+    "plan": "Plan",
+    "planHint": "The key the plan gives you. Choose where it is used on the card.",
+    "region": "Service",
+    "regions": {
+      "intl": "International",
+      "cn": "Mainland China"
+    },
+    "relayFor": "For {{program}}…",
+    "relays": "Relays and gateways",
+    "removeFrom": "Take it out of {{program}}",
+    "signInAdded": "Added. Use it in {{program}}, then sign in there; the sign-in is filed with this card.",
+    "signInKind": {
+      "claude": "Claude subscription (Claude Code)",
+      "codex": "ChatGPT subscription (Codex)",
+      "gemini": "Google sign-in (Gemini CLI)",
+      "antigravity": "Google AI subscription (Antigravity)",
+      "kimi": "Kimi Code sign-in",
+      "cursor": "Cursor subscription (Cursor CLI)"
+    },
+    "spendPending": "after the next reading",
+    "spendSince": "Counted from the balance readings since {{date}}",
+    "spent": "Spent today / month",
+    "usageInConsole": "Usage in the console",
+    "useIn": "Use in {{program}}",
+    "usedIn": "Used in {{program}}",
+    "usedInLabel": "Used in:",
+    "importOpenCode": "Import the providers in OpenCode's config",
+    "importOpenClaw": "Import the providers in OpenClaw's config",
+    "universalRelay": "One relay for Claude Code, Codex and Gemini CLI…"
+  },
+  "programs": {
+    "noneInUse": "No account in use",
+    "omoProfiles": "Oh My OpenCode profiles",
+    "open": "Open",
+    "openclawHint": "A gateway with its own providers, off by default.",
+    "opencodeHint": "Holds several accounts at once; each card's Used in adds or removes it."
   }
 }

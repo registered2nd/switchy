@@ -121,7 +121,7 @@ export function GeminiFormFields({
               <p className="text-sm text-blue-700 dark:text-blue-300">
                 {t("provider.form.gemini.oauthHint", {
                   defaultValue:
-                    "Google official uses OAuth personal authentication, no need to fill in API Key. The browser will automatically open for login on first use.",
+                    "Google official uses OAuth personal authentication, no key is needed. The browser will automatically open for login on first use.",
                 })}
               </p>
             </div>

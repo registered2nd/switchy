@@ -32,7 +32,8 @@ mod schema;
 mod tests;
 
 // DAO types exported for external use
-pub use dao::{AccountSwitch, FailoverQueueItem, SwitchReason};
+pub(crate) use dao::accounts::upsert_account_on_conn;
+pub use dao::{Account, AccountSwitch, BalanceReading, FailoverQueueItem, SwitchReason};
 
 use crate::config::get_app_config_dir;
 use crate::error::AppError;
@@ -44,7 +45,7 @@ use std::sync::Mutex;
 
 /// Current schema version
 /// Bump on every table structure change and add the matching migration in schema.rs
-pub(crate) const SCHEMA_VERSION: i32 = 7;
+pub(crate) const SCHEMA_VERSION: i32 = 8;
 
 /// Serialize JSON without an unwrap panic
 pub(crate) fn to_json_string<T: Serialize>(value: &T) -> Result<String, AppError> {

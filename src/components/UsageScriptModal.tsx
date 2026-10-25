@@ -816,7 +816,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                     <>
                       <div className="space-y-2">
                         <Label htmlFor="usage-api-key">
-                          API Key{" "}
+                          {t("account.key", { defaultValue: "Key" })}{" "}
                           <span className="text-xs text-muted-foreground font-normal">
                             ({t("usageScript.optional")})
                           </span>

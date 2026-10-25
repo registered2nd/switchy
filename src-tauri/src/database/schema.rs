@@ -285,6 +285,8 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
 
+        Self::create_account_tables(conn)?;
+
         // 17. Usage Daily Rollups table (daily aggregates)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS usage_daily_rollups (
@@ -434,6 +436,13 @@ impl Database {
                         log::info!("Migrating database from v6 to v7 (Kimi Code support)");
                         Self::migrate_v6_to_v7(conn)?;
                         Self::set_user_version(conn, 7)?;
+                    }
+                    7 => {
+                        log::info!(
+                            "Migrating database from v7 to v8 (plan accounts and balance monitors)"
+                        );
+                        Self::migrate_v7_to_v8(conn)?;
+                        Self::set_user_version(conn, 8)?;
                     }
                     _ => {
                         return Err(AppError::Database(format!(
@@ -1011,6 +1020,51 @@ impl Database {
         }
 
         log::info!("v4 -> v5 migration done: pricing mode and request model columns added");
+        Ok(())
+    }
+
+    /// The accounts and balance_readings tables (schema v8).
+    fn create_account_tables(conn: &Connection) -> Result<(), AppError> {
+        // A company's plan accounts and balance monitors: the cards held by a
+        // key rather than by one program's own sign-in.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS accounts (
+            id TEXT PRIMARY KEY, company TEXT NOT NULL, kind TEXT NOT NULL,
+            plan TEXT, region TEXT, name TEXT NOT NULL, secret TEXT NOT NULL DEFAULT '',
+            login_provider_id TEXT, sort_index INTEGER, created_at INTEGER NOT NULL,
+            meta TEXT NOT NULL DEFAULT '{}'
+        )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        // A balance monitor's readings, kept to tell what was spent.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS balance_readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL,
+            currency TEXT NOT NULL, balance REAL NOT NULL, observed_at INTEGER NOT NULL
+        )",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_balance_readings_account ON balance_readings(account_id, observed_at)",
+            [],
+        )
+        .map_err(|e| AppError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    /// v7 -> v8 migration: plan accounts and balance monitors
+    ///
+    /// Files each provider made from a coding plan's endpoint under a plan
+    /// account (linked through its meta `accountId`), and gives each key of a
+    /// pay-as-you-go service with a balance call a balance monitor. The
+    /// providers themselves stay as they are.
+    fn migrate_v7_to_v8(conn: &Connection) -> Result<(), AppError> {
+        Self::create_account_tables(conn)?;
+        crate::services::accounts::migrate_providers_to_accounts(conn)?;
+        log::info!("v7 -> v8 migration done: plan accounts and balance monitors");
         Ok(())
     }
 

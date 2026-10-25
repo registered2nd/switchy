@@ -143,6 +143,8 @@ interface ProviderFormProps {
     iconColor?: string;
   };
   showButtons?: boolean;
+  /** Offer only these presets (by name), besides a custom one. */
+  presetNames?: string[];
 }
 
 export function ProviderForm({
@@ -156,6 +158,7 @@ export function ProviderForm({
   onSubmittingChange,
   initialData,
   showButtons = true,
+  presetNames,
 }: ProviderFormProps) {
   const { t } = useTranslation();
   const isEditMode = Boolean(initialData);
@@ -905,7 +908,7 @@ export function ProviderForm({
         if (!isCopilotProvider && !apiKey.trim()) {
           toast.error(
             t("providerForm.apiKeyRequired", {
-              defaultValue: "API Key is required for non-official providers",
+              defaultValue: "Key is required for non-official providers",
             }),
           );
           return;
@@ -923,7 +926,7 @@ export function ProviderForm({
         if (!codexApiKey.trim()) {
           toast.error(
             t("providerForm.apiKeyRequired", {
-              defaultValue: "API Key is required for non-official providers",
+              defaultValue: "Key is required for non-official providers",
             }),
           );
           return;
@@ -941,7 +944,7 @@ export function ProviderForm({
         if (!geminiApiKey.trim()) {
           toast.error(
             t("providerForm.apiKeyRequired", {
-              defaultValue: "API Key is required for non-official providers",
+              defaultValue: "Key is required for non-official providers",
             }),
           );
           return;
@@ -950,7 +953,7 @@ export function ProviderForm({
         if (!kimiApiKey.trim()) {
           toast.error(
             t("providerForm.apiKeyRequired", {
-              defaultValue: "API Key is required for non-official providers",
+              defaultValue: "Key is required for non-official providers",
             }),
           );
           return;
@@ -1185,7 +1188,10 @@ export function ProviderForm({
   };
 
   const groupedPresets = useMemo(() => {
-    return presetEntries.reduce<Record<string, PresetEntry[]>>((acc, entry) => {
+    const offered = presetNames
+      ? presetEntries.filter((entry) => presetNames.includes(entry.preset.name))
+      : presetEntries;
+    return offered.reduce<Record<string, PresetEntry[]>>((acc, entry) => {
       const category = entry.preset.category ?? "others";
       if (!acc[category]) {
         acc[category] = [];
@@ -1193,7 +1199,7 @@ export function ProviderForm({
       acc[category].push(entry);
       return acc;
     }, {});
-  }, [presetEntries]);
+  }, [presetEntries, presetNames]);
 
   const categoryKeys = useMemo(() => {
     return Object.keys(groupedPresets).filter(
@@ -2007,7 +2013,9 @@ export function ProviderForm({
                       await claudeAccountApi.capture(providerId, false);
                     if (result.kind === "captured") {
                       setCapturedIdentity(result.identity);
-                      void queryClient.invalidateQueries({ queryKey: ["providers"] });
+                      void queryClient.invalidateQueries({
+                        queryKey: ["providers"],
+                      });
                       toast.success(
                         t("claudeAccount.capture.success", {
                           email: result.identity.emailAddress,

@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 
+mod accounts;
 mod auth;
 mod claude_account;
 mod codex_account;
@@ -24,8 +25,10 @@ mod sync_support;
 
 mod lightweight;
 mod usage;
+mod window;
 mod workspace;
 
+pub use accounts::*;
 pub use auth::*;
 pub use claude_account::*;
 pub use codex_account::*;
@@ -49,4 +52,5 @@ pub use subscription::*;
 
 pub use lightweight::*;
 pub use usage::*;
+pub use window::*;
 pub use workspace::*;

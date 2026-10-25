@@ -1,9 +1,6 @@
 import type { AppId } from "@/lib/api/types";
-import type {
-  McpServer,
-  Provider,
-  Settings,
-} from "@/types";
+import type { Account } from "@/lib/api/accounts";
+import type { McpServer, Provider, Settings } from "@/types";
 
 type ProvidersByApp = Record<AppId, Record<string, Provider>>;
 type CurrentProviderState = Record<AppId, string>;
@@ -144,7 +141,25 @@ let mcpConfigs: McpConfigState = {
 const cloneProviders = (value: ProvidersByApp) =>
   JSON.parse(JSON.stringify(value)) as ProvidersByApp;
 
+let accountsState: Account[] = [];
+
+export const getAccounts = () =>
+  JSON.parse(JSON.stringify(accountsState)) as Account[];
+export const setAccounts = (accounts: Account[]) => {
+  accountsState = JSON.parse(JSON.stringify(accounts));
+};
+export const saveAccount = (account: Account) => {
+  accountsState = [
+    ...accountsState.filter((a) => a.id !== account.id),
+    JSON.parse(JSON.stringify(account)),
+  ];
+};
+export const deleteAccount = (id: string) => {
+  accountsState = accountsState.filter((a) => a.id !== id);
+};
+
 export const resetProviderState = () => {
+  accountsState = [];
   providers = createDefaultProviders();
   current = createDefaultCurrent();
   liveProviderIds = {
@@ -347,4 +362,3 @@ export const deleteMcpServer = (appType: AppId, id: string) => {
   if (!mcpConfigs[appType]) return;
   delete mcpConfigs[appType][id];
 };
-

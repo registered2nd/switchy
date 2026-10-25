@@ -25,6 +25,7 @@ import { UsageDashboard } from "@/components/usage/UsageDashboard";
 import { LogConfigPanel } from "@/components/settings/LogConfigPanel";
 import { SessionRecoveryPanel } from "@/components/settings/SessionRecoveryPanel";
 import { SettingsSection } from "@/components/settings/SettingsSection";
+import { ProgramsSettings } from "@/components/settings/ProgramsSettings";
 import type { SettingsSection as SettingsSectionId } from "@/components/layout/AppRail";
 import { useSettings } from "@/hooks/useSettings";
 import { useImportExport } from "@/hooks/useImportExport";
@@ -37,6 +38,7 @@ interface SettingsDialogProps {
   onImportSuccess?: () => void | Promise<void>;
   /** The section shown; the app's sidebar chooses it. */
   activeTab?: SettingsSectionId;
+  onOpenOpenClaw?: () => void;
 }
 
 export function SettingsPage({
@@ -44,6 +46,7 @@ export function SettingsPage({
   onOpenChange,
   onImportSuccess,
   activeTab = "general",
+  onOpenOpenClaw,
 }: SettingsDialogProps) {
   const { t } = useTranslation();
   const {
@@ -167,11 +170,22 @@ export function SettingsPage({
 
   const isBusy = useMemo(() => isLoading && !settings, [isLoading, settings]);
 
-  const heading: Record<SettingsSectionId, { title: string; description: string }> = {
+  const heading: Record<
+    SettingsSectionId,
+    { title: string; description: string }
+  > = {
     general: {
       title: t("settings.tabGeneral"),
       description: t("settings.page.general", {
-        defaultValue: "Language, appearance, the tray and which apps show in the sidebar.",
+        defaultValue:
+          "Language, appearance, the tray and which companies show in the sidebar.",
+      }),
+    },
+    programs: {
+      title: t("settings.tabPrograms", { defaultValue: "Programs" }),
+      description: t("settings.page.programs", {
+        defaultValue:
+          "The programs your accounts run in: the account each is using, and their own settings.",
       }),
     },
     pool: {
@@ -216,7 +230,10 @@ export function SettingsPage({
               onChange={(lang) => handleAutoSave({ language: lang })}
             />
             <ThemeSettings />
-            <AppVisibilitySettings settings={settings} onChange={handleAutoSave} />
+            <AppVisibilitySettings
+              settings={settings}
+              onChange={handleAutoSave}
+            />
             <WindowSettings settings={settings} onChange={handleAutoSave} />
             <TerminalSettings
               value={settings.preferredTerminal}
@@ -230,8 +247,18 @@ export function SettingsPage({
             />
           </div>
         );
+      case "programs":
+        return (
+          <ProgramsSettings
+            settings={settings}
+            onChange={handleAutoSave}
+            onOpenOpenClaw={onOpenOpenClaw}
+          />
+        );
       case "pool":
-        return <PoolTabContent settings={settings} onAutoSave={handleAutoSave} />;
+        return (
+          <PoolTabContent settings={settings} onAutoSave={handleAutoSave} />
+        );
       case "data":
         return (
           <div className="space-y-8">
@@ -254,7 +281,7 @@ export function SettingsPage({
               })}
               description={t("settings.data.moveDescription", {
                 defaultValue:
-                  "Export writes the whole database, API keys and Codex logins included, to one file. Import replaces this machine's database with it.",
+                  "Export writes the whole database, keys and Codex logins included, to one file. Import replaces this machine's database with it.",
               })}
             >
               <ImportExportSection

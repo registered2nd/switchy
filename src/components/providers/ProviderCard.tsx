@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { GripVertical, ChevronDown, ChevronUp } from "lucide-react";
@@ -65,6 +65,10 @@ interface ProviderCardProps {
   // OpenClaw: default model
   isDefaultModel?: boolean;
   onSetAsDefault?: () => void;
+  /** The program this account runs in, shown as "Used in …" while it is in use. */
+  programLabel?: string;
+  /** More "Used in" choices, under the card's own (a Kimi sign-in's plan key). */
+  extraUsedIn?: ReactNode;
 }
 
 /** Whether this is an official provider (no custom base URL or API key; talks to the official API directly) */
@@ -166,6 +170,8 @@ export function ProviderCard({
   // OpenClaw: default model
   isDefaultModel,
   onSetAsDefault,
+  programLabel,
+  extraUsedIn,
 }: ProviderCardProps) {
   const { t } = useTranslation();
 
@@ -316,7 +322,8 @@ export function ProviderCard({
   // - OMO/OMO Slim providers: use isCurrent
   // - OpenClaw: the provider owning the default model is current (blue border)
   // - OpenCode (non-OMO): no notion of "current"; returns false
-  // - Failover mode: the provider the proxy is actually using (activeProviderId)
+  // - Failover mode: the provider the proxy is actually using (activeProviderId),
+  //   or the current one until the proxy has served the app
   // - Normal mode: isCurrent
   const isActiveProvider = isAnyOmo
     ? isCurrent
@@ -324,7 +331,7 @@ export function ProviderCard({
       ? Boolean(isDefaultModel)
       : appId === "opencode"
         ? false
-        : isAutoFailoverEnabled
+        : isAutoFailoverEnabled && activeProviderId
           ? activeProviderId === provider.id
           : isCurrent;
 
@@ -385,7 +392,7 @@ export function ProviderCard({
                 {accountEmail || provider.name}
               </h3>
 
-              {isLive && (
+              {isLive && !programLabel && (
                 <span className="shrink-0 whitespace-nowrap text-[12px] font-medium text-primary">
                   {isAdditiveMode
                     ? t("provider.inConfig", { defaultValue: "In config" })
@@ -413,6 +420,22 @@ export function ProviderCard({
             </div>
 
             <div className="flex min-w-0 items-center gap-2 text-[12px] text-muted-foreground">
+              {programLabel && (
+                <span
+                  className={cn(
+                    "shrink-0 whitespace-nowrap",
+                    isLive && "font-medium text-primary",
+                  )}
+                >
+                  {isLive
+                    ? t("account.usedIn", {
+                        program: programLabel,
+                        defaultValue: "Used in {{program}}",
+                      })
+                    : programLabel}
+                  {(accountEmail || displayUrl) && " ·"}
+                </span>
+              )}
               <span className="min-w-0 truncate">
                 {accountEmail ? provider.name : null}
                 {!accountEmail && displayUrl ? (
@@ -536,6 +559,8 @@ export function ProviderCard({
           </div>
         </div>
       </div>
+
+      {extraUsedIn && <div className="mt-2 pl-[38px]">{extraUsedIn}</div>}
 
       <ConfirmDialog
         isOpen={!!captureConfirm}

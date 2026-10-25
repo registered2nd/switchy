@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -6,59 +6,50 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
   ArrowLeft,
+  Download,
   FolderOpen,
   KeyRound,
   Shield,
   Cpu,
 } from "lucide-react";
-import type { Provider, VisibleApps } from "@/types";
 import type { EnvConflict } from "@/types/env";
-import { useProvidersQuery, useSettingsQuery } from "@/lib/query";
-import {
-  providersApi,
-  settingsApi,
-  type AppId,
-  type ProviderSwitchEvent,
-} from "@/lib/api";
-import { checkAllEnvConflicts, checkEnvConflicts } from "@/lib/api/env";
+import { useSettingsQuery } from "@/lib/query";
+import { providersApi, settingsApi } from "@/lib/api";
+import { checkAllEnvConflicts } from "@/lib/api/env";
 import { useProviderActions } from "@/hooks/useProviderActions";
-import { openclawKeys, useOpenClawHealth } from "@/hooks/useOpenClaw";
-import { useProxyStatus } from "@/hooks/useProxyStatus";
-import { useLastValidValue } from "@/hooks/useLastValidValue";
-import { extractErrorMessage } from "@/utils/errorUtils";
+import { useOpenClawHealth } from "@/hooks/useOpenClaw";
 import { isTextEditableTarget } from "@/utils/domUtils";
 import { isWindows, isLinux } from "@/lib/platform";
-import {
-  AppRail,
-  APP_NAME,
-  type SettingsSection,
-} from "@/components/layout/AppRail";
-import { ProviderList } from "@/components/providers/ProviderList";
+import { useTheme } from "@/components/theme-provider";
+import { AppRail, type SettingsSection } from "@/components/layout/AppRail";
 import { AddProviderDialog } from "@/components/providers/AddProviderDialog";
-import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SettingsPage } from "@/components/settings/SettingsPage";
 import { EnvWarningBanner } from "@/components/env/EnvWarningBanner";
-import { ProxyToggle } from "@/components/proxy/ProxyToggle";
-import { isLoginOnlyApp } from "@/lib/api/loginAccount";
-import { FailoverToggle } from "@/components/proxy/FailoverToggle";
-import UsageScriptModal from "@/components/UsageScriptModal";
 import { UniversalProviderPanel } from "@/components/universal";
 import { Button } from "@/components/ui/button";
-import {
-  useDisableCurrentOmo,
-  useDisableCurrentOmoSlim,
-} from "@/lib/query/omo";
 import WorkspaceFilesPanel from "@/components/workspace/WorkspaceFilesPanel";
 import EnvPanel from "@/components/openclaw/EnvPanel";
 import ToolsPanel from "@/components/openclaw/ToolsPanel";
 import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
 import OpenClawHealthBanner from "@/components/openclaw/OpenClawHealthBanner";
+import { ProgramAccounts } from "@/components/companies/ProgramAccounts";
+import {
+  AddAccountMenu,
+  CompanyView,
+} from "@/components/companies/CompanyView";
+import { useSidebarEntries } from "@/components/companies/useSidebarEntries";
+import {
+  companyById,
+  COMPANIES,
+  OTHER_COMPANY,
+  type SidebarEntryId,
+} from "@/config/companies";
 
 type View =
   | "providers"
   | "settings"
   | "universal"
+  | "openclaw"
   | "workspace"
   | "openclawEnv"
   | "openclawTools"
@@ -66,54 +57,140 @@ type View =
 
 const DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28; // px
 
-const STORAGE_KEY = "switchy-last-app";
-const VALID_APPS: AppId[] = [
-  "claude",
-  "codex",
-  "gemini",
-  "kimi",
-  "cursor",
-  "antigravity",
-  "opencode",
-  "openclaw",
-];
-
-const getInitialApp = (): AppId => {
-  const saved = localStorage.getItem(STORAGE_KEY) as AppId | null;
-  if (saved && VALID_APPS.includes(saved)) {
-    return saved;
-  }
-  return "claude";
-};
-
+const ENTRY_STORAGE_KEY = "switchy-last-company";
 const VIEW_STORAGE_KEY = "switchy-last-view";
 const VALID_VIEWS: View[] = [
   "providers",
   "settings",
   "universal",
+  "openclaw",
   "workspace",
   "openclawEnv",
   "openclawTools",
   "openclawAgents",
 ];
 
-const getInitialView = (): View => {
-  const saved = localStorage.getItem(VIEW_STORAGE_KEY) as View | null;
-  if (saved && VALID_VIEWS.includes(saved)) {
-    return saved;
+function readStorage(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
   }
-  return "providers";
+}
+
+function writeStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Remembering the last page is only a convenience.
+  }
+}
+
+const getInitialEntry = (): SidebarEntryId => {
+  const saved = readStorage(ENTRY_STORAGE_KEY);
+  if (saved && (saved === OTHER_COMPANY || companyById(saved))) {
+    return saved as SidebarEntryId;
+  }
+  return "anthropic";
 };
 
-function App() {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
+const getInitialView = (): View => {
+  const saved = readStorage(VIEW_STORAGE_KEY) as View | null;
+  return saved && VALID_VIEWS.includes(saved) ? saved : "providers";
+};
 
-  const [activeApp, setActiveApp] = useState<AppId>(getInitialApp);
+/** OpenClaw's own page: its providers and its gateway settings. */
+function OpenClawHeaderActions({ onOpen }: { onOpen: (view: View) => void }) {
+  const { t } = useTranslation();
+  const [adding, setAdding] = useState(false);
+  const { addProvider } = useProviderActions("openclaw");
+  const queryClient = useQueryClient();
+  const importFromLive = async () => {
+    try {
+      const count = await providersApi.importOpenClawFromLive();
+      await queryClient.invalidateQueries({
+        queryKey: ["providers", "openclaw"],
+      });
+      if (count > 0) toast.success(t("provider.importCurrentDescription"));
+      else toast.info(t("provider.noProviders"));
+    } catch (error) {
+      toast.error(String(error));
+    }
+  };
+  return (
+    <div
+      className="ml-auto flex items-center gap-1"
+      style={{ WebkitAppRegion: "no-drag" } as any}
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onOpen("workspace")}
+        title={t("workspace.manage")}
+      >
+        <FolderOpen className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onOpen("openclawEnv")}
+        title={t("openclaw.env.title")}
+      >
+        <KeyRound className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onOpen("openclawTools")}
+        title={t("openclaw.tools.title")}
+      >
+        <Shield className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => onOpen("openclawAgents")}
+        title={t("openclaw.agents.title")}
+      >
+        <Cpu className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => void importFromLive()}
+        title={t("account.importOpenClaw", {
+          defaultValue: "Import the providers in OpenClaw's config",
+        })}
+      >
+        <Download className="h-4 w-4" />
+      </Button>
+      <Button size="sm" onClick={() => setAdding(true)} className="gap-1.5">
+        <Plus className="h-4 w-4" />
+        {t("provider.addProvider", { defaultValue: "Add" })}
+      </Button>
+      <AddProviderDialog
+        open={adding}
+        onOpenChange={setAdding}
+        appId="openclaw"
+        onSubmit={addProvider}
+      />
+    </div>
+  );
+}
+
+function App() {
+  const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
+  const { setTheme } = useTheme();
+
+  const [activeEntry, setActiveEntry] =
+    useState<SidebarEntryId>(getInitialEntry);
   const [currentView, setCurrentView] = useState<View>(getInitialView);
   const [settingsDefaultTab, setSettingsDefaultTab] =
     useState<SettingsSection>("general");
-  const [isAddOpen, setIsAddOpen] = useState(false);
+  const entries = useSidebarEntries(
+    t("account.other", { defaultValue: "Other" }),
+  );
 
   const notifiedCodexUpdates = useRef("");
   useEffect(() => {
@@ -140,7 +217,6 @@ function App() {
             action: {
               label: t("proxy.accountPool.codexUpdatesOpenPool"),
               onClick: () => {
-                setActiveApp("codex");
                 setSettingsDefaultTab("pool");
                 setCurrentView("settings");
               },
@@ -160,145 +236,87 @@ function App() {
   }, [t]);
 
   useEffect(() => {
-    localStorage.setItem(VIEW_STORAGE_KEY, currentView);
+    writeStorage(VIEW_STORAGE_KEY, currentView);
   }, [currentView]);
 
   const { data: settingsData } = useSettingsQuery();
-  const visibleApps: VisibleApps = settingsData?.visibleApps ?? {
-    claude: true,
-    codex: true,
-    gemini: true,
-    kimi: true,
-    cursor: true,
-    antigravity: true,
-    opencode: true,
-    openclaw: false,
-  };
+  const openclawVisible = Boolean(settingsData?.visibleApps?.openclaw);
 
-  const getFirstVisibleApp = (): AppId => {
-    if (visibleApps.claude) return "claude";
-    if (visibleApps.codex) return "codex";
-    if (visibleApps.gemini) return "gemini";
-    if (visibleApps.kimi) return "kimi";
-    if (visibleApps.cursor) return "cursor";
-    if (visibleApps.antigravity) return "antigravity";
-    if (visibleApps.opencode) return "opencode";
-    if (visibleApps.openclaw) return "openclaw";
-    return "claude"; // fallback
-  };
+  // A hidden or emptied entry falls back to the first one listed.
+  useEffect(() => {
+    if (
+      entries.length > 0 &&
+      !entries.some((entry) => entry.id === activeEntry)
+    ) {
+      setActiveEntry(entries[0].id);
+    }
+  }, [entries, activeEntry]);
 
   useEffect(() => {
-    // Only enforce visibility once settings have loaded; before that the
-    // fallback would bounce a hidden-by-default tab the user just opened.
-    if (settingsData && !visibleApps[activeApp]) {
-      setActiveApp(getFirstVisibleApp());
+    if (settingsData && !openclawVisible && currentView === "openclaw") {
+      setCurrentView("providers");
     }
-  }, [settingsData, visibleApps, activeApp]);
+  }, [settingsData, openclawVisible, currentView]);
 
-  const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
-  const [usageProvider, setUsageProvider] = useState<Provider | null>(null);
-  const [confirmAction, setConfirmAction] = useState<{
-    provider: Provider;
-    action: "remove" | "delete";
-  } | null>(null);
+  const isOpenClawView =
+    currentView === "openclaw" ||
+    currentView === "workspace" ||
+    currentView === "openclawEnv" ||
+    currentView === "openclawTools" ||
+    currentView === "openclawAgents";
+  const { data: openclawHealthWarnings = [] } =
+    useOpenClawHealth(isOpenClawView);
+
   const [envConflicts, setEnvConflicts] = useState<EnvConflict[]>([]);
   const [showEnvBanner, setShowEnvBanner] = useState(false);
 
-  const effectiveEditingProvider = useLastValidValue(editingProvider);
-  const effectiveUsageProvider = useLastValidValue(usageProvider);
-
-  const {
-    isRunning: isProxyRunning,
-    takeoverStatus,
-    status: proxyStatus,
-  } = useProxyStatus();
-  const isCurrentAppTakeoverActive = takeoverStatus?.[activeApp] || false;
-  const activeProviderId = useMemo(() => {
-    const target = proxyStatus?.active_targets?.find(
-      (t) => t.app_type === activeApp,
-    );
-    return target?.provider_id;
-  }, [proxyStatus?.active_targets, activeApp]);
-
-  const { data, isLoading, refetch } = useProvidersQuery(activeApp, {
-    isProxyRunning,
-  });
-  const providers = useMemo(() => data?.providers ?? {}, [data]);
-  const currentProviderId = data?.currentProviderId ?? "";
-  const isOpenClawView =
-    activeApp === "openclaw" &&
-    (currentView === "providers" ||
-      currentView === "workspace" ||
-      currentView === "openclawEnv" ||
-      currentView === "openclawTools" ||
-      currentView === "openclawAgents");
-  const { data: openclawHealthWarnings = [] } =
-    useOpenClawHealth(isOpenClawView);
-  const {
-    addProvider,
-    updateProvider,
-    switchProvider,
-    deleteProvider,
-    saveUsageScript,
-    setAsDefaultModel,
-  } = useProviderActions(activeApp, isProxyRunning);
-
-  const disableOmoMutation = useDisableCurrentOmo();
-  const handleDisableOmo = () => {
-    disableOmoMutation.mutate(undefined, {
-      onSuccess: () => {
-        toast.success(t("omo.disabled", { defaultValue: "OMO disabled" }));
-      },
-      onError: (error: Error) => {
-        toast.error(
-          t("omo.disableFailed", {
-            defaultValue: "Failed to disable OMO: {{error}}",
-            error: extractErrorMessage(error),
-          }),
-        );
-      },
-    });
-  };
-
-  const disableOmoSlimMutation = useDisableCurrentOmoSlim();
-  const handleDisableOmoSlim = () => {
-    disableOmoSlimMutation.mutate(undefined, {
-      onSuccess: () => {
-        toast.success(t("omo.disabled", { defaultValue: "OMO disabled" }));
-      },
-      onError: (error: Error) => {
-        toast.error(
-          t("omo.disableFailed", {
-            defaultValue: "Failed to disable OMO: {{error}}",
-            error: extractErrorMessage(error),
-          }),
-        );
-      },
-    });
-  };
-
+  // A switch from the tray, the proxy or an agent: reload that program.
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-
-    const setupListener = async () => {
-      try {
-        unsubscribe = await providersApi.onSwitched(
-          async (event: ProviderSwitchEvent) => {
-            if (event.appType === activeApp) {
-              await refetch();
-            }
-          },
-        );
-      } catch (error) {
-        console.error("[App] Failed to subscribe provider switch event", error);
-      }
-    };
-
-    setupListener();
+    providersApi
+      .onSwitched(async (event) => {
+        await queryClient.invalidateQueries({
+          queryKey: ["providers", event.appType],
+        });
+      })
+      .then((fn) => {
+        unsubscribe = fn;
+      })
+      .catch((error) =>
+        console.error("[App] Failed to subscribe provider switch event", error),
+      );
     return () => {
       unsubscribe?.();
     };
-  }, [activeApp, refetch]);
+  }, [queryClient]);
+
+  // Theme and language set by a command (set_window_appearance).
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    const setup = async () => {
+      const { listen } = await import("@tauri-apps/api/event");
+      unsubscribe = await listen<{
+        theme?: string | null;
+        language?: string | null;
+      }>("window-appearance", (event) => {
+        const { theme, language } = event.payload ?? {};
+        if (theme === "light" || theme === "dark" || theme === "system") {
+          setTheme(theme);
+        }
+        if (language) {
+          void i18n.changeLanguage(language);
+          writeStorage("language", language);
+          void queryClient.invalidateQueries({ queryKey: ["settings"] });
+        }
+      });
+    };
+    setup().catch((error) =>
+      console.error("[App] Failed to subscribe to window-appearance", error),
+    );
+    return () => {
+      unsubscribe?.();
+    };
+  }, [i18n, queryClient, setTheme]);
 
   // An agent changed something through the control routes: reload it all.
   useEffect(() => {
@@ -379,7 +397,6 @@ function App() {
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
-
     const setupListener = async () => {
       try {
         const { listen } = await import("@tauri-apps/api/event");
@@ -398,7 +415,6 @@ function App() {
         );
       }
     };
-
     setupListener();
     return () => {
       unsubscribe?.();
@@ -410,7 +426,6 @@ function App() {
       try {
         const allConflicts = await checkAllEnvConflicts();
         const flatConflicts = Object.values(allConflicts).flat();
-
         if (flatConflicts.length > 0) {
           setEnvConflicts(flatConflicts);
           const dismissed = sessionStorage.getItem("env_banner_dismissed");
@@ -425,43 +440,10 @@ function App() {
         );
       }
     };
-
     checkEnvOnStartup();
   }, []);
 
-  useEffect(() => {
-    const checkEnvOnSwitch = async () => {
-      try {
-        const conflicts = await checkEnvConflicts(activeApp);
-
-        if (conflicts.length > 0) {
-          setEnvConflicts((prev) => {
-            const existingKeys = new Set(
-              prev.map((c) => `${c.varName}:${c.sourcePath}`),
-            );
-            const newConflicts = conflicts.filter(
-              (c) => !existingKeys.has(`${c.varName}:${c.sourcePath}`),
-            );
-            return [...prev, ...newConflicts];
-          });
-          const dismissed = sessionStorage.getItem("env_banner_dismissed");
-          if (!dismissed) {
-            setShowEnvBanner(true);
-          }
-        }
-      } catch (error) {
-        console.error(
-          "[App] Failed to check environment conflicts on app switch:",
-          error,
-        );
-      }
-    };
-
-    checkEnvOnSwitch();
-  }, [activeApp]);
-
   const currentViewRef = useRef(currentView);
-
   useEffect(() => {
     currentViewRef.current = currentView;
   }, [currentView]);
@@ -473,213 +455,19 @@ function App() {
         setCurrentView("settings");
         return;
       }
-
       if (event.key !== "Escape" || event.defaultPrevented) return;
-
       if (document.body.style.overflow === "hidden") return;
-
       const view = currentViewRef.current;
       if (view === "providers") return;
-
       if (isTextEditableTarget(event.target)) return;
-
       event.preventDefault();
       setCurrentView("providers");
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
-
-  const handleOpenWebsite = async (url: string) => {
-    try {
-      await settingsApi.openExternal(url);
-    } catch (error) {
-      const detail =
-        extractErrorMessage(error) ||
-        t("notifications.openLinkFailed", {
-          defaultValue: "Failed to open link",
-        });
-      toast.error(detail);
-    }
-  };
-
-  const handleEditProvider = async ({
-    provider,
-    originalId,
-  }: {
-    provider: Provider;
-    originalId?: string;
-  }) => {
-    await updateProvider(provider, originalId);
-    setEditingProvider(null);
-  };
-
-  const handleConfirmAction = async () => {
-    if (!confirmAction) return;
-    const { provider, action } = confirmAction;
-
-    if (action === "remove") {
-      // Remove from live config only (for additive mode apps like OpenCode/OpenClaw)
-      // Does NOT delete from database - provider remains in the list
-      await providersApi.removeFromLiveConfig(provider.id, activeApp);
-      // Invalidate queries to refresh the isInConfig state
-      if (activeApp === "opencode") {
-        await queryClient.invalidateQueries({
-          queryKey: ["opencodeLiveProviderIds"],
-        });
-      } else if (activeApp === "openclaw") {
-        await queryClient.invalidateQueries({
-          queryKey: openclawKeys.liveProviderIds,
-        });
-        await queryClient.invalidateQueries({
-          queryKey: openclawKeys.health,
-        });
-      }
-      toast.success(
-        t("notifications.removeFromConfigSuccess", {
-          defaultValue: "Removed from config",
-        }),
-        { closeButton: true },
-      );
-    } else {
-      await deleteProvider(provider.id);
-    }
-    setConfirmAction(null);
-  };
-
-  const generateUniqueProviderCopyKey = (
-    originalKey: string,
-    existingKeys: string[],
-  ): string => {
-    const baseKey = `${originalKey}-copy`;
-
-    if (!existingKeys.includes(baseKey)) {
-      return baseKey;
-    }
-
-    let counter = 2;
-    while (existingKeys.includes(`${baseKey}-${counter}`)) {
-      counter++;
-    }
-    return `${baseKey}-${counter}`;
-  };
-
-  const handleDuplicateProvider = async (provider: Provider) => {
-    const newSortIndex =
-      provider.sortIndex !== undefined ? provider.sortIndex + 1 : undefined;
-
-    const duplicatedProvider: Omit<Provider, "id" | "createdAt"> & {
-      providerKey?: string;
-      addToLive?: boolean;
-    } = {
-      name: `${provider.name} copy`,
-      settingsConfig: JSON.parse(JSON.stringify(provider.settingsConfig)), // Deep copy
-      websiteUrl: provider.websiteUrl,
-      category: provider.category,
-      sortIndex: newSortIndex, // Original sortIndex + 1
-      meta: provider.meta
-        ? JSON.parse(JSON.stringify(provider.meta))
-        : undefined, // Deep copy
-      icon: provider.icon,
-      iconColor: provider.iconColor,
-    };
-
-    if (activeApp === "opencode" || activeApp === "openclaw") {
-      let liveProviderIds: string[] = [];
-      try {
-        liveProviderIds =
-          activeApp === "opencode"
-            ? await queryClient.ensureQueryData({
-                queryKey: ["opencodeLiveProviderIds"],
-                queryFn: () => providersApi.getOpenCodeLiveProviderIds(),
-              })
-            : await queryClient.ensureQueryData({
-                queryKey: openclawKeys.liveProviderIds,
-                queryFn: () => providersApi.getOpenClawLiveProviderIds(),
-              });
-      } catch (error) {
-        console.error(
-          "[App] Failed to load live provider IDs for duplication",
-          error,
-        );
-        const errorMessage = extractErrorMessage(error);
-        toast.error(
-          t("provider.duplicateLiveIdsLoadFailed", {
-            defaultValue:
-              "Failed to read provider IDs from config. Please fix the config and try again.",
-          }) + (errorMessage ? `: ${errorMessage}` : ""),
-        );
-        return;
-      }
-      const existingKeys = Array.from(
-        new Set([...Object.keys(providers), ...liveProviderIds]),
-      );
-      duplicatedProvider.providerKey = generateUniqueProviderCopyKey(
-        provider.id,
-        existingKeys,
-      );
-      duplicatedProvider.addToLive = false;
-    }
-
-    if (provider.sortIndex !== undefined) {
-      const updates = Object.values(providers)
-        .filter(
-          (p) =>
-            p.sortIndex !== undefined &&
-            p.sortIndex >= newSortIndex! &&
-            p.id !== provider.id,
-        )
-        .map((p) => ({
-          id: p.id,
-          sortIndex: p.sortIndex! + 1,
-        }));
-
-      if (updates.length > 0) {
-        try {
-          await providersApi.updateSortOrder(updates, activeApp);
-        } catch (error) {
-          console.error("[App] Failed to update sort order", error);
-          toast.error(
-            t("provider.sortUpdateFailed", {
-              defaultValue: "Failed to update sort order",
-            }),
-          );
-          return; // Stop here if the sort update failed
-        }
-      }
-    }
-
-    await addProvider(duplicatedProvider);
-  };
-
-  const handleOpenTerminal = async (provider: Provider) => {
-    try {
-      const selectedDir = await settingsApi.pickDirectory();
-      if (!selectedDir) {
-        return;
-      }
-
-      await providersApi.openTerminal(provider.id, activeApp, {
-        cwd: selectedDir,
-      });
-      toast.success(
-        t("provider.terminalOpened", {
-          defaultValue: "Terminal opened",
-        }),
-      );
-    } catch (error) {
-      console.error("[App] Failed to open terminal", error);
-      const errorMessage = extractErrorMessage(error);
-      toast.error(
-        t("provider.terminalOpenFailed", {
-          defaultValue: "Failed to open terminal",
-        }) + (errorMessage ? `: ${errorMessage}` : ""),
-      );
-    }
-  };
 
   const handleImportSuccess = async () => {
     try {
@@ -687,13 +475,9 @@ function App() {
         queryKey: ["providers"],
         refetchType: "all",
       });
-      await queryClient.refetchQueries({
-        queryKey: ["providers"],
-        type: "all",
-      });
+      await queryClient.invalidateQueries({ queryKey: ["accounts"] });
     } catch (error) {
       console.error("[App] Failed to refresh providers after import", error);
-      await refetch();
     }
     try {
       await providersApi.updateTrayMenu();
@@ -712,6 +496,7 @@ function App() {
               onOpenChange={() => setCurrentView("providers")}
               onImportSuccess={handleImportSuccess}
               activeTab={settingsDefaultTab}
+              onOpenOpenClaw={() => setCurrentView("openclaw")}
             />
           );
         case "universal":
@@ -720,7 +505,6 @@ function App() {
               <UniversalProviderPanel />
             </div>
           );
-
         case "workspace":
           return <WorkspaceFilesPanel />;
         case "openclawEnv":
@@ -729,61 +513,30 @@ function App() {
           return <ToolsPanel />;
         case "openclawAgents":
           return <AgentsDefaultsPanel />;
+        case "openclaw":
+          return (
+            <div className="px-6 pb-12">
+              <ProgramAccounts
+                appId="openclaw"
+                showProgram={false}
+                filter={() => true}
+              />
+            </div>
+          );
         default:
           return (
             <div className="px-6 flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-12 px-1">
                 <AnimatePresence mode="wait">
                   <motion.div
-                    key={activeApp}
+                    key={activeEntry}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15 }}
-                    className="space-y-4"
+                    className="mt-1"
                   >
-                    <ProviderList
-                      providers={providers}
-                      currentProviderId={currentProviderId}
-                      appId={activeApp}
-                      isLoading={isLoading}
-                      isProxyRunning={isProxyRunning}
-                      isProxyTakeover={
-                        isProxyRunning && isCurrentAppTakeoverActive
-                      }
-                      activeProviderId={activeProviderId}
-                      onSwitch={switchProvider}
-                      onEdit={(provider) => {
-                        setEditingProvider(provider);
-                      }}
-                      onDelete={(provider) =>
-                        setConfirmAction({ provider, action: "delete" })
-                      }
-                      onRemoveFromConfig={
-                        activeApp === "opencode" || activeApp === "openclaw"
-                          ? (provider) =>
-                              setConfirmAction({ provider, action: "remove" })
-                          : undefined
-                      }
-                      onDisableOmo={
-                        activeApp === "opencode" ? handleDisableOmo : undefined
-                      }
-                      onDisableOmoSlim={
-                        activeApp === "opencode"
-                          ? handleDisableOmoSlim
-                          : undefined
-                      }
-                      onDuplicate={handleDuplicateProvider}
-                      onConfigureUsage={setUsageProvider}
-                      onOpenWebsite={handleOpenWebsite}
-                      onOpenTerminal={
-                        activeApp === "claude" ? handleOpenTerminal : undefined
-                      }
-                      onCreate={() => setIsAddOpen(true)}
-                      onSetAsDefault={
-                        activeApp === "openclaw" ? setAsDefaultModel : undefined
-                      }
-                    />
+                    <CompanyView entry={activeEntry} />
                   </motion.div>
                 </AnimatePresence>
               </div>
@@ -811,96 +564,62 @@ function App() {
   const otherViewTitle =
     currentView === "universal"
       ? t("universalProvider.title", { defaultValue: "Universal Provider" })
-      : currentView === "workspace"
-        ? t("workspace.title")
-        : currentView === "openclawEnv"
-          ? t("openclaw.env.title")
-          : currentView === "openclawTools"
-            ? t("openclaw.tools.title")
-            : currentView === "openclawAgents"
-              ? t("openclaw.agents.title")
-              : "";
+      : currentView === "openclaw"
+        ? "OpenClaw"
+        : currentView === "workspace"
+          ? t("workspace.title")
+          : currentView === "openclawEnv"
+            ? t("openclaw.env.title")
+            : currentView === "openclawTools"
+              ? t("openclaw.tools.title")
+              : currentView === "openclawAgents"
+                ? t("openclaw.agents.title")
+                : "";
+
+  const entryName =
+    activeEntry === OTHER_COMPANY
+      ? t("account.other", { defaultValue: "Other" })
+      : (COMPANIES.find((company) => company.id === activeEntry)?.name ?? "");
 
   const pageHeader =
     currentView === "settings" ? null : currentView !== "providers" ? (
-      <div className="flex items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setCurrentView("providers")}
-          style={{ WebkitAppRegion: "no-drag" } as any}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <h1 className="font-display text-[22px] font-semibold tracking-tight">
-          {otherViewTitle}
-        </h1>
-      </div>
+      <>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() =>
+              setCurrentView(
+                currentView === "openclaw" || !isOpenClawView
+                  ? "providers"
+                  : "openclaw",
+              )
+            }
+            style={{ WebkitAppRegion: "no-drag" } as any}
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="font-display text-[22px] font-semibold tracking-tight">
+            {otherViewTitle}
+          </h1>
+        </div>
+        {currentView === "openclaw" && (
+          <OpenClawHeaderActions onOpen={setCurrentView} />
+        )}
+      </>
     ) : (
       <>
         <h1 className="font-display text-[22px] font-semibold tracking-tight">
-          {APP_NAME[activeApp]}
+          {entryName}
         </h1>
         <div
           className="ml-auto flex items-center gap-2"
           style={{ WebkitAppRegion: "no-drag" } as any}
         >
-          {activeApp !== "opencode" &&
-            activeApp !== "openclaw" &&
-            !isLoginOnlyApp(activeApp) && (
-              <>
-                {settingsData?.enableLocalProxy && (
-                  <ProxyToggle activeApp={activeApp} />
-                )}
-                {settingsData?.enableFailoverToggle && (
-                  <FailoverToggle activeApp={activeApp} />
-                )}
-              </>
-            )}
-          {activeApp === "openclaw" && (
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCurrentView("workspace")}
-                title={t("workspace.manage")}
-              >
-                <FolderOpen className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCurrentView("openclawEnv")}
-                title={t("openclaw.env.title")}
-              >
-                <KeyRound className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCurrentView("openclawTools")}
-                title={t("openclaw.tools.title")}
-              >
-                <Shield className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setCurrentView("openclawAgents")}
-                title={t("openclaw.agents.title")}
-              >
-                <Cpu className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-          <Button
-            size="sm"
-            onClick={() => setIsAddOpen(true)}
-            className="gap-1.5"
-          >
-            <Plus className="h-4 w-4" />
-            {t("provider.addProvider", { defaultValue: "Add" })}
-          </Button>
+          <AddAccountMenu
+            entry={activeEntry}
+            onOpenUniversal={() => setCurrentView("universal")}
+          />
         </div>
       </>
     );
@@ -924,10 +643,10 @@ function App() {
               ? "settings"
               : "other"
         }
-        activeApp={activeApp}
-        visibleApps={visibleApps}
-        onSelectApp={(app) => {
-          setActiveApp(app);
+        entries={entries}
+        activeEntry={activeEntry}
+        onSelectEntry={(entry) => {
+          setActiveEntry(entry);
           setCurrentView("providers");
         }}
         settingsSection={settingsDefaultTab}
@@ -981,63 +700,6 @@ function App() {
           {renderContent()}
         </main>
       </div>
-
-      <AddProviderDialog
-        open={isAddOpen}
-        onOpenChange={setIsAddOpen}
-        appId={activeApp}
-        onSubmit={addProvider}
-      />
-
-      <EditProviderDialog
-        open={Boolean(editingProvider)}
-        provider={effectiveEditingProvider}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingProvider(null);
-          }
-        }}
-        onSubmit={handleEditProvider}
-        appId={activeApp}
-        isProxyTakeover={isProxyRunning && isCurrentAppTakeoverActive}
-      />
-
-      {effectiveUsageProvider && (
-        <UsageScriptModal
-          key={effectiveUsageProvider.id}
-          provider={effectiveUsageProvider}
-          appId={activeApp}
-          isOpen={Boolean(usageProvider)}
-          onClose={() => setUsageProvider(null)}
-          onSave={(script) => {
-            if (usageProvider) {
-              void saveUsageScript(usageProvider, script);
-            }
-          }}
-        />
-      )}
-
-      <ConfirmDialog
-        isOpen={Boolean(confirmAction)}
-        title={
-          confirmAction?.action === "remove"
-            ? t("confirm.removeProvider")
-            : t("confirm.deleteProvider")
-        }
-        message={
-          confirmAction
-            ? confirmAction.action === "remove"
-              ? t("confirm.removeProviderMessage", {
-                  name: confirmAction.provider.name,
-                })
-              : t("confirm.deleteProviderMessage", {
-                  name: confirmAction.provider.name,
-                })
-            : ""
-        }
-        onConfirm={() => void handleConfirmAction()}
-        onCancel={() => setConfirmAction(null)}
-      />
     </div>
   );
 }

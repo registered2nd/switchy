@@ -133,6 +133,8 @@ export interface AuthBinding {
 
 // Provider metadata (field names match the backend, so snake_case)
 export interface ProviderMeta {
+  // The plan account this provider puts into its program ("Used in")
+  accountId?: string;
   // Custom endpoints: keyed by URL, value is the endpoint info
   custom_endpoints?: Record<string, CustomEndpoint>;
   // Whether to apply the common config snippet when switching/syncing to live
@@ -229,6 +231,8 @@ export interface Settings {
 
   // Apps shown on the main page (all by default)
   visibleApps?: VisibleApps;
+  // Companies left out of the sidebar (catalog ids)
+  hiddenCompanies?: string[];
 
   // ===== Device-level directory overrides =====
   // Override the Claude Code config directory (optional)
@@ -257,8 +261,6 @@ export interface Settings {
   currentProviderGemini?: string;
   // Current Kimi provider ID (takes precedence over the database is_current)
   currentProviderKimi?: string;
-
-
 
   // ===== Backup policy =====
   // Auto-backup interval in hours (0=disabled, default 24)

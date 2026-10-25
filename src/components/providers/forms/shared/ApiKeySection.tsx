@@ -32,7 +32,7 @@ export function ApiKeySection({
 
   const defaultPlaceholder = {
     official: t("providerForm.officialNoApiKey", {
-      defaultValue: "Official login does not require API Key, save directly",
+      defaultValue: "Official login needs no key; just save",
     }),
     thirdParty: t("providerForm.apiKeyAutoFill", {
       defaultValue: "Just fill in here, config below will be auto-filled",
@@ -65,10 +65,9 @@ export function ApiKeySection({
             className="text-xs text-blue-400 dark:text-blue-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
           >
             {t("providerForm.getApiKey", {
-              defaultValue: "Get API Key",
+              defaultValue: "Get the key",
             })}
           </a>
-
         </div>
       )}
     </div>

@@ -37,6 +37,9 @@ interface AddProviderDialogProps {
       suggestedDefaults?: OpenClawSuggestedDefaults;
     },
   ) => Promise<void> | void;
+  /** Offer only these presets (by name), besides a custom one. */
+  presetNames?: string[];
+  title?: string;
 }
 
 export function AddProviderDialog({
@@ -44,12 +47,17 @@ export function AddProviderDialog({
   onOpenChange,
   appId,
   onSubmit,
+  presetNames,
+  title,
 }: AddProviderDialogProps) {
   const { t } = useTranslation();
   // OpenCode, OpenClaw and the login-only apps don't support universal providers
   const isLoginOnly = isLoginOnlyApp(appId);
   const showUniversalTab =
-    appId !== "opencode" && appId !== "openclaw" && !isLoginOnly;
+    appId !== "opencode" &&
+    appId !== "openclaw" &&
+    !isLoginOnly &&
+    !presetNames;
   const [activeTab, setActiveTab] = useState<"app-specific" | "universal">(
     "app-specific",
   );
@@ -306,7 +314,7 @@ export function AddProviderDialog({
   return (
     <FullScreenPanel
       isOpen={open}
-      title={t("provider.addNewProvider")}
+      title={title ?? t("provider.addNewProvider")}
       onClose={() => onOpenChange(false)}
       footer={footer}
     >
@@ -338,6 +346,7 @@ export function AddProviderDialog({
               onCancel={() => onOpenChange(false)}
               onSubmittingChange={setIsFormSubmitting}
               showButtons={false}
+              presetNames={presetNames}
             />
           </TabsContent>
 
@@ -354,6 +363,7 @@ export function AddProviderDialog({
           onCancel={() => onOpenChange(false)}
           onSubmittingChange={setIsFormSubmitting}
           showButtons={false}
+          presetNames={presetNames}
         />
       )}
 

@@ -33,9 +33,9 @@
     "notSet": "未设置"
   },
   "apiKeyInput": {
-    "placeholder": "请输入 API Key",
-    "show": "显示 API Key",
-    "hide": "隐藏 API Key"
+    "placeholder": "请输入 密钥",
+    "show": "显示 密钥",
+    "hide": "隐藏 密钥"
   },
   "jsonEditor": {
     "mustBeObject": "配置必须是 JSON 对象，不能是数组或其他类型",
@@ -61,7 +61,7 @@
     "tabUniversal": "统一供应商",
     "noProviders": "还没有添加任何供应商",
     "noProvidersDescription": "如已有配置，点击“导入当前配置”即可将其保存为默认供应商。",
-    "noProvidersDescriptionSnippet": "除 API Key 和请求地址外的设置（如插件）会保存到通用配置片段，在各供应商之间共享",
+    "noProvidersDescriptionSnippet": "除 密钥 和请求地址外的设置（如插件）会保存到通用配置片段，在各供应商之间共享",
     "importCurrent": "导入当前配置",
     "importCurrentDescription": "将当前生效的配置导入为默认供应商",
     "enable": "启用",
@@ -101,7 +101,7 @@
       "gemini": {
         "model": "模型",
         "oauthTitle": "OAuth 认证模式",
-        "oauthHint": "Google 官方通过 OAuth 用你的 Google 账号登录，无需填写 API Key。首次使用时会自动打开浏览器登录。"
+        "oauthHint": "Google 官方通过 OAuth 用你的 Google 账号登录，无需填写 密钥。首次使用时会自动打开浏览器登录。"
       }
     },
     "duplicateLiveIdsLoadFailed": "无法读取配置中的供应商 ID，请修复配置后重试。",
@@ -163,7 +163,7 @@
     },
     "streamCheck": {
       "title": "模型健康检测",
-      "message": "健康检测会直接发送 API 请求来测试供应商是否可用，以下情况可能检测失败：\n\n• 官方供应商（使用 OAuth 登录，没有独立的 API Key）\n• 部分中转服务（会校验请求是否来自 Claude Code CLI）\n• AWS Bedrock（使用 IAM 签名认证）\n\n检测失败不代表供应商不可用，只说明无法用独立请求验证。请以应用内的实际表现为准。",
+      "message": "健康检测会直接发送 API 请求来测试供应商是否可用，以下情况可能检测失败：\n\n• 官方供应商（使用 OAuth 登录，没有独立的 密钥）\n• 部分中转服务（会校验请求是否来自 Claude Code CLI）\n• AWS Bedrock（使用 IAM 签名认证）\n\n检测失败不代表供应商不可用，只说明无法用独立请求验证。请以应用内的实际表现为准。",
       "confirm": "我已了解，继续检测"
     }
   },
@@ -322,7 +322,9 @@
     "minimizeToTrayDescription": "勾选后，点击关闭按钮会隐藏到系统托盘，而不是退出应用。",
     "appVisibility": {
       "title": "主页面显示",
-      "description": "选择在主页面显示的应用"
+      "description": "选择侧边栏列出的公司",
+      "companiesDescription": "侧边栏中的公司。默认关闭的公司在有账号后才会出现。",
+      "whenHolding": "有账号后显示"
     },
     "terminal": {
       "title": "首选终端",
@@ -410,17 +412,19 @@
     },
     "saveFailedGeneric": "保存失败，请重试",
     "page": {
-      "general": "语言、外观、托盘，以及侧边栏显示哪些应用。",
+      "general": "语言、外观、托盘，以及侧边栏显示哪些公司。",
       "pool": "Switchy 如何转发请求，以及如何在你的账号之间切换。",
       "advanced": "各工具的配置位置、提供商测试、日志与会话修复。",
-      "usage": "Switchy 转发过的请求，在本机统计，不会发送到任何地方。"
+      "usage": "Switchy 转发过的请求，在本机统计，不会发送到任何地方。",
+      "programs": "账号所运行的程序：每个程序正在使用的账号，以及程序自身的设置。"
     },
     "data": {
       "backups": "备份",
       "backupsDescription": "Switchy 会定期把数据库复制到 ~/.switchy/backups。恢复会放回较早的一份副本。",
       "move": "迁移到另一台机器",
-      "moveDescription": "导出会把整个数据库（包括 API 密钥和 Codex 登录）写入一个文件。导入会用它替换本机的数据库。"
-    }
+      "moveDescription": "导出会把整个数据库（包括 密钥和 Codex 登录）写入一个文件。导入会用它替换本机的数据库。"
+    },
+    "tabPrograms": "程序"
   },
   "apps": {
     "claude": "Claude",
@@ -438,17 +442,17 @@
     "apiEndpointPlaceholder": "https://your-api-endpoint.com",
     "codexApiEndpointPlaceholder": "https://your-api-endpoint.com/v1",
     "manageAndTest": "管理与测速",
-    "officialNoApiKey": "官方登录无需填写 API Key，直接保存即可",
-    "codexOfficialNoApiKey": "官方无需填写 API Key，直接保存即可",
+    "officialNoApiKey": "官方登录无需填写 密钥，直接保存即可",
+    "codexOfficialNoApiKey": "官方无需填写 密钥，直接保存即可",
     "codexApiKeyAutoFill": "只需要填这里，下方 auth.json 会自动填充",
     "apiKeyAutoFill": "只需要填这里，下方配置会自动填充",
-    "cnOfficialApiKeyHint": "💡 只需填写 API Key，请求地址已预设",
-    "aggregatorApiKeyHint": "💡 只需填写 API Key，请求地址已预设",
-    "thirdPartyApiKeyHint": "💡 只需填写 API Key，请求地址已预设",
+    "cnOfficialApiKeyHint": "💡 只需填写 密钥，请求地址已预设",
+    "aggregatorApiKeyHint": "💡 只需填写 密钥，请求地址已预设",
+    "thirdPartyApiKeyHint": "💡 只需填写 密钥，请求地址已预设",
     "customApiKeyHint": "💡 自定义配置需手动填写所有必要字段",
     "omoHint": "💡 OMO 配置管理 Agent 模型分配，兼容 oh-my-openagent.jsonc / oh-my-opencode.jsonc",
-    "officialHint": "💡 官方供应商使用浏览器登录，无需配置 API Key",
-    "getApiKey": "获取 API Key",
+    "officialHint": "💡 官方供应商使用浏览器登录，无需配置 密钥",
+    "getApiKey": "获取 密钥",
     "presets": {
       "ucloud": "优云智算"
     },
@@ -460,7 +464,7 @@
     "fillSupplierName": "请填写供应商名称",
     "fillParameter": "请填写 {{label}}",
     "endpointRequired": "非官方供应商请填写 API 端点",
-    "apiKeyRequired": "非官方供应商请填写 API Key",
+    "apiKeyRequired": "非官方供应商请填写 密钥",
     "anthropicModel": "主模型",
     "anthropicReasoningModel": "推理模型（Thinking）",
     "apiFormat": "API 格式",
@@ -473,7 +477,7 @@
     "authField": "认证字段",
     "authFieldAuthToken": "ANTHROPIC_AUTH_TOKEN（默认）",
     "authFieldApiKey": "ANTHROPIC_API_KEY",
-    "authFieldHint": "API Key 写入的环境变量名",
+    "authFieldHint": "密钥 写入的环境变量名",
     "apiHintResponses": "💡 填写兼容 OpenAI Responses API 的服务端点地址，不要以斜杠结尾",
     "anthropicDefaultHaikuModel": "Haiku 默认模型",
     "anthropicDefaultSonnetModel": "Sonnet 默认模型",
@@ -492,15 +496,15 @@
     "fetchModelsSuccess": "获取到 {{count}} 个模型",
     "fetchModelsFailed": "获取模型列表失败",
     "fetchModelsEmpty": "未找到可用模型",
-    "fetchModelsNeedApiKey": "请先填写 API Key",
+    "fetchModelsNeedApiKey": "请先填写 密钥",
     "fetchModelsNeedEndpoint": "请先填写 API 端点",
-    "fetchModelsNeedConfig": "请先填写 API 端点和 API Key",
-    "fetchModelsAuthFailed": "API Key 无效或无权限",
+    "fetchModelsNeedConfig": "请先填写 API 端点和 密钥",
+    "fetchModelsAuthFailed": "密钥 无效或无权限",
     "fetchModelsNotSupported": "该供应商不支持获取模型列表",
     "fetchModelsTimeout": "请求超时，请检查网络连接",
     "providerKeyStatusLoading": "正在加载供应商 ID，请稍后再试",
-    "kimiOfficialNoApiKey": "官方供应商通过 kimi login 登录，无需 API Key",
-    "kimiApiKeyAutoFill": "输入 API Key，会写入 config.toml",
+    "kimiOfficialNoApiKey": "官方供应商通过 kimi login 登录，无需 密钥",
+    "kimiApiKeyAutoFill": "输入 密钥，会写入 config.toml",
     "kimiApiEndpointPlaceholder": "例如：https://api.example.com/v1",
     "kimiApiHint": "写入 config.toml 中当前供应商的 base_url",
     "invalidWebsiteUrl": "请输入有效的网址",
@@ -613,7 +617,7 @@
   "kimiConfig": {
     "credentialsJson": "凭据（kimi-code.json）",
     "credentialsJsonPlaceholder": "null",
-    "credentialsJsonHint": "kimi login 写入的 OAuth 凭据；null 表示未登录或使用 API Key",
+    "credentialsJsonHint": "kimi login 写入的 OAuth 凭据；null 表示未登录或使用 密钥",
     "configToml": "config.toml (TOML)",
     "configTomlHint": "Kimi Code config.toml 内容：default_model、[providers.*]、[models.*]",
     "writeCommonConfig": "写入通用配置",
@@ -825,13 +829,13 @@
     "templateCopilot": "GitHub Copilot",
     "templateTokenPlan": "Token Plan",
     "copilotAutoAuth": "自动使用 OAuth 认证，无需手动填写凭据",
-    "tokenPlanHint": "自动使用供应商的 API Key 和 Base URL 查询 Token Plan 额度",
+    "tokenPlanHint": "自动使用供应商的 密钥 和 Base URL 查询 Token Plan 额度",
     "resetDate": "重置日期",
     "premiumRequests": "Premium 请求",
     "credentialsConfig": "凭据",
     "credentialsHint": "留空则自动使用供应商配置",
     "optional": "可选",
-    "apiKeyPlaceholder": "留空则使用供应商的 API Key",
+    "apiKeyPlaceholder": "留空则使用供应商的 密钥",
     "baseUrlPlaceholder": "留空则使用供应商的请求地址",
     "baseUrl": "请求地址",
     "accessToken": "访问令牌",
@@ -959,7 +963,7 @@
     "userAgentHint": "部分供应商需要浏览器 User-Agent 才能正常访问。",
     "env": {
       "title": "环境变量",
-      "description": "管理 openclaw.json 中的环境变量（API Key、自定义变量等）",
+      "description": "管理 openclaw.json 中的环境变量（密钥、自定义变量等）",
       "editorHint": "以 JSON 形式编辑整个 env 节点。支持 env.vars、env.shellEnv 等嵌套对象。",
       "objectRequired": "OpenClaw 的 env 必须是 JSON 对象。",
       "invalidJson": "OpenClaw 的 env 必须是合法 JSON。",
@@ -1293,7 +1297,7 @@
     "name": "名称",
     "namePlaceholder": "例如：我的 NewAPI",
     "baseUrl": "API 地址",
-    "apiKey": "API Key",
+    "apiKey": "密钥",
     "websiteUrl": "官网地址",
     "websiteUrlPlaceholder": "https://example.com（可选，用于在列表中显示）",
     "notes": "备注",
@@ -1525,5 +1529,80 @@
       "antigravity": "启用新卡片后，启动 agy 并以目标账号登录。Switchy 会把该登录保存在卡片中，并在每次启用卡片时写回。"
     },
     "editHint": "此卡片保存的是订阅登录，只能修改名称。"
+  },
+  "account": {
+    "add": "添加账号",
+    "addConsoleKey": "添加它的控制台密钥，即可在 Claude Code 或 OpenCode 中使用该套餐",
+    "addMonitor": "监控 {{company}} 余额",
+    "addMonitorItem": "按量付费余额监控",
+    "addPlan": "{{plan}} 账号",
+    "addPlanAccount": "添加 {{company}} 账号",
+    "addRelayTitle": "为 {{program}} 添加中转或网关",
+    "balance": "余额",
+    "balancePart": {
+      "granted": "赠送",
+      "toppedUp": "充值",
+      "cash": "现金",
+      "voucher": "代金券"
+    },
+    "deleteMessage": "删除 {{name}}？使用它的程序也会失去它。",
+    "deleteMonitorMessage": "停止监控 {{name}}？",
+    "deleteMonitorTitle": "删除余额监控",
+    "deleteTitle": "删除账号",
+    "deleteWhileInUse": "请先把 {{program}} 切换到其他账号，再删除这个账号。",
+    "editAccount": "编辑账号",
+    "editConsoleKey": "控制台密钥",
+    "editMonitor": "编辑余额监控",
+    "empty": "还没有 {{company}} 账号。用“添加账号”添加一个。",
+    "getKey": "在 {{company}} 控制台获取",
+    "importSignIn": "导入 {{program}} 当前登录的账号",
+    "inUseIn": "正在 {{program}} 中使用",
+    "key": "密钥",
+    "monitorHint": "只用来读取余额和花费；Switchy 不会用它运行任何程序。",
+    "monitorsHeading": "按量付费余额（仅监控）",
+    "name": "名称",
+    "namePlaceholder": "例如订阅时用的邮箱",
+    "nameRequired": "请为账号起个名字",
+    "nowUsedIn": "{{name}} 已在 {{program}} 中使用",
+    "openConsole": "打开控制台",
+    "other": "其他",
+    "otherHint": "在某个程序里配置的按量付费密钥。Switchy 运行的是订阅账号，按量付费只做余额监控：在对应公司下添加余额监控，即可查看剩余和花费。",
+    "payAsYouGo": "按量付费",
+    "plan": "套餐",
+    "planHint": "套餐提供的密钥。在卡片上选择它用在哪里。",
+    "region": "服务",
+    "regions": {
+      "intl": "国际版",
+      "cn": "中国大陆"
+    },
+    "relayFor": "用于 {{program}}…",
+    "relays": "中转与网关",
+    "removeFrom": "从 {{program}} 移除",
+    "signInAdded": "已添加。在 {{program}} 中使用它，然后在那里登录；登录会保存到这张卡片。",
+    "signInKind": {
+      "claude": "Claude 订阅（Claude Code）",
+      "codex": "ChatGPT 订阅（Codex）",
+      "gemini": "Google 登录（Gemini CLI）",
+      "antigravity": "Google AI 订阅（Antigravity）",
+      "kimi": "Kimi Code 登录",
+      "cursor": "Cursor 订阅（Cursor CLI）"
+    },
+    "spendPending": "下次读取后显示",
+    "spendSince": "根据 {{date}} 以来的余额记录计算",
+    "spent": "今日 / 本月花费",
+    "usageInConsole": "在控制台查看用量",
+    "useIn": "在 {{program}} 中使用",
+    "usedIn": "正在 {{program}} 中使用",
+    "usedInLabel": "使用于：",
+    "importOpenCode": "导入 OpenCode 配置中的提供商",
+    "importOpenClaw": "导入 OpenClaw 配置中的提供商",
+    "universalRelay": "同时用于 Claude Code、Codex 和 Gemini CLI 的中转…"
+  },
+  "programs": {
+    "noneInUse": "没有正在使用的账号",
+    "omoProfiles": "Oh My OpenCode 配置",
+    "open": "打开",
+    "openclawHint": "带有自己提供商的网关，默认关闭。",
+    "opencodeHint": "可同时容纳多个账号；在卡片的“使用于”中添加或移除。"
   }
 }

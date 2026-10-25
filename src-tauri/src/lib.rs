@@ -557,6 +557,14 @@ pub fn run() {
             commands::get_subscription_quota,
             commands::get_subscription_quota_for_provider,
             commands::get_coding_plan_quota,
+            commands::get_accounts,
+            commands::save_account,
+            commands::delete_account,
+            commands::get_account_balance,
+            commands::get_account_quota,
+            commands::use_account_in,
+            commands::add_sign_in_account,
+            commands::remove_account_from,
             // model list fetch (OpenAI-compatible /v1/models)
             commands::fetch_models_for_config,
             // ours: endpoint speed test + custom endpoint management
@@ -721,6 +729,9 @@ pub fn run() {
             // lightweight mode (for testing or low-resource environments)
             commands::enter_lightweight_mode,
             commands::exit_lightweight_mode,
+            commands::show_main_window,
+            commands::quit_app,
+            commands::set_window_appearance,
             commands::is_lightweight_mode,
         ]);
 

@@ -35,7 +35,7 @@ describe("UsageFooter on a coding-plan card", () => {
     server.use(
       http.post("http://tauri.local/queryProviderUsage", async () => {
         await answered;
-        return HttpResponse.json({ success: false, error: "No API key" });
+        return HttpResponse.json({ success: false, error: "No key" });
       }),
     );
 
@@ -59,7 +59,7 @@ describe("UsageFooter on a coding-plan card", () => {
 
     answer();
 
-    expect(await screen.findByText("No API key")).toBeInTheDocument();
+    expect(await screen.findByText("No key")).toBeInTheDocument();
     expect(screen.queryByText("common.loading")).not.toBeInTheDocument();
   });
 });

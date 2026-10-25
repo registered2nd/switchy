@@ -16,7 +16,12 @@ import {
   setSettings,
   getAppConfigDirOverride,
   setAppConfigDirOverrideState,
+  getAccounts,
+  saveAccount,
+  deleteAccount,
 } from "./state";
+import type { Account } from "@/lib/api/accounts";
+import signInTemplates from "@/config/signInTemplates.json";
 
 const TAURI_ENDPOINT = "http://tauri.local";
 
@@ -33,6 +38,91 @@ const withJson = async <T>(request: Request): Promise<T> => {
 const success = <T>(payload: T) => HttpResponse.json(payload as any);
 
 export const handlers = [
+  http.post(`${TAURI_ENDPOINT}/get_accounts`, () => success(getAccounts())),
+  http.post(`${TAURI_ENDPOINT}/save_account`, async ({ request }) => {
+    const { account } = await withJson<{ account: Account }>(request);
+    saveAccount(account);
+    return success(null);
+  }),
+  http.post(`${TAURI_ENDPOINT}/delete_account`, async ({ request }) => {
+    const { id } = await withJson<{ id: string }>(request);
+    deleteAccount(id);
+    return success(null);
+  }),
+  http.post(`${TAURI_ENDPOINT}/get_account_balance`, () =>
+    success({
+      success: true,
+      error: null,
+      currency: "USD",
+      balance: 12.5,
+      parts: [{ name: "toppedUp", amount: 12.5 }],
+      spentToday: 0.5,
+      spentMonth: 3,
+      trackingSince: Date.now() - 86_400_000,
+      queriedAt: Date.now(),
+    }),
+  ),
+  http.post(`${TAURI_ENDPOINT}/use_account_in`, async ({ request }) => {
+    const { id, app } = await withJson<{ id: string; app: AppId }>(request);
+    const account = getAccounts().find((a) => a.id === id);
+    if (!account)
+      return HttpResponse.json("Account not found", { status: 400 });
+    const existing = Object.values(listProviders(app)).find(
+      (p) => p.meta?.accountId === id,
+    );
+    const providerId = existing?.id ?? `${account.company}-${id}`;
+    if (!existing) {
+      addProvider(app, {
+        id: providerId,
+        name: `${account.company} · ${account.name}`,
+        settingsConfig: { env: { ANTHROPIC_AUTH_TOKEN: account.secret } },
+        meta: { accountId: id },
+      } as Provider);
+    }
+    setCurrentProviderId(app, providerId);
+    return success(providerId);
+  }),
+  http.post(`${TAURI_ENDPOINT}/add_sign_in_account`, async ({ request }) => {
+    const { app, name } = await withJson<{ app: AppId; name?: string }>(
+      request,
+    );
+    const template = (signInTemplates as Record<string, any>)[app];
+    if (!template) return HttpResponse.json("No sign-in", { status: 400 });
+    const id = `signin-${Date.now()}`;
+    addProvider(app, {
+      id,
+      name: name || template.name,
+      settingsConfig: template.settingsConfig,
+      category: "official",
+    } as Provider);
+    return success(id);
+  }),
+  http.post(`${TAURI_ENDPOINT}/remove_account_from`, () => success(null)),
+  http.post(`${TAURI_ENDPOINT}/get_account_quota`, () =>
+    success({
+      tool: "coding_plan",
+      credentialStatus: "valid",
+      credentialMessage: null,
+      success: true,
+      tiers: [{ name: "five_hour", utilization: 10, resetsAt: null }],
+      extraUsage: null,
+      error: null,
+      queriedAt: Date.now(),
+    }),
+  ),
+  http.post(`${TAURI_ENDPOINT}/get_coding_plan_quota`, () =>
+    success({
+      tool: "coding_plan",
+      credentialStatus: "valid",
+      credentialMessage: null,
+      success: true,
+      tiers: [{ name: "five_hour", utilization: 10, resetsAt: null }],
+      extraUsage: null,
+      error: null,
+      queriedAt: Date.now(),
+    }),
+  ),
+
   http.post(`${TAURI_ENDPOINT}/get_providers`, async ({ request }) => {
     const { app } = await withJson<{ app: AppId }>(request);
     return success(getProviders(app));
@@ -114,15 +204,7 @@ export const handlers = [
 
   http.post(`${TAURI_ENDPOINT}/open_external`, () => success(true)),
 
-
-
-
-
   // MCP APIs
-
-
-
-
 
   http.post(`${TAURI_ENDPOINT}/restart_app`, () => success(true)),
 
@@ -157,14 +239,10 @@ export const handlers = [
     success(null),
   ),
 
-
-
-
   http.post(`${TAURI_ENDPOINT}/get_config_dir`, async ({ request }) => {
     const { app } = await withJson<{ app: AppId }>(request);
     return success(app === "claude" ? "/default/claude" : "/default/codex");
   }),
-
 
   http.post(
     `${TAURI_ENDPOINT}/select_config_directory`,
