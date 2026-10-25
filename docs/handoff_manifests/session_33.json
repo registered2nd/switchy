@@ -1,0 +1,91 @@
+{
+  "schema_version": 2,
+  "base": {
+    "context_generated_at": "2026-10-25T08:14:56.734505Z",
+    "context_source_revision": "workstate:handoff/switchy/session_32@sha256:cf7edd151cbb8a09809b9710385912c1bc1be1ecb44a283b2b214927b428c642",
+    "publication_token": 2374
+  },
+  "session": {
+    "id": "session_33",
+    "title": "1.0.43 released: usage badges show loading; Cursor and Antigravity sign-in links stay in the terminal",
+    "started_at": "2026-10-25T09:46:40Z",
+    "ended_at": "2026-10-25T09:46:40Z",
+    "purpose": "Follow-ups to SW306 from the user via the coordinator: fix the Antigravity card showing no usage badge, extend 'Open sign-in links manually' to Cursor CLI, Antigravity CLI and Kimi Code where each allows it (with no real sign-in as a test), check agy's SSH variables, Kimi's BROWSER and a WSL fallback, then publish 1.0.43 like 1.0.42 and hand off. A DeepSeek preset update was requested and then withdrawn; nothing was changed.",
+    "pickup": null,
+    "task_ids": [
+      "SW306"
+    ],
+    "artifact_ids": [],
+    "decision_pointers": [
+      "C:/Projects/Switchy/DECISION_LOG.md"
+    ],
+    "finding_pointers": [
+      "C:/Projects/Switchy/README.md",
+      "C:/Projects/Switchy/CHANGELOG.md"
+    ],
+    "evidence_pointers": [
+      "git:86eb589e",
+      "git:a272d350",
+      "git:f2d8c73c",
+      "https://github.com/registered2nd/switchy/releases/tag/v1.0.43",
+      "https://github.com/registered2nd/switchy/actions/runs/40181241906"
+    ],
+    "attention": false,
+    "attention_note": null,
+    "outcomes": [
+      "Usage badge: requests were being made; the badge rendered nothing while its first request was in flight (2.4 s uncached for Antigravity, longer on the first request after start, which scans agy and renews the token) and the window drops a reading 5 minutes after its card leaves the screen. the user's screenshot (08:31:43Z) was a reopened tab mid-load. Fix: 'Loading...' state, readings kept 30 minutes off screen, a log line per Cursor/Antigravity usage read. The Cursor card had the same gap. Verified on the installed build: both cards show real quota and the log lines appear.",
+      "Open sign-in links manually: Cursor - cursor-agent honours NO_OPEN_BROWSER (code-verified); Switchy sets it =1 in the Windows user environment and restores any earlier value when off. Antigravity - agy's consumer sign-in (auth.(*oauthMethod).StartInteractive) opens the browser only when SSH_CLIENT, SSH_TTY and SSH_CONNECTION are all empty, and its sign-in screen (AuthModel.renderFullView) always shows the link; agy has no login subcommand, so a PowerShell profile function sets SSH_CLIENT only for an agy started with no gemini:antigravity credential. Harmless checks with cmd in place of agy confirmed both branches; a cmdkey header false-match was caught and fixed before release. Kimi Code - cmd /c start on Windows and xdg-open on Linux/WSL (WSL hands https to google-chrome.desktop before BROWSER): no supported way; README limitation. WSL fallback does not hold (WSLg Chrome present; agy/kimi not installed in WSL; logins would not reach the Windows install).",
+      "During the xdg-open check a Linux Chrome briefly opened https://example.invalid/sign-in in WSL; no process was left.",
+      "A redundant 'done SW306' re-run created two Workstate conflicts (illegal done->done, then a stale-version discard); both discarded at conflict version 1; SW306 remains done with ref 6fd2c667, follow-up commits listed here.",
+      "Released v1.0.43 on registered2nd/switchy (Latest) with setup.exe, msi and the aarch64 DMG; private origin and public main pushed (public 88693ec0); installers/ holds the 1.0.43 exe, msi and DMG.",
+      "This machine: 1.0.43 installed; 'Open sign-in links manually' is on (NO_OPEN_BROWSER=1, agy launcher in both PowerShell profiles); Cursor and Antigravity tabs visible with one registered2nd@gmail.com card each; quota history recording. Laptop stays on 1.0.40 with Switchy quit; another user's PC and Mac on 1.0.39."
+    ],
+    "latest_summary": "1.0.43 released: usage badges show a loading state; Open sign-in links manually covers Cursor CLI (NO_OPEN_BROWSER) and agy started signed out (SSH_CLIENT launcher); Kimi has no supported way."
+  },
+  "context": {
+    "current_focus": {
+      "source": "C:/Projects/Switchy/README.md",
+      "summary": "Switchy 1.0.43 is released (GitHub Latest, Windows installers and Apple Silicon DMG) and runs on the workstation with 'Open sign-in links manually' on: Cursor CLI and Antigravity CLI account switching, quota history in switchy.db, usage badges with a loading state, and sign-in links kept in the terminal for cursor-agent and for agy started signed out. The laptop has 1.0.40 with Switchy quit; another user's PC and Mac have 1.0.39. Await the user's feedback; the confirmations below stay pending under their triggers."
+    },
+    "initiative_focus": [],
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/crash_restart.rs",
+        "summary": "CONFIRM THE CRASH RESTART ON THE NEXT REAL CRASH (1.0.40). After any Switchy crash on the workstation: Application log event 1000 for switchy.exe, then within about a minute a new switchy.log starting with '[crash_restart] Windows will restart Switchy after a crash or hang' and the proxy on 15721 without a manual start; switchy.prev.log ends at the crash; ~/.switchy/crash.log gains an [ABNORMAL EXIT] entry naming the exception, any 'Windows ran out of memory' line and the dump path. A restart that did not happen while commit was still exhausted is the known single-attempt limit (finding doc option 2 is the backstop)."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/connect_tunnel.rs",
+        "summary": "Confirm account-proxy coverage on the next natural Claude sign-in or renewal while Owen is selected, without forcing a new login. Claude Code's own exchange should log '[connect_tunnel] platform.claude.com:443 via socks5://82.26.163.142:45001'. For Switchy's renewal, observe '[claude_pool] refreshing login for provider=98e00f12...' and the successful refreshed-login message; the enforced per-account client route is owned by proxy/http_client.rs. Windows/WSL HTTPS_PROXY and NO_PROXY, UK exit probes and telemetry tunnels were verified; a live sign-in/renewal using this route remains unobserved. Connection failures must stop rather than fall back to direct; country observations only warn."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/lib.rs",
+        "summary": "CONFIRM THE RESTART PATH ON STEPHEN'S NEXT WINDOWS RESTART (1.0.29). In C:/Users/Administrator/.switchy/logs/switchy.prev.log after 'Session ending; handing the live configs back': '[session-end] claude/codex/gemini handed back', '[session-end] ... in WSL handed back', then 'Live configs handed back for the session end'. 'did not finish in 4 seconds' with the last [session-end] line shows which step stalls (Windows step = database lock, WSL step = WSL I/O); fix that step. In switchy.log: Switchy started within seconds of login (window hidden, launched with --autostart from HKCU Run), '[auto_launch] start at login on', proxy on 15721, and Claude Code / Codex answer without ECONNREFUSED."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+        "summary": "CONFIRM CLAUDE LOGINS STAY IN STEP WITH WSL (1.0.27). In switchy.log, when an account WSL is signed in to renews: '[claude_pool] provider=... took the newer login from WSL' or 'wrote the refreshed login through to WSL', and no new 'invalid_grant' 'Refresh token not found or invalid' in account_switches/provider_health. WSL's ~/.claude/.credentials.json and ~/.switchy/accounts/<id>/credentials.json for that account should carry the same refreshToken after each renewal."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/codex_ws.rs",
+        "summary": "CONFIRM ROTATION AND CODEX FAILOVER ON LIVE TRAFFIC (1.0.25/1.0.26). In C:/Users/Administrator/.switchy/logs/switchy.log and the switchy.db account_switches table: (a) when an account's five-hour window resets while another serves, a switch back to it with reason 'recovered' and detail \"Another account's weekly limit resets sooner\"; (b) a Codex turn refused for usage that continues an earlier one logs '[CodexWS] provider=... websocket closed (turn refused for usage; Codex resends it in full)' and the turn then completes on the next account with no error in Codex. GET http://127.0.0.1:15721/switchy/accounts shows current account, pool order, quota and atLimit per account."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/services/manual_sign_in.rs",
+        "summary": "CONFIRM CURSOR/ANTIGRAVITY ON THE NEXT REAL SIGN-IN (1.0.43). No sign-in was run to test, and only one account of each exists. When the user adds a second account: enable the new empty card, open a NEW PowerShell, sign in. Expect: cursor-agent login prints 'Open a browser and navigate to this link' and opens no browser (user env NO_OPEN_BROWSER=1); agy started signed out shows its link with a code field and opens no browser (the profile function from ~/.switchy/manual_sign_in/agy_sign_in.ps1 sets SSH_CLIENT only when cmdkey lists no gemini:antigravity entry). Then switch back to the first card: switchy.log shows no '[cursor_account]'/'[antigravity_account] live login (...) is not the account' refusal for a normal switch, cursor-agent status and agy's log name the first account, and each card keeps its own email and usage badge ('[...] usage of provider=... N windows' lines). Kimi Code still opens the default browser (README limitation)."
+      }
+    ]
+  },
+  "task_completions": []
+}
