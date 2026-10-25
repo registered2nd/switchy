@@ -8,6 +8,29 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.43] — 2026-10-25 — Usage badges say when they are loading; Cursor sign-in links stay in the terminal
+
+Windows installer: download `Switchy_1.0.43_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.43_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Fixed
+
+- **A usage badge no longer looks missing while it loads.** A card whose
+  usage was still being fetched showed nothing at all, so an Antigravity or
+  Cursor card opened after a while away looked as if it had no usage. It now
+  shows *Loading...* until the figures arrive, and a tab you return to within
+  30 minutes shows the last figures at once while fresh ones are fetched.
+
+### Changed
+
+- **Open sign-in links manually covers Cursor CLI.** With the option on,
+  `cursor-agent login` on Windows prints its sign-in link instead of opening
+  your default browser, so you can paste it into the browser profile of the
+  account you are adding. Open a new terminal after turning it on. Kimi Code
+  and Antigravity CLI have no way to stop opening the default browser; Kimi
+  prints the link as well, so you can paste it into the right profile.
+
 ## [1.0.42] — 2026-10-25 — Quota history
 
 Windows installer: download `Switchy_1.0.42_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

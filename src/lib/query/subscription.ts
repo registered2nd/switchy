@@ -3,6 +3,9 @@ import { subscriptionApi } from "@/lib/api/subscription";
 import type { AppId } from "@/lib/api/types";
 
 const REFETCH_INTERVAL = 5 * 60 * 1000; // 5 minutes
+// A card that leaves the screen keeps its last reading this long, so going
+// back to its tab shows it at once while a fresh one is fetched.
+const KEEP_READING = 30 * 60 * 1000;
 
 /** `liveOwner` is the provider in use, so a switch never shows the previous account's figures. */
 export function useSubscriptionQuota(
@@ -13,6 +16,7 @@ export function useSubscriptionQuota(
   return useQuery({
     queryKey: ["subscription", "quota", appId, liveOwner ?? ""],
     queryFn: () => subscriptionApi.getQuota(appId),
+    gcTime: KEEP_READING,
     enabled: enabled && ["claude", "codex", "gemini"].includes(appId),
     refetchInterval: REFETCH_INTERVAL,
     refetchOnWindowFocus: true,
@@ -34,6 +38,7 @@ export function useSubscriptionQuotaForProvider(
   return useQuery({
     queryKey: ["subscription", "quota", "provider", appId, providerId],
     queryFn: () => subscriptionApi.getQuotaForProvider(appId, providerId),
+    gcTime: KEEP_READING,
     enabled:
       enabled &&
       !!providerId &&

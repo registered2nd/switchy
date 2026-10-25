@@ -670,11 +670,26 @@ pub async fn quota_for_provider(
         return Ok(SubscriptionQuota::not_found(app.as_str()));
     };
     let settings = effective_login(state, app, &provider).map_err(|e| e.to_string())?;
-    Ok(match app {
+    let quota = match app {
         AppType::Cursor => query_cursor(&settings).await,
         AppType::Antigravity => query_antigravity(&settings).await,
         _ => SubscriptionQuota::not_found(app.as_str()),
-    })
+    };
+    if quota.success {
+        log::info!(
+            "[{}_account] usage of provider={provider_id}: {} windows",
+            app.as_str(),
+            quota.tiers.len()
+        );
+    } else {
+        log::warn!(
+            "[{}_account] usage of provider={provider_id} not read ({:?}): {}",
+            app.as_str(),
+            quota.credential_status,
+            quota.error.as_deref().unwrap_or("no login")
+        );
+    }
+    Ok(quota)
 }
 
 #[cfg(test)]

@@ -123,6 +123,23 @@ const SubscriptionQuotaFooter: React.FC<SubscriptionQuotaFooterProps> = ({
     return () => clearInterval(interval);
   }, [quota?.queriedAt]);
 
+  // The first reading is still on its way: say so, rather than showing a
+  // card that looks as if it has no usage.
+  if (!quota && loading) {
+    return (
+      <div
+        className={
+          inline
+            ? "inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+            : "mt-3 flex items-center gap-2 text-xs text-muted-foreground"
+        }
+      >
+        <RefreshCw size={12} className="animate-spin" />
+        <span>{t("common.loading")}</span>
+      </div>
+    );
+  }
+
   // No credentials: render nothing
   if (!quota || quota.credentialStatus === "not_found") return null;
 
