@@ -1,4 +1,5 @@
-//! Own only Claude's browser override and Cursor CLI's `NO_OPEN_BROWSER`.
+//! Own only Claude's browser override, Cursor CLI's `NO_OPEN_BROWSER` and
+//! the `agy` launcher.
 //! Keep the prior value for turning it off.
 
 use std::fs;
@@ -84,6 +85,9 @@ pub fn apply(settings: &AppSettings) -> Result<(), AppError> {
         )?;
     }
     configure_cursor(settings.manual_sign_in)?;
+    #[cfg(windows)]
+    configure_agy(&crate::config::get_home_dir(), settings.manual_sign_in)
+        .map_err(|e| AppError::Message(format!("Could not set up the agy launcher: {e}")))?;
     crate::proxy::codex_engine::configure_manual_sign_in(settings)
 }
 
@@ -293,6 +297,66 @@ fn configure_claude(dir: &Path, enabled: bool, browser: &str) -> Result<(), AppE
     Ok(())
 }
 
+const AGY_SHELL: &str = include_str!("agy_sign_in.ps1");
+const AGY_PROFILE_TAG: &str = "# Switchy agy sign-in";
+
+/// `agy` opens no browser for its sign-in when it believes it runs over SSH,
+/// and shows the link. A PowerShell function sets `SSH_CLIENT` for an `agy`
+/// started with no saved sign-in, the session that signs in; the variable
+/// also changes `agy`'s terminal-feature guesses, so it is not set otherwise.
+#[cfg(windows)]
+fn configure_agy(home: &Path, enabled: bool) -> std::io::Result<()> {
+    let script = home
+        .join(".switchy")
+        .join("manual_sign_in")
+        .join("agy_sign_in.ps1");
+    let quoted = script.to_string_lossy().replace('\'', "''");
+    let line =
+        format!("if (Test-Path -LiteralPath '{quoted}') {{ . '{quoted}' }} {AGY_PROFILE_TAG}");
+    if enabled && fs::read_to_string(&script).ok().as_deref() != Some(AGY_SHELL) {
+        fs::create_dir_all(script.parent().unwrap())?;
+        fs::write(&script, AGY_SHELL)?;
+    }
+    for shell in ["WindowsPowerShell", "PowerShell"] {
+        let profile = home.join("Documents").join(shell).join("profile.ps1");
+        let current = match fs::read_to_string(&profile) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(e),
+        };
+        let mut lines: Vec<&str> = current
+            .lines()
+            .filter(|l| !l.contains(AGY_PROFILE_TAG))
+            .collect();
+        if enabled {
+            if lines.last().is_some_and(|l| !l.is_empty()) {
+                lines.push("");
+            }
+            lines.push(&line);
+        }
+        let next = if lines.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "{}
+",
+                lines.join(
+                    "
+"
+                )
+            )
+        };
+        if current != next && !(current.is_empty() && !enabled) {
+            fs::create_dir_all(profile.parent().unwrap())?;
+            fs::write(&profile, next)?;
+        }
+    }
+    if !enabled && script.exists() {
+        fs::remove_file(&script)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,6 +403,43 @@ mod tests {
         configure_claude(root.path(), true, "no-browser").unwrap();
         configure_claude(root.path(), false, "").unwrap();
         assert!(!root.path().join("settings.json").exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_agy_launcher_is_installed_once_and_removed_with_the_user_profile_kept() {
+        let home = tempfile::tempdir().unwrap();
+        let profile = home.path().join("Documents/PowerShell/profile.ps1");
+        fs::create_dir_all(profile.parent().unwrap()).unwrap();
+        fs::write(
+            &profile,
+            "$env:EXAMPLE = 'kept'
+",
+        )
+        .unwrap();
+        configure_agy(home.path(), true).unwrap();
+        configure_agy(home.path(), true).unwrap();
+        let text = fs::read_to_string(&profile).unwrap();
+        assert!(text.starts_with(
+            "$env:EXAMPLE = 'kept'
+"
+        ));
+        assert_eq!(text.matches(AGY_PROFILE_TAG).count(), 1);
+        assert!(home
+            .path()
+            .join(".switchy/manual_sign_in/agy_sign_in.ps1")
+            .exists());
+        configure_agy(home.path(), false).unwrap();
+        assert_eq!(
+            fs::read_to_string(&profile).unwrap(),
+            "$env:EXAMPLE = 'kept'
+
+"
+        );
+        assert!(!home
+            .path()
+            .join(".switchy/manual_sign_in/agy_sign_in.ps1")
+            .exists());
     }
 
     #[cfg(windows)]

@@ -8,7 +8,7 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
-## [1.0.43] — 2026-10-25 — Usage badges say when they are loading; Cursor sign-in links stay in the terminal
+## [1.0.43] — 2026-10-25 — Usage badges say when they are loading; Cursor and Antigravity sign-in links stay in the terminal
 
 Windows installer: download `Switchy_1.0.43_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
 
@@ -24,12 +24,14 @@ macOS (Apple Silicon): download `Switchy_1.0.43_aarch64.dmg` below, open it and 
 
 ### Changed
 
-- **Open sign-in links manually covers Cursor CLI.** With the option on,
+- **Open sign-in links manually covers Cursor CLI and Antigravity CLI.** With the option on,
   `cursor-agent login` on Windows prints its sign-in link instead of opening
   your default browser, so you can paste it into the browser profile of the
-  account you are adding. Open a new terminal after turning it on. Kimi Code
-  and Antigravity CLI have no way to stop opening the default browser; Kimi
-  prints the link as well, so you can paste it into the right profile.
+  account you are adding, and `agy` started in PowerShell while signed out
+  (as it is after enabling an empty Antigravity card) shows its link instead
+  of opening a browser. Open a new terminal after turning it on. Kimi Code
+  has no way to stop opening the default browser; it prints the link as
+  well, so you can paste it into the right profile.
 
 ## [1.0.42] — 2026-10-25 — Quota history
 
