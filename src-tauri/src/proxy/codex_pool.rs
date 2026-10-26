@@ -46,6 +46,14 @@ const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 
 /// Refresh when the access token has less than this left.
 const REFRESH_WINDOW_SECS: i64 = 300;
+/// Also refresh a login renewed this long ago. Codex renews its own once
+/// `last_refresh` is 8 days old; renewing first makes the proxy the holder
+/// that renews and hands the result to the others.
+const PROACTIVE_REFRESH_AGE_SECS: i64 = 7 * 24 * 3600;
+/// A renewal made only because the login is old is not retried sooner than
+/// this after an attempt, so an unreachable token endpoint does not hold up
+/// every request.
+const PROACTIVE_RETRY_SECS: i64 = 600;
 /// A 401 that arrives this soon after a refresh is about a request sent before
 /// it; refreshing again would only rotate the token a second time.
 const FORCED_REFRESH_FLOOR_SECS: i64 = 60;
@@ -120,6 +128,17 @@ fn access_token_expiry(auth: &Value) -> Option<i64> {
         .as_i64()
 }
 
+fn is_expiring(auth: &Value, now: i64) -> bool {
+    access_token_expiry(auth).is_none_or(|exp| exp - now < REFRESH_WINDOW_SECS)
+}
+
+/// True when the login was last renewed `PROACTIVE_REFRESH_AGE_SECS` ago or
+/// more. A login with no `last_refresh` is left to its expiry.
+fn is_due_by_age(auth: &Value, now: i64) -> bool {
+    codex_account::inspect(auth)
+        .is_some_and(|l| l.last_refresh > 0 && now - l.last_refresh >= PROACTIVE_REFRESH_AGE_SECS)
+}
+
 // ── Keeping a login usable ──────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -127,6 +146,7 @@ struct RefreshState {
     /// Refresh token OpenAI has rejected. Re-sending it can only fail again.
     dead_refresh_token: Option<String>,
     last_refresh_at: i64,
+    last_attempt_at: i64,
 }
 
 static REFRESH_STATE: Lazy<Mutex<HashMap<String, RefreshState>>> =
@@ -164,8 +184,9 @@ fn refresh_lock(provider_id: &str) -> Arc<tokio::sync::Mutex<()>> {
 /// mirror's) after that account has answered a request, so new sessions and
 /// `/status` show the account the proxy serves. Only a login that just worked
 /// is written: Codex reads the saved login at startup, straight from OpenAI,
-/// and exits on a refused one. A login Codex renewed on its own is filed with
-/// its account first.
+/// and exits on a refused one. The logins in both files are filed with their
+/// accounts first, so a login Codex renewed on either side is kept by the
+/// provider holding that account before its file is overwritten.
 pub fn save_login_of_serving_account(db: &Database, provider: &Provider) {
     let live = read_live_auth();
     let Some(login) = db
@@ -320,10 +341,45 @@ fn announce_sign_in(provider_id: &str) {
 }
 
 fn read_live_auth() -> Value {
-    let path = crate::codex_config::get_codex_auth_path();
-    match std::fs::read(&path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or(Value::Null),
-        Err(_) => Value::Null,
+    LoginFile::Own.read()
+}
+
+/// The two installs whose Codex holds, and renews, a login of its own: this
+/// machine's `auth.json` and the WSL mirror's. Each is another holder of the
+/// account its login names, whichever provider is current.
+#[derive(Debug, Clone, Copy)]
+enum LoginFile {
+    Own,
+    Wsl,
+}
+
+impl LoginFile {
+    const ALL: [LoginFile; 2] = [LoginFile::Own, LoginFile::Wsl];
+
+    /// `None` for WSL when no mirror is configured. The mirror's path falls
+    /// back between `\\wsl$\` and `\\wsl.localhost\` when its prefix does not
+    /// answer.
+    fn path(self) -> Option<std::path::PathBuf> {
+        match self {
+            LoginFile::Own => Some(crate::codex_config::get_codex_auth_path()),
+            LoginFile::Wsl => {
+                crate::settings::get_codex_mirror_override_dir().map(|dir| dir.join("auth.json"))
+            }
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            LoginFile::Own => "auth.json",
+            LoginFile::Wsl => "WSL's auth.json",
+        }
+    }
+
+    fn read(self) -> Value {
+        self.path()
+            .and_then(|path| std::fs::read(path).ok())
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or(Value::Null)
     }
 }
 
@@ -335,26 +391,28 @@ fn stored_auth(provider: &Provider) -> Value {
         .unwrap_or(Value::Null)
 }
 
-/// If Codex's own `auth.json` holds a newer login for the same account, take
-/// it: Codex refreshed, and the stored copy's refresh token is now spent.
-fn adopt_newer_live_login(db: &Database, provider: &mut Provider) {
+/// If `file` holds a newer login for the same account, take it: that Codex
+/// refreshed, and the stored copy's refresh token is now spent. An account
+/// marked as needing sign-in is announced signed in again. Returns whether
+/// the login was taken.
+fn adopt_newer_live_login(db: &Database, provider: &mut Provider, file: LoginFile) -> bool {
     let stored = stored_auth(provider);
-    let live = read_live_auth();
+    let live = file.read();
     let (Some(stored_login), Some(live_login)) = (
         codex_account::inspect(&stored),
         codex_account::inspect(&live),
     ) else {
-        return;
+        return false;
     };
     if !live_login.alive
         || stored_login.account_key().is_none()
         || stored_login.account_key() != live_login.account_key()
         || live_login.last_refresh <= stored_login.last_refresh
     {
-        return;
+        return false;
     }
     if codex_account::judge_backfill(&stored, &live) != BackfillVerdict::Accept {
-        return;
+        return false;
     }
     let was_refused = needs_sign_in(provider);
     let merged = codex_account::transplant_login(&stored, &live);
@@ -364,34 +422,50 @@ fn adopt_newer_live_login(db: &Database, provider: &mut Provider) {
     match db.save_provider("codex", provider) {
         Ok(()) => {
             log::info!(
-                "[codex_pool] provider={} took the newer login from auth.json",
-                provider.id
+                "[codex_pool] provider={} took the newer login from {}",
+                provider.id,
+                file.name()
             );
             if was_refused {
                 announce_sign_in(&provider.id);
             }
+            true
         }
-        Err(e) => log::warn!(
-            "[codex_pool] could not store the newer live login for provider={}: {e}",
-            provider.id
-        ),
+        Err(e) => {
+            log::warn!(
+                "[codex_pool] could not store the newer login from {} for provider={}: {e}",
+                file.name(),
+                provider.id
+            );
+            false
+        }
     }
 }
 
-/// A `codex login` run while the proxy serves Codex only reaches `auth.json`:
-/// switching is a hot switch then, so no switch-away backfill ever reads it.
-/// Called before each Codex request is routed, this files it under the rules
-/// that backfill applies. The provider holding that account takes a newer
-/// login of it; a login of an account no provider holds goes to the current
-/// Official provider when that holds no usable login of its own — the one
-/// enabled so it could be signed in. While Codex on Windows has no login, a
-/// sign-in made in WSL is carried over first, so the request it sent is
-/// served on it.
+/// A `codex login`, or a renewal by a Codex the proxy does not serve, only
+/// reaches that install's `auth.json`: switching is a hot switch then, so no
+/// switch-away backfill ever reads it. Called before each Codex request is
+/// routed and after each reconcile pass, this files the login of each file
+/// (this machine's, then WSL's) under the rules that backfill applies,
+/// whichever account the other file holds. The provider holding that
+/// account takes a newer login of it; a login of an account no provider
+/// holds goes to the current Official provider when that holds no usable
+/// login of its own — the one enabled so it could be signed in. While Codex
+/// on Windows has no login, a sign-in made in WSL is carried over first, so
+/// the request it sent is served on it.
 pub fn file_live_login(db: &Database) {
-    let mut live = read_live_auth();
-    if !codex_account::inspect(&live).is_some_and(|l| l.alive) {
+    if !codex_account::inspect(&read_live_auth()).is_some_and(|l| l.alive) {
         crate::services::credential_mirror::reconcile_codex();
-        live = read_live_auth();
+    }
+    for file in LoginFile::ALL {
+        file_login_of(db, file);
+    }
+}
+
+fn file_login_of(db: &Database, file: LoginFile) {
+    let live = file.read();
+    if !codex_account::inspect(&live).is_some_and(|l| l.alive) {
+        return;
     }
     let Ok(providers) = db.get_all_providers("codex") else {
         return;
@@ -406,7 +480,7 @@ pub fn file_live_login(db: &Database) {
         None => {}
         Some(LiveLoginHome::Holder(id)) => {
             if let Some(mut holder) = providers.into_iter().find(|p| p.id == id) {
-                adopt_newer_live_login(db, &mut holder);
+                adopt_newer_live_login(db, &mut holder, file);
             }
         }
         Some(LiveLoginHome::Current(id)) => {
@@ -420,8 +494,9 @@ pub fn file_live_login(db: &Database) {
             match db.save_provider("codex", &current) {
                 Ok(()) => {
                     log::info!(
-                        "[codex_pool] provider={} took the new login from auth.json",
-                        current.id
+                        "[codex_pool] provider={} took the new login from {}",
+                        current.id,
+                        file.name()
                     );
                     announce_sign_in(&current.id);
                 }
@@ -482,11 +557,14 @@ fn live_login_home(
 /// renewed or signed in itself. `incoming` (the current provider's settings)
 /// supplies the login only when Codex has none, so a refused login the
 /// current provider holds is not handed to Codex, which could not start on
-/// it. Logins Codex renewed are filed with their accounts first.
+/// it. Logins Codex renewed, here or in WSL, are filed with their accounts
+/// first.
 pub fn keep_live_login(db: &Database, incoming: &mut Value) {
     if let Ok(providers) = db.get_all_providers("codex") {
         for mut provider in providers.into_values() {
-            adopt_newer_live_login(db, &mut provider);
+            for file in LoginFile::ALL {
+                adopt_newer_live_login(db, &mut provider, file);
+            }
         }
     }
 
@@ -504,7 +582,8 @@ pub fn keep_live_login(db: &Database, incoming: &mut Value) {
 }
 
 /// Credentials for `provider`, refreshed first when the access token is about
-/// to run out. `force` refreshes regardless, in answer to a 401.
+/// to run out or the login was renewed `PROACTIVE_REFRESH_AGE_SECS` ago.
+/// `force` refreshes regardless, in answer to a 401.
 pub async fn credentials_for(
     db: &Arc<Database>,
     provider: &Provider,
@@ -520,26 +599,39 @@ pub async fn credentials_for(
         .ok()
         .flatten()
         .unwrap_or_else(|| provider.clone());
-    adopt_newer_live_login(db, &mut current);
+    adopt_newer_live_login(db, &mut current, LoginFile::Own);
 
-    let auth = stored_auth(&current);
     let now = chrono::Utc::now().timestamp();
-    let expiring = access_token_expiry(&auth).is_none_or(|exp| exp - now < REFRESH_WINDOW_SECS);
-
-    let recently_refreshed = {
+    let (recently_refreshed, recently_tried) = {
         let state = REFRESH_STATE.lock().unwrap_or_else(|e| e.into_inner());
-        state
-            .get(&current.id)
-            .is_some_and(|s| now - s.last_refresh_at < FORCED_REFRESH_FLOOR_SECS)
+        let entry = state.get(&current.id);
+        (
+            entry.is_some_and(|s| now - s.last_refresh_at < FORCED_REFRESH_FLOOR_SECS),
+            entry.is_some_and(|s| now - s.last_attempt_at < PROACTIVE_RETRY_SECS),
+        )
+    };
+    let due = |auth: &Value| {
+        let expiring = is_expiring(auth, now);
+        (
+            expiring,
+            expiring || (is_due_by_age(auth, now) && !recently_tried),
+        )
     };
 
-    if expiring || (force && !recently_refreshed) {
-        match refresh_login(db, &mut current).await {
-            Ok(()) => {}
-            Err(e) if expiring => return Err(e),
-            // A forced refresh that fails leaves a token that may still work
-            // for other requests; the caller relays the original 401.
-            Err(e) => log::warn!("[codex_pool] forced refresh failed: {e}"),
+    let (_, due_now) = due(&stored_auth(&current));
+    if due_now || (force && !recently_refreshed) {
+        // A login WSL's Codex renewed already is the renewal; refreshing the
+        // stored token would be refused, and would spend WSL's if it were not.
+        let from_wsl = adopt_newer_live_login(db, &mut current, LoginFile::Wsl);
+        let (expiring, due_now) = due(&stored_auth(&current));
+        if !from_wsl || due_now {
+            match refresh_login(db, &mut current).await {
+                Ok(()) => {}
+                Err(e) if expiring => return Err(e),
+                // A forced or early refresh that fails leaves a token that
+                // may still work; a 401's caller relays the original 401.
+                Err(e) => log::warn!("[codex_pool] refresh before expiry failed: {e}"),
+            }
         }
     }
 
@@ -567,12 +659,10 @@ async fn refresh_login(db: &Arc<Database>, provider: &mut Provider) -> Result<()
         .to_string();
 
     {
-        let state = REFRESH_STATE.lock().unwrap_or_else(|e| e.into_inner());
-        if state
-            .get(&provider.id)
-            .and_then(|s| s.dead_refresh_token.as_deref())
-            == Some(refresh_token.as_str())
-        {
+        let mut state = REFRESH_STATE.lock().unwrap_or_else(|e| e.into_inner());
+        let entry = state.entry(provider.id.clone()).or_default();
+        entry.last_attempt_at = chrono::Utc::now().timestamp();
+        if entry.dead_refresh_token.as_deref() == Some(refresh_token.as_str()) {
             return Err(ProxyError::AuthError(format!(
                 "Codex provider {} needs a new sign-in (its refresh token was rejected); run `codex login` while it is current",
                 provider.name
@@ -670,8 +760,9 @@ fn apply_refresh_response(auth: &Value, data: &Value) -> Option<Value> {
 }
 
 /// A refresh spends the old refresh token everywhere it is held. Hand the new
-/// login to the two other places that may hold this account: Codex's own
-/// `auth.json` (a running session reloads it on its next 401 because the
+/// login to the other places that may hold this account: Codex's own
+/// `auth.json` and WSL's, each when it holds this account whichever provider
+/// is current (a running session reloads it on its next 401 because the
 /// account matches), and the takeover backup that is restored when the proxy
 /// is turned off.
 async fn propagate_refreshed_login(db: &Arc<Database>, new_auth: &Value) {
@@ -687,16 +778,23 @@ async fn propagate_refreshed_login(db: &Arc<Database>, new_auth: &Value) {
             == Some(new_key.as_str())
     };
 
-    let live = read_live_auth();
-    if same_account(&live) {
+    for file in LoginFile::ALL {
+        let (Some(path), live) = (file.path(), file.read()) else {
+            continue;
+        };
+        if !same_account(&live) {
+            continue;
+        }
         let merged = codex_account::transplant_login(&live, new_auth);
-        let path = crate::codex_config::get_codex_auth_path();
         match serde_json::to_vec_pretty(&merged)
             .map_err(|e| e.to_string())
             .and_then(|bytes| crate::config::atomic_write(&path, &bytes).map_err(|e| e.to_string()))
         {
-            Ok(()) => log::info!("[codex_pool] wrote the refreshed login through to auth.json"),
-            Err(e) => log::warn!("[codex_pool] could not update auth.json: {e}"),
+            Ok(()) => log::info!(
+                "[codex_pool] wrote the refreshed login through to {}",
+                file.name()
+            ),
+            Err(e) => log::warn!("[codex_pool] could not update {}: {e}", file.name()),
         }
     }
 
@@ -1134,6 +1232,254 @@ mod tests {
             live_login_home(&providers, Some("empty"), &Value::Null),
             None
         );
+    }
+
+    // ── WSL holding an account ──────────────────────────────────────────────
+
+    struct WslHome {
+        dir: tempfile::TempDir,
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl WslHome {
+        /// A sandboxed home with a WSL `.codex` folder configured as the mirror.
+        fn new() -> Self {
+            let dir = tempfile::TempDir::new().expect("temp home");
+            let saved = ["HOME", "USERPROFILE", crate::paths::ENV_TEST_HOME]
+                .into_iter()
+                .map(|key| {
+                    let old = std::env::var(key).ok();
+                    std::env::set_var(key, dir.path());
+                    (key, old)
+                })
+                .collect();
+            crate::settings::reload_settings().expect("reload settings");
+            let home = Self { dir, saved };
+            std::fs::create_dir_all(home.mirror_dir()).expect("mirror dir");
+            let own = crate::codex_config::get_codex_auth_path();
+            std::fs::create_dir_all(own.parent().expect("parent")).expect("own dir");
+            let mut settings = crate::settings::get_settings();
+            settings.codex_mirror_config_dir = Some(home.mirror_dir().to_string_lossy().into());
+            crate::settings::update_settings(settings).expect("set mirror dir");
+            home
+        }
+
+        fn mirror_dir(&self) -> std::path::PathBuf {
+            self.dir.path().join("wsl").join(".codex")
+        }
+
+        fn sign_wsl_in(&self, login: &Value) {
+            crate::config::write_json_file(&self.mirror_dir().join("auth.json"), login)
+                .expect("wsl login");
+        }
+
+        fn wsl_login(&self) -> Value {
+            crate::config::read_json_file(&self.mirror_dir().join("auth.json")).expect("read")
+        }
+
+        fn sign_own_in(&self, login: &Value) {
+            crate::config::write_json_file(&crate::codex_config::get_codex_auth_path(), login)
+                .expect("own login");
+        }
+
+        fn own_login(&self) -> Value {
+            crate::config::read_json_file(&crate::codex_config::get_codex_auth_path())
+                .expect("read")
+        }
+    }
+
+    impl Drop for WslHome {
+        fn drop(&mut self) {
+            for (key, old) in &self.saved {
+                match old {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+            let _ = crate::settings::reload_settings();
+        }
+    }
+
+    /// `login` renewed at `last_refresh`, with refresh token `refresh`.
+    fn renewed(mut login: Value, refresh: &str, last_refresh: &str) -> Value {
+        login["tokens"]["refresh_token"] = json!(refresh);
+        login["last_refresh"] = json!(last_refresh);
+        login
+    }
+
+    fn refresh_of(auth: &Value) -> Option<&str> {
+        auth["tokens"]["refresh_token"].as_str()
+    }
+
+    fn account_of(auth: &Value) -> Option<String> {
+        codex_account::inspect(auth).and_then(|l| l.account_key().map(str::to_string))
+    }
+
+    fn stored(db: &Database, id: &str) -> Value {
+        stored_auth(&db.get_provider_by_id(id, "codex").unwrap().unwrap())
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_newer_wsl_login_of_an_account_not_in_use_is_filed_with_its_card() {
+        let home = WslHome::new();
+        let db = Database::memory().expect("db");
+        db.save_provider(
+            "codex",
+            &official("wsl-file-a", login_for("a@x.io", "acct-a")),
+        )
+        .expect("save a");
+        db.save_provider(
+            "codex",
+            &official("wsl-file-b", login_for("b@x.io", "acct-b")),
+        )
+        .expect("save b");
+        home.sign_own_in(&login_for("a@x.io", "acct-a"));
+        home.sign_wsl_in(&renewed(
+            login_for("b@x.io", "acct-b"),
+            "NEW",
+            "2026-10-01T00:00:00Z",
+        ));
+
+        file_live_login(&db);
+
+        assert_eq!(refresh_of(&stored(&db, "wsl-file-b")), Some("NEW"));
+        assert_eq!(refresh_of(&stored(&db, "wsl-file-a")), Some("RRR"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn serving_another_account_keeps_the_login_wsl_renewed() {
+        let home = WslHome::new();
+        let db = Database::memory().expect("db");
+        let serving = official("wsl-save-a", login_for("a@x.io", "acct-a"));
+        db.save_provider("codex", &serving).expect("save a");
+        db.save_provider(
+            "codex",
+            &official("wsl-save-b", login_for("b@x.io", "acct-b")),
+        )
+        .expect("save b");
+        home.sign_own_in(&login_for("b@x.io", "acct-b"));
+        home.sign_wsl_in(&renewed(
+            login_for("b@x.io", "acct-b"),
+            "NEW",
+            "2026-10-01T00:00:00Z",
+        ));
+
+        save_login_of_serving_account(&db, &serving);
+
+        assert_eq!(refresh_of(&stored(&db, "wsl-save-b")), Some("NEW"));
+        assert_eq!(account_of(&home.own_login()).as_deref(), Some("acct-a"));
+        assert_eq!(account_of(&home.wsl_login()).as_deref(), Some("acct-a"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_renewed_login_reaches_wsl_holding_that_account() {
+        let home = WslHome::new();
+        let db = Arc::new(Database::memory().expect("db"));
+        let mut wsl = login_for("a@x.io", "acct-a");
+        wsl["OPENAI_API_KEY"] = Value::Null;
+        home.sign_wsl_in(&wsl);
+
+        let new_auth = renewed(login_for("a@x.io", "acct-a"), "NEW", "2026-10-01T00:00:00Z");
+        propagate_refreshed_login(&db, &new_auth).await;
+
+        let written = home.wsl_login();
+        assert_eq!(refresh_of(&written), Some("NEW"));
+        assert!(
+            written.get("OPENAI_API_KEY").is_some(),
+            "WSL's other keys stay"
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_renewed_login_leaves_wsl_on_another_account_alone() {
+        let home = WslHome::new();
+        let db = Arc::new(Database::memory().expect("db"));
+        home.sign_wsl_in(&renewed(
+            login_for("o@x.io", "acct-o"),
+            "OTHER",
+            "2026-09-22T00:00:00Z",
+        ));
+
+        let new_auth = renewed(login_for("a@x.io", "acct-a"), "NEW", "2026-10-01T00:00:00Z");
+        propagate_refreshed_login(&db, &new_auth).await;
+
+        assert_eq!(refresh_of(&home.wsl_login()), Some("OTHER"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_login_wsl_renewed_is_used_instead_of_renewing_it() {
+        let home = WslHome::new();
+        let db = Arc::new(Database::memory().expect("db"));
+        let mut expiring = login_for("a@x.io", "acct-a");
+        expiring["tokens"]["access_token"] = json!(jwt(json!({ "exp": 1_000 })));
+        let provider = official("wsl-before-renewal", expiring);
+        db.save_provider("codex", &provider).expect("save");
+        let wsl_access = jwt(json!({ "exp": 4_102_444_800i64, "holder": "wsl" }));
+        let mut wsl = renewed(
+            login_for("a@x.io", "acct-a"),
+            "NEW",
+            &chrono::Utc::now().to_rfc3339(),
+        );
+        wsl["tokens"]["access_token"] = json!(wsl_access);
+        home.sign_wsl_in(&wsl);
+
+        let credentials = credentials_for(&db, &provider, false)
+            .await
+            .expect("WSL's login is served without a renewal");
+
+        assert_eq!(credentials.access_token, wsl_access);
+        assert_eq!(refresh_of(&stored(&db, "wsl-before-renewal")), Some("NEW"));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_refused_account_is_cleared_by_a_newer_wsl_login() {
+        let home = WslHome::new();
+        let db = Database::memory().expect("db");
+        let refused = official("wsl-heal", login_for("a@x.io", "acct-a"));
+        db.save_provider("codex", &refused).expect("save");
+        REFRESH_STATE
+            .lock()
+            .unwrap()
+            .entry(refused.id.clone())
+            .or_default()
+            .dead_refresh_token = Some("RRR".into());
+        assert!(needs_sign_in(&refused));
+        home.sign_wsl_in(&renewed(
+            login_for("a@x.io", "acct-a"),
+            "NEW",
+            "2026-10-01T00:00:00Z",
+        ));
+
+        file_live_login(&db);
+
+        let healed = db
+            .get_provider_by_id(&refused.id, "codex")
+            .unwrap()
+            .unwrap();
+        assert!(!needs_sign_in(&healed));
+    }
+
+    #[test]
+    fn a_login_is_renewed_once_it_is_seven_days_old() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-10-25T12:00:00Z")
+            .unwrap()
+            .timestamp();
+        let at = |last_refresh: &str| renewed(login_for("a@x.io", "acct-a"), "RRR", last_refresh);
+        assert!(!is_due_by_age(&at("2026-10-18T12:00:01Z"), now));
+        assert!(is_due_by_age(&at("2026-10-18T12:00:00Z"), now));
+        assert!(
+            is_due_by_age(&at("2026-10-17T12:00:00Z"), now),
+            "before Codex's 8 days"
+        );
+        let mut unknown = login_for("a@x.io", "acct-a");
+        unknown.as_object_mut().unwrap().remove("last_refresh");
+        assert!(!is_due_by_age(&unknown, now), "left to its expiry");
     }
 
     fn headers(pairs: &[(&str, &str)]) -> http::HeaderMap {

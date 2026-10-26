@@ -59,8 +59,9 @@ pub fn start() {
 }
 
 /// Same reconciler for Codex's ChatGPT login (`tokens` in `~/.codex/auth.json`),
-/// which rotates its refresh token the same way. After each pass a sign-in
-/// made on either side is filed with its card straight away.
+/// which rotates its refresh token the same way. After each pass a sign-in or
+/// renewal made on either side is filed with its card straight away, whichever
+/// account the other side holds.
 pub fn start_codex(db: std::sync::Arc<crate::database::Database>) {
     let _ = std::thread::Builder::new()
         .name("codex-cred-mirror".to_string())
