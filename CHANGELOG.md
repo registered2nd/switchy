@@ -8,6 +8,34 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.46] — 2026-10-26 — Codex logins renewed in WSL are kept; "at capacity" no longer bounces between accounts
+
+Windows installer: download `Switchy_1.0.46_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.46_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Fixed
+
+- **"Codex is at capacity" reaches Codex instead of switching accounts.**
+  OpenAI's capacity refusal is a 429 like a usage limit, and Switchy
+  treated it as one: it marked the account spent and sent the request to
+  the next account, and with one account really at its limit a request
+  could bounce between the two every second or two for as long as the
+  capacity problem lasted. Now only a usage-limit refusal moves a request
+  to another account; a capacity refusal goes back to Codex, which shows
+  it and retries the way it does without Switchy. A request tries each
+  account at most once and skips accounts already at their limit.
+- **A Codex login renewed in WSL is kept with its account.** Codex renews
+  a ChatGPT login itself once it is 8 days old. When a Codex in WSL
+  renewed the login of an account Switchy was not serving, the new login
+  stayed in WSL's `auth.json` and was overwritten at the next switch, and
+  the account later showed as signed out ("refresh token has already been
+  used"). Both `auth.json` files, Windows and WSL, are now read for
+  renewed logins of every account; a login Switchy renews is written to
+  each file holding that account; and Switchy renews a login once it is
+  7 days old, so it is normally the one that renews. An account marked
+  signed out recovers once either file holds a newer login of it.
+
 ## [1.0.45] — 2026-10-25 — Accounts by company: plans, relays and balances, each used where you choose
 
 Windows installer: download `Switchy_1.0.45_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
