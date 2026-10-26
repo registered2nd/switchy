@@ -1,0 +1,109 @@
+{
+  "schema_version": 2,
+  "base": {
+    "context_generated_at": "2026-10-25T22:30:47.765711Z",
+    "context_source_revision": "workstate:handoff/switchy/session_35@sha256:c76a47d72f2e70ddf30714143e476be235996afcc3a740bf08b0181d285b7834",
+    "publication_token": 2411
+  },
+  "session": {
+    "id": "session_36",
+    "title": "Codex capacity 429s and WSL-renewed logins fixed (1.0.46); sign in without switching (1.0.47); user-b.zhang signed back in",
+    "started_at": "2026-10-26T14:25:08Z",
+    "ended_at": "2026-10-26T14:25:08Z",
+    "purpose": "the user asked what happened to the second GPT account (user-b.zhang). The investigation found two Switchy bugs (capacity 429s bouncing requests between accounts; a Codex login renewed in WSL lost), which he had fixed, built, installed and released as 1.0.46. He then asked for a way to sign an account in without moving programs off their account, exposed as control routes an agent drives; built and released as 1.0.47 and used to sign user-b.zhang back in.",
+    "pickup": null,
+    "task_ids": [
+      "SW310",
+      "SW311",
+      "SW312"
+    ],
+    "artifact_ids": [],
+    "decision_pointers": [
+      "C:/Projects/Switchy/DECISION_LOG.md"
+    ],
+    "finding_pointers": [
+      "C:/Projects/Switchy/README.md",
+      "C:/Projects/Switchy/CHANGELOG.md"
+    ],
+    "evidence_pointers": [
+      "git:9d4db67e",
+      "git:67d34ad8",
+      "git:ec8f9fdf",
+      "git:eeeacd5b",
+      "git:4b7f7f8e",
+      "git:d73b1d20",
+      "git:3524690c",
+      "https://github.com/registered2nd/switchy/releases/tag/v1.0.46",
+      "https://github.com/registered2nd/switchy/releases/tag/v1.0.47",
+      "https://github.com/registered2nd/switchy/actions/runs/40289262737",
+      "https://github.com/registered2nd/switchy/actions/runs/40335306641",
+      "C:/Projects/Switchy/brief_archive/worker_brief_sw310.md",
+      "C:/Projects/Switchy/brief_archive/worker_brief_sw311.md",
+      "C:/Projects/Switchy/brief_archive/worker_brief_sw312.md"
+    ],
+    "attention": false,
+    "attention_note": null,
+    "outcomes": [
+      "Diagnosed user-b.zhang (f7649e3f) signed out 2026-10-25 20:06 with 'refresh token has already been used': its stored login dated from 2026-10-16; Codex renews at 8 days, Switchy then renewed only 5 min before the 10-day expiry; a plain Codex in WSL renewing a non-current account wrote only WSL's auth.json, which Switchy never read and overwrote at the next switch. Claude got the same fix on 2026-10-09; Codex had not. The account was at 100% of its week from 08:10 (week started 2026-10-24 23:10, used up in about 9 h).",
+      "Diagnosed 358 Codex switches 2026-10-25 08:32-09:53: OpenAI answered registered2nd with 429 turn_rate_limit_exceeded ('Codex is at capacity'); Switchy counted any 429 as a usage limit, held the account out 5 min and resent each turn to user-b.zhang (really at its limit) and back with no cap. Codex transcripts show no terminal saw the capacity message during the bursts; a 503 server_overloaded at 09:11 passed through and did. registered2nd was not at its limit then (0% 04:05, 36% 14:19, 74% 19:26; no usage refusal); both accounts got an early weekly reset around 23:07.",
+      "SW310 (9d4db67e): only usage_limit_reached passes an account over; capacity 429s reach Codex unchanged on the websocket and HTTP paths and do not hold the account; a turn tries each account once and skips accounts at their limit.",
+      "SW311 (67d34ad8): both auth.json files are holders of whichever account they name; newer logins are filed with their cards before each request, each reconcile pass and any overwrite; renewals write through to each holder; proactive renewal at 7 days; a refused account clears from a newer WSL login. DECISION_LOG 2026-10-26 entry.",
+      "1.0.46 released (ec8f9fdf, eeeacd5b; public f630ee17; DMG run 40289262737).",
+      "SW312 (4b7f7f8e): sign_in_start / sign_in_finish / sign_in_status. Switchy builds the OAuth link (Codex parameters from openai/codex rust-v0.164.0, Claude's from the Claude Code 2.1.310 bundle), listens on 127.0.0.1:1455/1457 for Codex's callback, exchanges the code through the card's proxy, refuses a login of another account, files it with the card and clears its signed-out state; live auth files untouched. DECISION_LOG 2026-10-26 entry; README recipe.",
+      "First live use: user-b.zhang signed in from AdsPower 12 (exit 108.235.194.164 verified, email on the chooser and consent page) while Codex stayed on registered2nd; status done, identity valid, Pro, new week at 3% resetting 2026-11-02.",
+      "1.0.47 released (d73b1d20, 3524690c; public 68a680eb; DMG run 40335306641) and installed on the workstation. The switchy_account_signin skill uses the sign-in routes (four copies identical; dotfiles commits 30220cc70 Windows, 502e1b4d WSL). Worker briefs SW310-SW312 in brief_archive/.",
+      "Findings recorded, not acted on (no fix directed): (1) save_login_of_serving_account rewrites the auth files only when Windows' file holds another account, so WSL can stay on a different account; (2) 'recovered' switches mean 'another account's weekly window resets sooner', and a 15-minute reset difference moved traffic about every 5 min at the 99% threshold; the user questioned the label; (3) quota readings for a serving account had multi-hour gaps (none 04:05-14:19 and after 19:26 on 2026-10-25 while it served); (4) a continuing turn refused for usage when every account is at its limit costs one extra reconnect; (5) polling sign_in_status refreshes the tray on every call; (6) README Official providers still describes only the CLI sign-in."
+    ],
+    "latest_summary": "1.0.46 fixes capacity 429s bouncing between Codex accounts and keeps Codex logins renewed in WSL; 1.0.47 signs an account in without switching; user-b.zhang signed back in."
+  },
+  "context": {
+    "current_focus": {
+      "source": "C:/Projects/Switchy/README.md",
+      "summary": "Switchy 1.0.47 is released (GitHub Latest, Windows installers and Apple Silicon DMG) and runs on the workstation. 1.0.46: a 429 'Codex is at capacity' goes back to Codex instead of moving the request between accounts, and a Codex login renewed in WSL is kept with its account (Switchy renews at 7 days; both auth.json files are read for every account). 1.0.47: sign_in_start / sign_in_finish / sign_in_status sign a Codex or Claude account in without switching; Switchy makes the code exchange through the card's own proxy (README 'Signing an account in without switching'; the switchy_account_signin skill uses it). user-b.zhang (f7649e3f) was signed back in that way from AdsPower 12 and is valid. The laptop has 1.0.40 with Switchy quit; another user's PC and Mac have 1.0.39. Await the user's feedback; the confirmations below stay pending under their triggers."
+    },
+    "next_actions": [
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/crash_restart.rs",
+        "summary": "CONFIRM THE CRASH RESTART ON THE NEXT REAL CRASH (1.0.40). After any Switchy crash on the workstation: Application log event 1000 for switchy.exe, then within about a minute a new switchy.log starting with '[crash_restart] Windows will restart Switchy after a crash or hang' and the proxy on 15721 without a manual start; switchy.prev.log ends at the crash; ~/.switchy/crash.log gains an [ABNORMAL EXIT] entry naming the exception, any 'Windows ran out of memory' line and the dump path. A restart that did not happen while commit was still exhausted is the known single-attempt limit (finding doc option 2 is the backstop)."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/connect_tunnel.rs",
+        "summary": "Confirm account-proxy coverage on the next natural Claude sign-in or renewal while Owen is selected, without forcing a new login. Claude Code's own exchange should log '[connect_tunnel] platform.claude.com:443 via socks5://82.26.163.142:45001'. For Switchy's renewal, observe '[claude_pool] refreshing login for provider=98e00f12...' and the successful refreshed-login message; the enforced per-account client route is owned by proxy/http_client.rs. Windows/WSL HTTPS_PROXY and NO_PROXY, UK exit probes and telemetry tunnels were verified; a live sign-in/renewal using this route remains unobserved. Connection failures must stop rather than fall back to direct; country observations only warn."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/lib.rs",
+        "summary": "CONFIRM THE RESTART PATH ON STEPHEN'S NEXT WINDOWS RESTART (1.0.29). In C:/Users/Administrator/.switchy/logs/switchy.prev.log after 'Session ending; handing the live configs back': '[session-end] claude/codex/gemini handed back', '[session-end] ... in WSL handed back', then 'Live configs handed back for the session end'. 'did not finish in 4 seconds' with the last [session-end] line shows which step stalls (Windows step = database lock, WSL step = WSL I/O); fix that step. In switchy.log: Switchy started within seconds of login (window hidden, launched with --autostart from HKCU Run), '[auto_launch] start at login on', proxy on 15721, and Claude Code / Codex answer without ECONNREFUSED."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/claude_pool.rs",
+        "summary": "CONFIRM CLAUDE LOGINS STAY IN STEP WITH WSL (1.0.27). In switchy.log, when an account WSL is signed in to renews: '[claude_pool] provider=... took the newer login from WSL' or 'wrote the refreshed login through to WSL', and no new 'invalid_grant' 'Refresh token not found or invalid' in account_switches/provider_health. WSL's ~/.claude/.credentials.json and ~/.switchy/accounts/<id>/credentials.json for that account should carry the same refreshToken after each renewal. CODEX TOO (1.0.46, SW311): when a Codex login renews, switchy.log shows either Switchy's own renewal once the login is 7 days old ('[codex_pool] refreshing login for provider=...' then 'login refreshed', and the refreshed login written through to each auth.json holding that account) or '[codex_pool] provider=... took the newer login from' WSL's auth.json; no Codex card is signed out with 'refresh token has already been used'."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/proxy/codex_ws.rs",
+        "summary": "CONFIRM ROTATION AND CODEX FAILOVER ON LIVE TRAFFIC (1.0.25/1.0.26). In C:/Users/Administrator/.switchy/logs/switchy.log and the switchy.db account_switches table: (a) when an account's five-hour window resets while another serves, a switch back to it with reason 'recovered' and detail \"Another account's weekly limit resets sooner\"; (b) a Codex turn refused for usage that continues an earlier one logs '[CodexWS] provider=... websocket closed (turn refused for usage; Codex resends it in full)' and the turn then completes on the next account with no error in Codex. GET http://127.0.0.1:15721/switchy/accounts shows current account, pool order, quota and atLimit per account. (c) 1.0.46 (SW310): a 429 'Codex is at capacity' (turn_rate_limit_exceeded) reaches the Codex terminal, account_switches gets no 'limit' row for it, the account is not held at its limit, and a turn never bounces between accounts (no runs of switches seconds apart)."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "VERIFY LOCAL PROXY OFF WITH AN OPEN CODEX WINDOW. the user was asked to turn Local proxy off in Settings > Pool, then use a Codex window opened while the proxy was on. Confirm in C:/Users/Administrator/.switchy/logs/switchy.log that \"Proxy turned off; its listener stays up...\" was logged, that the Codex window's later [Codex] requests still reached the proxy and answered, that netstat shows 127.0.0.1:15721 still LISTENING, and that Settings shows the proxy as off. Turning it back on must reuse the listener."
+      },
+      {
+        "source": "C:/Projects/Switchy/docs/session_address_on_hand_back_2026_09_30.md",
+        "summary": "QUIT CASE WAITS ON STEPHEN. Quitting Switchy still breaks Codex windows opened under the proxy. He was offered a warning on quit naming the open Codex windows (small) or running the proxy as a process that outlives Switchy's window (large); he has not chosen. Build nothing until he does."
+      },
+      {
+        "source": "C:/Projects/Switchy/README.md",
+        "summary": "If the user directs request logging to be enabled, first make the Usage page's Turn on button apply to the running proxy, then enable it for Claude, Codex, and Gemini."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/services/manual_sign_in.rs",
+        "summary": "CONFIRM CURSOR/ANTIGRAVITY ON THE NEXT REAL SIGN-IN (1.0.43). No sign-in was run to test, and only one account of each exists. When the user adds a second account: enable the new empty card, open a NEW PowerShell, sign in. Expect: cursor-agent login prints 'Open a browser and navigate to this link' and opens no browser (user env NO_OPEN_BROWSER=1); agy started signed out shows its link with a code field and opens no browser (the profile function from ~/.switchy/manual_sign_in/agy_sign_in.ps1 sets SSH_CLIENT only when cmdkey lists no gemini:antigravity entry). Then switch back to the first card: switchy.log shows no '[cursor_account]'/'[antigravity_account] live login (...) is not the account' refusal for a normal switch, cursor-agent status and agy's log name the first account, and each card keeps its own email and usage badge ('[...] usage of provider=... N windows' lines). Kimi Code still opens the default browser (README limitation)."
+      },
+      {
+        "source": "C:/Projects/Switchy/src-tauri/src/services/accounts.rs",
+        "summary": "CONFIRM PLAN ACCOUNTS AND BALANCE MONITORS ON THE FIRST REAL KEY (1.0.45, SW309). Nothing was subscribed; plan quota, balance and Used in were checked only with fake keys (clean authentication failures from Z.ai and DeepSeek; Used in OpenCode wrote and removed its provider). When the user adds a real account (company page > Add account, or the README recipe over POST /switchy/invoke): choosing Claude Code switches Claude Code to a provider named '<Company> Â· <account>' whose env carries the key and the plan's host, and Claude Code answers on the plan's models; the card shows the plan's windows (Z.ai and MiniMax 5-hour and weekly, Kimi 5-hour, weekly and monthly, Command Code month's credits plus 5-hour and weekly when window-limited, OpenCode Go 5-hour, weekly and monthly); a DeepSeek, Moonshot or StepFun monitor shows the balance, and spend after a second reading. 'Unexpected balance response' or a parse error means the call's format differs from the documented one. OpenCode Zen's balance is left out until the user decides; it is shown only to the signed-in opencode.ai console."
+      }
+    ],
+    "initiative_focus": []
+  },
+  "task_completions": []
+}
