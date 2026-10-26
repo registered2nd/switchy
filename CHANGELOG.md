@@ -8,6 +8,26 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.47] — 2026-10-26 — Sign an account in without switching to it
+
+Windows installer: download `Switchy_1.0.47_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.47_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Added
+
+- **Sign a Codex or Claude account in while everything keeps running on
+  another account.** `sign_in_start` (through `POST /switchy/invoke`)
+  returns the account's sign-in link; open it in the browser that account
+  signs in from and approve. Codex finishes by itself when the browser
+  returns to Switchy; for Claude, pass the code the page shows to
+  `sign_in_finish`. `sign_in_status` says when it is done. Switchy makes
+  the sign-in exchange itself, through the account's own proxy, checks
+  that the login is that card's account, stores it with the card and
+  clears its signed-out state. Nothing switches, no `codex login` or
+  `/login` runs, and the logins your programs are using are not touched.
+  README § Setting up an account from a script has the recipe.
+
 ## [1.0.46] — 2026-10-26 — Codex logins renewed in WSL are kept; "at capacity" no longer bounces between accounts
 
 Windows installer: download `Switchy_1.0.46_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
