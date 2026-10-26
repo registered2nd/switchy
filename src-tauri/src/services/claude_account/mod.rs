@@ -234,6 +234,71 @@ pub fn capture(
     Ok(CaptureOutcome::Captured { identity })
 }
 
+/// Files a login Switchy signed in itself (`services::sign_in`) with
+/// `provider`, leaving its snapshot as `capture` leaves it: the credentials
+/// (`claude_ai_oauth` as their `claudeAiOauth` block, the card's other keys
+/// such as `mcpOAuth` kept), the `oauthAccount` block, and the account state —
+/// the card's own when it has one, since a sign-in is refused for another
+/// account, and empty otherwise. Neither the live store nor WSL's is written.
+pub fn file_sign_in(
+    db: &crate::database::Database,
+    provider: &Provider,
+    claude_ai_oauth: Value,
+    oauth_account: Value,
+) -> Result<CapturedIdentity, AppError> {
+    let field = |key: &str| {
+        oauth_account
+            .get(key)
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
+    let (Some(account_uuid), Some(email_address)) = (field("accountUuid"), field("emailAddress"))
+    else {
+        return Err(AppError::Message(
+            "The sign-in did not name its account".to_string(),
+        ));
+    };
+
+    let cred_path = paths::snapshot_credentials_path(&provider.id);
+    let mut credentials = store::read_snapshot(&cred_path)
+        .ok()
+        .filter(Value::is_object)
+        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+    credentials["claudeAiOauth"] = claude_ai_oauth;
+    let cred_bytes = serde_json::to_vec_pretty(&credentials)
+        .map_err(|e| AppError::JsonSerialize { source: e })?;
+    store::write_snapshot_atomic(&cred_path, &cred_bytes)?;
+    let oauth_bytes = serde_json::to_vec_pretty(&oauth_account)
+        .map_err(|e| AppError::JsonSerialize { source: e })?;
+    store::write_snapshot_atomic(
+        &paths::snapshot_oauth_account_path(&provider.id),
+        &oauth_bytes,
+    )?;
+    let state_path = paths::snapshot_account_state_path(&provider.id);
+    if !state_path.exists() {
+        store::write_snapshot_atomic(&state_path, b"{}")?;
+    }
+
+    let identity = CapturedIdentity {
+        account_uuid,
+        email_address,
+        captured_at: chrono::Utc::now().timestamp(),
+    };
+    let mut updated = provider.clone();
+    let mut meta = updated.meta.take().unwrap_or_default();
+    meta.captured_claude_account = Some(identity.clone().into());
+    updated.meta = Some(meta);
+    db.save_provider(CLAUDE_APP_TYPE, &updated)?;
+    log::info!(
+        "[claude_account] sign-in filed provider={} uuid={} email={}",
+        provider.id,
+        identity.account_uuid,
+        identity.email_address
+    );
+    Ok(identity)
+}
+
 /// The live login identity, plus the whole config root it came from so callers
 /// can also lift the account-scoped sibling keys without re-reading the file.
 struct LiveIdentity {

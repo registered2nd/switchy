@@ -40,9 +40,9 @@ pub const BACKEND_PATH_PREFIX: &str = "/backend-api/codex";
 /// Asked, before a ChatGPT login is used, where this machine is seen from.
 pub const EXIT_TRACE_URL: &str = "https://chatgpt.com/cdn-cgi/trace";
 
-const TOKEN_ENDPOINT: &str = "https://auth.openai.com/oauth/token";
+pub(crate) const TOKEN_ENDPOINT: &str = "https://auth.openai.com/oauth/token";
 /// The Codex CLI's own OAuth client: the one these logins were issued to.
-const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+pub(crate) const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 
 /// Refresh when the access token has less than this left.
 const REFRESH_WINDOW_SECS: i64 = 300;
@@ -312,8 +312,9 @@ pub fn set_app_handle(app: tauri::AppHandle) {
 
 /// A new sign-in filed with a card clears what the refused login left behind,
 /// its failure count and circuit breaker, and tells the window, so the card
-/// shows the account signed in without waiting for a request.
-fn announce_sign_in(provider_id: &str) {
+/// shows the account signed in without waiting for a request. `app_type` is
+/// `codex` or `claude`.
+pub(crate) fn announce_sign_in(app_type: &'static str, provider_id: &str) {
     let Some(app) = APP.get().cloned() else {
         return;
     };
@@ -323,17 +324,19 @@ fn announce_sign_in(provider_id: &str) {
         let state = app.state::<crate::store::AppState>();
         if let Err(e) = state
             .db
-            .update_provider_health(&id, "codex", true, None)
+            .update_provider_health(&id, app_type, true, None)
             .await
         {
             log::warn!("[codex_pool] could not clear the failures of provider={id}: {e}");
         }
         let _ = state
             .proxy_service
-            .reset_provider_circuit_breaker(&id, "codex")
+            .reset_provider_circuit_breaker(&id, app_type)
             .await;
-        super::codex_engine::nudge();
-        let payload = json!({ "appType": "codex", "providerId": id });
+        if app_type == "codex" {
+            super::codex_engine::nudge();
+        }
+        let payload = json!({ "appType": app_type, "providerId": id });
         if let Err(e) = app.emit("account-signed-in", payload) {
             log::warn!("[codex_pool] could not announce the sign-in: {e}");
         }
@@ -391,6 +394,47 @@ fn stored_auth(provider: &Provider) -> Value {
         .unwrap_or(Value::Null)
 }
 
+/// Files a login Switchy signed in itself (`services::sign_in`) as
+/// `provider`'s stored auth: the whole of it, as `codex login` writes
+/// `auth.json`, over whatever else the card's auth holds. The refusal of the
+/// old refresh token is forgotten and the sign-in announced. Codex's own files
+/// are not written; the login reaches them once the account has answered a
+/// request (`save_login_of_serving_account`).
+pub(crate) fn file_sign_in(
+    db: &Database,
+    provider: &mut Provider,
+    login: &Value,
+) -> Result<(), crate::error::AppError> {
+    let mut auth = stored_auth(provider);
+    if !auth.is_object() {
+        auth = json!({});
+    }
+    if let (Some(auth), Some(login)) = (auth.as_object_mut(), login.as_object()) {
+        for (key, value) in login {
+            auth.insert(key.clone(), value.clone());
+        }
+    }
+    if !provider.settings_config.is_object() {
+        provider.settings_config = json!({});
+    }
+    if let Some(obj) = provider.settings_config.as_object_mut() {
+        obj.insert("auth".to_string(), auth);
+    }
+    db.save_provider("codex", provider)?;
+    REFRESH_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(provider.id.clone())
+        .or_default()
+        .dead_refresh_token = None;
+    log::info!(
+        "[codex_pool] provider={} was signed in by Switchy",
+        provider.id
+    );
+    announce_sign_in("codex", &provider.id);
+    Ok(())
+}
+
 /// If `file` holds a newer login for the same account, take it: that Codex
 /// refreshed, and the stored copy's refresh token is now spent. An account
 /// marked as needing sign-in is announced signed in again. Returns whether
@@ -427,7 +471,7 @@ fn adopt_newer_live_login(db: &Database, provider: &mut Provider, file: LoginFil
                 file.name()
             );
             if was_refused {
-                announce_sign_in(&provider.id);
+                announce_sign_in("codex", &provider.id);
             }
             true
         }
@@ -498,7 +542,7 @@ fn file_login_of(db: &Database, file: LoginFile) {
                         current.id,
                         file.name()
                     );
-                    announce_sign_in(&current.id);
+                    announce_sign_in("codex", &current.id);
                 }
                 Err(e) => log::warn!(
                     "[codex_pool] could not store the new login under provider={}: {e}",
@@ -1463,6 +1507,38 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(!needs_sign_in(&healed));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_login_switchy_signed_in_replaces_the_refused_one_on_the_card_only() {
+        let home = tempfile::TempDir::new().expect("temp home");
+        std::env::set_var(crate::paths::ENV_TEST_HOME, home.path());
+        let db = Database::memory().expect("db");
+        let mut card = official("switchy-signed-in", login_for("a@x.io", "acct-a"));
+        db.save_provider("codex", &card).expect("save");
+        REFRESH_STATE
+            .lock()
+            .unwrap()
+            .entry(card.id.clone())
+            .or_default()
+            .dead_refresh_token = Some("RRR".into());
+        assert!(needs_sign_in(&card));
+        let mut login = renewed(login_for("a@x.io", "acct-a"), "NEW", "2026-10-26T00:00:00Z");
+        login["auth_mode"] = json!("chatgpt");
+        login["OPENAI_API_KEY"] = Value::Null;
+
+        file_sign_in(&db, &mut card, &login).expect("filed");
+
+        let live_written = crate::codex_config::get_codex_auth_path().exists();
+        std::env::remove_var(crate::paths::ENV_TEST_HOME);
+        let filed = stored(&db, "switchy-signed-in");
+        assert_eq!(refresh_of(&filed), Some("NEW"));
+        assert_eq!(filed["auth_mode"], "chatgpt");
+        assert!(!needs_sign_in(
+            &db.get_provider_by_id(&card.id, "codex").unwrap().unwrap()
+        ));
+        assert!(!live_written, "Codex's own auth.json is not written");
     }
 
     #[test]

@@ -19,6 +19,7 @@ mod provider;
 mod proxy;
 mod session_repair;
 mod settings;
+mod sign_in;
 mod stream_check;
 mod subscription;
 mod sync_support;
@@ -47,6 +48,7 @@ pub use provider::*;
 pub use proxy::*;
 pub use session_repair::*;
 pub use settings::*;
+pub use sign_in::*;
 pub use stream_check::*;
 pub use subscription::*;
 

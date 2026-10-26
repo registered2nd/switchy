@@ -36,12 +36,12 @@ pub const EXIT_TRACE_URL: &str = "https://api.anthropic.com/cdn-cgi/trace";
 /// The beta Claude Code sends when it authenticates with its subscription.
 pub const OAUTH_BETA: &str = "oauth-2025-04-20";
 
-const TOKEN_ENDPOINT: &str = "https://platform.claude.com/v1/oauth/token";
+pub(crate) const TOKEN_ENDPOINT: &str = "https://platform.claude.com/v1/oauth/token";
 /// Claude Code's own OAuth client: the one these logins were issued to.
-const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+pub(crate) const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 /// Anthropic's edge refuses the token endpoint to clients it does not know;
 /// this is the identity Claude Code's own refresh call carries.
-const REFRESH_USER_AGENT: &str = "axios/1.13.6";
+pub(crate) const REFRESH_USER_AGENT: &str = "axios/1.13.6";
 
 /// Refresh when the access token has less than this left.
 const REFRESH_WINDOW_MS: i64 = 5 * 60 * 1000;
@@ -217,6 +217,18 @@ pub fn needs_sign_in(provider: &Provider) -> bool {
     // WSL may have renewed the account since; its login replaces the refused one.
     let (current, _) = adopt_newer_mirror_login(provider, current);
     refresh_token_refused(provider, &current)
+}
+
+/// Forgets that `provider_id`'s refresh token was refused, once a new sign-in
+/// is stored with it.
+pub(crate) fn clear_refused(provider_id: &str) {
+    if let Some(state) = REFRESH_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_mut(provider_id)
+    {
+        state.dead_refresh_token = None;
+    }
 }
 
 fn refresh_token_refused(provider: &Provider, login: &Value) -> bool {

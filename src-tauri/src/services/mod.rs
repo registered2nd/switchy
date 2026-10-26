@@ -12,6 +12,7 @@ pub mod model_fetch;
 pub mod omo;
 pub mod provider;
 pub mod proxy;
+pub mod sign_in;
 pub mod speedtest;
 pub mod stream_check;
 pub mod subscription;
