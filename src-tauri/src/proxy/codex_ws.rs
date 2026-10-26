@@ -13,7 +13,9 @@
 //! next one and Codex sees no error. A turn carrying the whole conversation is
 //! sent again on the next account; one that continues an earlier turn names a
 //! response only the refusing connection holds, so the relay closes the
-//! connection instead, and Codex retries it in full on a new one.
+//! connection instead, and Codex retries it in full on a new one. A turn is
+//! tried on each account at most once. A refusal because the backend is at
+//! capacity is about no account in particular and reaches Codex unchanged.
 //!
 //! Anything the relay cannot serve (a provider that is not a ChatGPT login, or
 //! no account accepting the connection) is answered 426, which makes Codex use
@@ -141,6 +143,24 @@ fn note_switch(state: &ProxyState, provider: &Provider, reason: (SwitchReason, S
     });
 }
 
+/// The accounts a usage-refused turn can be sent again on: those it has not
+/// been tried on, less those the pool holds at their limit.
+fn untried_accounts(accounts: Vec<Provider>, tried: &[String], now: i64) -> Vec<Provider> {
+    accounts
+        .into_iter()
+        .filter(|p| !tried.contains(&p.id) && !super::account_pool::is_limited(&p.id, now))
+        .collect()
+}
+
+/// Which of `ids`, offered to `connect_first` in order, it tried: those up to
+/// and including the one it `reached`, or all of them when none accepted.
+fn attempted(ids: Vec<String>, reached: Option<&str>) -> Vec<String> {
+    let used = reached
+        .and_then(|next| ids.iter().position(|id| id == next))
+        .map_or(ids.len(), |i| i + 1);
+    ids.into_iter().take(used).collect()
+}
+
 /// The client's handshake, kept to open the upstream again on another account.
 /// Held as owned parts: the request body is not Sync, so the request itself
 /// cannot be borrowed across an await.
@@ -167,7 +187,7 @@ async fn connect_first(
                 note_switch(state, &provider, reason);
                 return Some((provider, upstream, headers, route_key));
             }
-            Err((status, e)) => {
+            Err((usage_limit, e)) => {
                 log::warn!(
                     "[CodexWS] provider={}: websocket refused ({e})",
                     provider.id
@@ -175,7 +195,7 @@ async fn connect_first(
                 if passed_over.is_none() {
                     let reason = if super::codex_pool::needs_sign_in(&provider) {
                         SwitchReason::SignedOut
-                    } else if status == Some(429) {
+                    } else if usage_limit {
                         SwitchReason::Limit
                     } else {
                         SwitchReason::Failover
@@ -263,23 +283,23 @@ pub async fn handle(
 }
 
 /// Opens the WebSocket to the ChatGPT backend with `provider`'s login, after
-/// the exit check. Returns the upstream handshake's response headers, or the
-/// status the upstream refused it with.
+/// the exit check. Returns the upstream handshake's response headers, or why
+/// it was refused and whether that was for the account's usage limit.
 async fn connect_upstream(
     state: &ProxyState,
     provider: &Provider,
     handshake: &ClientHandshake,
-) -> Result<(Upstream, HeaderMap, String), (Option<u16>, String)> {
+) -> Result<(Upstream, HeaderMap, String), (bool, String)> {
     super::account_pool::ensure_exit_allowed(
         &state.db,
         provider,
         super::codex_pool::EXIT_TRACE_URL,
     )
     .await
-    .map_err(|e| (None, e.to_string()))?;
+    .map_err(|e| (false, e.to_string()))?;
     let credentials = super::codex_pool::credentials_for(&state.db, provider, false)
         .await
-        .map_err(|e| (None, e.to_string()))?;
+        .map_err(|e| (false, e.to_string()))?;
 
     let mut url = format!("{}/responses", super::codex_pool::CHATGPT_CODEX_BASE_URL);
     if let Some(query) = handshake.query.as_deref() {
@@ -287,9 +307,10 @@ async fn connect_upstream(
         url.push_str(query);
     }
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
-    let route = super::http_client::resolve_route(proxy_config).map_err(|e| (None, e))?;
+    let route = super::http_client::resolve_route(proxy_config).map_err(|e| (false, e))?;
     let route_key = route.cache_key();
-    let client = super::http_client::build_client_for_route(&route, true).map_err(|e| (None, e))?;
+    let client =
+        super::http_client::build_client_for_route(&route, true).map_err(|e| (false, e))?;
 
     let mut upstream = client
         .get(&url)
@@ -311,13 +332,13 @@ async fn connect_upstream(
         .timeout(Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| (None, e.to_string()))?;
+        .map_err(|e| (false, e.to_string()))?;
     let status = response.status();
     if status != reqwest::StatusCode::SWITCHING_PROTOCOLS {
         let body = response.text().await.unwrap_or_default();
         super::codex_pool::record_limit_refusal(&provider.id, status.as_u16(), Some(&body));
         return Err((
-            Some(status.as_u16()),
+            super::codex_pool::is_usage_limit_refusal(status.as_u16(), Some(&body)),
             format!(
                 "upstream answered {status}: {}",
                 body.chars().take(300).collect::<String>()
@@ -328,7 +349,7 @@ async fn connect_upstream(
     let upgraded = response
         .upgrade()
         .await
-        .map_err(|e| (None, e.to_string()))?;
+        .map_err(|e| (false, e.to_string()))?;
     let socket = WebSocketStream::from_raw_socket(upgraded, Role::Client, unlimited()).await;
     Ok((socket, headers, route_key))
 }
@@ -533,7 +554,8 @@ fn log_refused(state: &ProxyState, provider: &Provider, turn: &TurnLog, status: 
 
 /// Moves frames both ways until either side closes, or until the pool would
 /// serve another account and no turn is in flight. A turn refused for usage
-/// before any of it reached Codex is sent again on the next account.
+/// before any of it reached Codex is sent again on the next account that has
+/// not yet been tried for it and is not held at its limit.
 async fn relay(
     state: ProxyState,
     mut provider: Provider,
@@ -552,6 +574,8 @@ async fn relay(
     let mut held: Vec<Message> = Vec::new();
     let mut answered = false;
     let mut refused = false;
+    // The accounts the turn in flight has been tried on.
+    let mut tried: Vec<String> = Vec::new();
     let mut check = tokio::time::interval(ACCOUNT_CHECK);
     check.tick().await;
 
@@ -575,6 +599,7 @@ async fn relay(
                         turn_log = Some(TurnLog::new(text.as_str(), &handshake));
                         streaming = false;
                         held.clear();
+                        tried = vec![provider.id.clone()];
                     }
                 }
                 let closing = matches!(message, Message::Close(_));
@@ -602,7 +627,9 @@ async fn relay(
                             log_refused(&state, &provider, log, *status, &text);
                         }
                     }
-                    let limit = matches!(error, Some((429, _)));
+                    let limit = error.as_ref().is_some_and(|(status, _)| {
+                        super::codex_pool::is_usage_limit_refusal(*status, Some(&text))
+                    });
                     if turn.is_some() && !streaming {
                         if limit && turn.as_ref().is_some_and(continues_earlier_turn) {
                             // The turn names a response only this connection holds, so another
@@ -612,15 +639,20 @@ async fn relay(
                             break 'relay "turn refused for usage; Codex resends it in full".to_string();
                         }
                         if limit {
-                            let others: Vec<Provider> = chosen_accounts(&state)
-                                .await
-                                .into_iter()
-                                .filter(|p| p.id != provider.id)
-                                .collect();
+                            let others = untried_accounts(
+                                chosen_accounts(&state).await,
+                                &tried,
+                                chrono::Utc::now().timestamp(),
+                            );
+                            let ids: Vec<String> = others.iter().map(|p| p.id.clone()).collect();
                             let reason = (SwitchReason::Limit, "Usage limit reached".to_string());
-                            if let Some((next, upstream, _, next_route_key)) =
-                                connect_first(&state, others, &handshake, Some(reason)).await
-                            {
+                            let reached =
+                                connect_first(&state, others, &handshake, Some(reason)).await;
+                            tried.extend(attempted(
+                                ids,
+                                reached.as_ref().map(|(next, ..)| next.id.as_str()),
+                            ));
+                            if let Some((next, upstream, _, next_route_key)) = reached {
                                 let (mut tx, rx) = upstream.split();
                                 let resent = match turn.clone() {
                                     Some(create) => tx.send(create).await.is_ok(),
@@ -797,6 +829,51 @@ mod tests {
             Some(400)
         );
         assert!(error_event(r#"{"type":"response.created"}"#).is_none());
+    }
+
+    #[test]
+    fn a_capacity_error_event_is_not_a_usage_refusal() {
+        let text = r#"{"type":"error","status":429,"headers":{"Retry-After":"486"},"error":{"type":"rate_limit_error","code":"turn_rate_limit_exceeded","message":"Codex is at capacity, please try again later"}}"#;
+        let (status, _) = error_event(text).expect("error event");
+        assert_eq!(status, 429);
+        assert!(!super::super::codex_pool::is_usage_limit_refusal(
+            status,
+            Some(text)
+        ));
+        let usage = r#"{"type":"error","status":429,"error":{"type":"usage_limit_reached","resets_at":1738888888}}"#;
+        assert!(super::super::codex_pool::is_usage_limit_refusal(
+            429,
+            Some(usage)
+        ));
+    }
+
+    #[test]
+    fn a_refused_turn_goes_only_to_accounts_not_yet_tried_or_limited() {
+        let account =
+            |id: &str| Provider::with_id(id.into(), id.into(), serde_json::json!({}), None);
+        let now = chrono::Utc::now().timestamp();
+        super::super::account_pool::record_limited_until("ws-turn-c", now + 600);
+        let accounts = || {
+            ["ws-turn-a", "ws-turn-b", "ws-turn-c", "ws-turn-d"]
+                .map(account)
+                .to_vec()
+        };
+        let ids = |v: Vec<Provider>| v.into_iter().map(|p| p.id).collect::<Vec<_>>();
+        let mut tried = vec!["ws-turn-a".to_string()];
+        assert_eq!(
+            ids(untried_accounts(accounts(), &tried, now)),
+            ["ws-turn-b", "ws-turn-d"]
+        );
+        let offered = || vec!["ws-turn-b".to_string(), "ws-turn-d".to_string()];
+        assert_eq!(attempted(offered(), Some("ws-turn-b")), ["ws-turn-b"]);
+        assert_eq!(attempted(offered(), Some("ws-turn-d")), offered());
+        tried.extend(attempted(offered(), None));
+        assert!(untried_accounts(accounts(), &tried, now).is_empty());
+        // Once the limit resets, the account can take the turn.
+        assert_eq!(
+            ids(untried_accounts(accounts(), &tried, now + 601)),
+            ["ws-turn-c"]
+        );
     }
 
     #[test]

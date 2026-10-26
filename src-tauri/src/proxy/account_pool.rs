@@ -443,6 +443,17 @@ pub fn record_limited_until(provider_id: &str, until: i64) {
     );
 }
 
+/// Whether upstream refused the account outright for usage and its limit has
+/// not yet reset.
+pub fn is_limited(provider_id: &str, now: i64) -> bool {
+    QUOTAS
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(provider_id)
+        .and_then(|q| q.limited_until)
+        .is_some_and(|until| until > now)
+}
+
 /// Records a refusal on one model-scoped window, so the account is passed
 /// over for the models that window applies to, and only those, until
 /// `until` (unix seconds).

@@ -1620,6 +1620,9 @@ fn categorize_proxy_error(
             ErrorCategory::NonRetryable
         };
     }
+    if is_codex_capacity_refusal(provider, error) {
+        return ErrorCategory::NonRetryable;
+    }
     match error {
         // Network and upstream errors: always try the next provider
         ProxyError::Timeout(_) => ErrorCategory::Retryable,
@@ -1661,6 +1664,17 @@ fn is_claude_quota_refusal(provider: &Provider, model: Option<&str>, error: &Pro
                 || message.contains("usage limit")
                 || message.contains("quota")
         })
+}
+
+/// A 429 refusing a ChatGPT-login Codex account because the backend is at
+/// capacity, not for the account's usage. Every account would get it, so it
+/// goes back to Codex, which waits and retries as it would without Switchy.
+fn is_codex_capacity_refusal(provider: &Provider, error: &ProxyError) -> bool {
+    let ProxyError::UpstreamError { status: 429, body } = error else {
+        return false;
+    };
+    super::codex_pool::is_chatgpt_provider(provider)
+        && !super::codex_pool::is_usage_limit_refusal(429, body.as_deref())
 }
 
 /// Extracts the error message from a ProxyError
@@ -1752,7 +1766,9 @@ fn switch_reason_for(provider: &Provider, error: &ProxyError) -> (SwitchReason, 
         super::codex_pool::needs_sign_in(provider) || super::claude_pool::needs_sign_in(provider);
     let reason = if signed_out {
         SwitchReason::SignedOut
-    } else if matches!(error, ProxyError::UpstreamError { status: 429, .. }) {
+    } else if matches!(error, ProxyError::UpstreamError { status: 429, .. })
+        && !is_codex_capacity_refusal(provider, error)
+    {
         SwitchReason::Limit
     } else {
         SwitchReason::Failover
@@ -2043,6 +2059,50 @@ mod tests {
             }
         ));
         assert!(!is_claude_quota_refusal(&provider, None, &error));
+    }
+
+    #[test]
+    fn a_codex_capacity_refusal_goes_back_to_codex() {
+        let mut account = test_provider(None, Some("official"));
+        account.settings_config = serde_json::json!({
+            "auth": { "tokens": { "access_token": "a", "refresh_token": "r", "account_id": "acct" } },
+            "config": ""
+        });
+        let capacity = ProxyError::UpstreamError {
+            status: 429,
+            body: Some(r#"{"error":{"type":"rate_limit_error","code":"turn_rate_limit_exceeded","message":"Codex is at capacity, please try again later"}}"#.into()),
+        };
+        let usage = ProxyError::UpstreamError {
+            status: 429,
+            body: Some(r#"{"error":{"type":"usage_limit_reached","resets_at":1900000000}}"#.into()),
+        };
+        assert!(is_codex_capacity_refusal(&account, &capacity));
+        assert!(!is_codex_capacity_refusal(&account, &usage));
+        assert_eq!(
+            categorize_proxy_error(&AppType::Codex, &account, None, &capacity),
+            ErrorCategory::NonRetryable
+        );
+        assert_eq!(
+            categorize_proxy_error(&AppType::Codex, &account, None, &usage),
+            ErrorCategory::Retryable
+        );
+        assert_eq!(
+            switch_reason_for(&account, &capacity).0,
+            SwitchReason::Failover
+        );
+        assert_eq!(switch_reason_for(&account, &usage).0, SwitchReason::Limit);
+
+        // An API-key provider still moves on for any 429.
+        let api_key = test_provider(None, None);
+        assert!(!is_codex_capacity_refusal(&api_key, &capacity));
+        assert_eq!(
+            categorize_proxy_error(&AppType::Codex, &api_key, None, &capacity),
+            ErrorCategory::Retryable
+        );
+        assert_eq!(
+            switch_reason_for(&api_key, &capacity).0,
+            SwitchReason::Limit
+        );
     }
 
     // Real HTTP requests to two independent local endpoints verify that an

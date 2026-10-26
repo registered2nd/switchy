@@ -803,10 +803,31 @@ pub fn record_quota(provider_id: &str, headers: &http::HeaderMap) {
     account_pool::record_windows(provider_id, None, windows);
 }
 
+/// Whether a refusal says the account has used its quota
+/// (`usage_limit_reached`, or a reset named). A 429 saying the backend is at
+/// capacity (`rate_limit_error`, `turn_rate_limit_exceeded`) says nothing
+/// about the account: every account gets it, and it is the client's to retry.
+pub fn is_usage_limit_refusal(status: u16, body: Option<&str>) -> bool {
+    if status != 429 {
+        return false;
+    }
+    let parsed: Value = body
+        .and_then(|b| serde_json::from_str(b).ok())
+        .unwrap_or(Value::Null);
+    let Some(error) = parsed.get("error") else {
+        return false;
+    };
+    let named = |key: &str| error.get(key).and_then(Value::as_str) == Some("usage_limit_reached");
+    named("type")
+        || named("code")
+        || error.get("resets_at").is_some()
+        || error.get("resets_in_seconds").is_some()
+}
+
 /// Records an outright usage-limit refusal, so the account is passed over
 /// until the reset the refusal named.
 pub fn record_limit_refusal(provider_id: &str, status: u16, body: Option<&str>) {
-    if status != 429 {
+    if !is_usage_limit_refusal(status, body) {
         return;
     }
     let parsed: Value = body
@@ -1148,5 +1169,44 @@ mod tests {
             Some("GPT-5.3-Codex-Spark")
         );
         assert_eq!(windows[1].window_minutes, 300);
+    }
+
+    const CAPACITY: &str = r#"{"type":"error","status":429,"headers":{"Retry-After":"486"},"error":{"type":"rate_limit_error","code":"turn_rate_limit_exceeded","message":"Codex is at capacity, please try again later"}}"#;
+
+    #[test]
+    fn only_a_usage_limit_is_a_usage_limit_refusal() {
+        assert!(!is_usage_limit_refusal(429, Some(CAPACITY)));
+        assert!(!is_usage_limit_refusal(429, None));
+        assert!(!is_usage_limit_refusal(429, Some("not json")));
+        assert!(is_usage_limit_refusal(
+            429,
+            Some(
+                r#"{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}"#
+            )
+        ));
+        assert!(is_usage_limit_refusal(
+            429,
+            Some(r#"{"type":"error","status":429,"error":{"type":"x","resets_in_seconds":60}}"#)
+        ));
+        assert!(!is_usage_limit_refusal(
+            400,
+            Some(r#"{"error":{"type":"usage_limit_reached"}}"#)
+        ));
+    }
+
+    #[test]
+    fn a_capacity_refusal_does_not_hold_the_account_at_its_limit() {
+        let now = chrono::Utc::now().timestamp();
+        record_limit_refusal("codex-capacity-refused", 429, Some(CAPACITY));
+        assert!(!account_pool::is_limited("codex-capacity-refused", now));
+
+        let resets_at = now + 3600;
+        let usage = json!({
+            "error": { "type": "usage_limit_reached", "resets_at": resets_at }
+        })
+        .to_string();
+        record_limit_refusal("codex-usage-refused", 429, Some(&usage));
+        assert!(account_pool::is_limited("codex-usage-refused", now));
+        assert!(!account_pool::is_limited("codex-usage-refused", resets_at));
     }
 }
