@@ -1,0 +1,258 @@
+import type { ProviderCategory } from "@/types";
+
+/**
+ * Visual theme for a Gemini provider preset
+ */
+export interface GeminiPresetTheme {
+  /** Icon type: 'gemini' | 'generic' */
+  icon?: "gemini" | "generic";
+  /** Background color when selected (hex) */
+  backgroundColor?: string;
+  /** Text color when selected (hex) */
+  textColor?: string;
+}
+
+export interface GeminiProviderPreset {
+  name: string;
+  nameKey?: string; // i18n key for localized display name
+  websiteUrl: string;
+  apiKeyUrl?: string;
+  settingsConfig: object;
+  baseURL?: string;
+  model?: string;
+  description?: string;
+  category?: ProviderCategory;
+  partnerPromotionKey?: string;
+  endpointCandidates?: string[];
+  theme?: GeminiPresetTheme;
+  // Icon
+  icon?: string; // Icon name
+  iconColor?: string; // Icon color
+}
+
+export const geminiProviderPresets: GeminiProviderPreset[] = [
+  {
+    name: "Google Official",
+    websiteUrl: "https://ai.google.dev/",
+    apiKeyUrl: "https://aistudio.google.com/apikey",
+    settingsConfig: {
+      env: {},
+    },
+    description: "Official Google Gemini API (OAuth)",
+    category: "official",
+    partnerPromotionKey: "google-official",
+    theme: {
+      icon: "gemini",
+      backgroundColor: "#4285F4",
+      textColor: "#FFFFFF",
+    },
+    icon: "gemini",
+    iconColor: "#4285F4",
+  },
+  {
+    name: "PackyCode",
+    websiteUrl: "https://www.packyapi.com",
+    apiKeyUrl: "https://www.packyapi.com/register",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "https://www.packyapi.com",
+        GEMINI_MODEL: "gemini-3.1-pro",
+      },
+    },
+    baseURL: "https://www.packyapi.com",
+    model: "gemini-3.1-pro",
+    description: "PackyCode",
+    category: "third_party",
+    partnerPromotionKey: "packycode",
+    endpointCandidates: [
+      "https://api-slb.packyapi.com",
+      "https://www.packyapi.com",
+    ],
+    icon: "packycode",
+  },
+  {
+    name: "Cubence",
+    websiteUrl: "https://cubence.com",
+    apiKeyUrl: "https://cubence.com/signup",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "https://api.cubence.com",
+        GEMINI_MODEL: "gemini-3.1-pro",
+      },
+    },
+    baseURL: "https://api.cubence.com",
+    model: "gemini-3.1-pro",
+    description: "Cubence",
+    category: "third_party",
+    endpointCandidates: [
+      "https://api.cubence.com/v1",
+      "https://api-cf.cubence.com/v1",
+      "https://api-dmit.cubence.com/v1",
+      "https://api-bwg.cubence.com/v1",
+    ],
+    icon: "cubence",
+    iconColor: "#000000",
+  },
+  {
+    name: "AIGoCode",
+    websiteUrl: "https://aigocode.com",
+    apiKeyUrl: "https://aigocode.com",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "https://api.aigocode.com",
+        GEMINI_MODEL: "gemini-3.1-pro",
+      },
+    },
+    baseURL: "https://api.aigocode.com",
+    model: "gemini-3.1-pro",
+    description: "AIGoCode",
+    category: "third_party",
+    endpointCandidates: ["https://api.aigocode.com"],
+    icon: "aigocode",
+    iconColor: "#5B7FFF",
+  },
+  {
+    name: "AICodeMirror",
+    websiteUrl: "https://www.aicodemirror.com",
+    apiKeyUrl: "https://www.aicodemirror.com/register",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "https://api.aicodemirror.com/api/gemini",
+        GEMINI_MODEL: "gemini-3.1-pro",
+      },
+    },
+    baseURL: "https://api.aicodemirror.com/api/gemini",
+    model: "gemini-3.1-pro",
+    description: "AICodeMirror",
+    category: "third_party",
+    endpointCandidates: [
+      "https://api.aicodemirror.com/api/gemini",
+      "https://api.claudecode.net.cn/api/gemini",
+    ],
+    icon: "aicodemirror",
+    iconColor: "#000000",
+  },
+  {
+    name: "AICoding",
+    websiteUrl: "https://aicoding.sh",
+    apiKeyUrl: "https://aicoding.sh",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "https://api.aicoding.sh",
+        GEMINI_MODEL: "gemini-3.1-pro",
+      },
+    },
+    baseURL: "https://api.aicoding.sh",
+    model: "gemini-3.1-pro",
+    description: "AICoding",
+    category: "third_party",
+    endpointCandidates: ["https://api.aicoding.sh"],
+    icon: "aicoding",
+    iconColor: "#000000",
+  },
+  {
+    name: "CrazyRouter",
+    websiteUrl: "https://www.crazyrouter.com",
+    apiKeyUrl: "https://www.crazyrouter.com/register",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "https://crazyrouter.com",
+        GEMINI_MODEL: "gemini-3.1-pro",
+      },
+    },
+    baseURL: "https://crazyrouter.com",
+    model: "gemini-3.1-pro",
+    description: "CrazyRouter",
+    category: "third_party",
+    endpointCandidates: ["https://crazyrouter.com"],
+    icon: "crazyrouter",
+    iconColor: "#000000",
+  },
+  {
+    name: "SSSAiCode",
+    websiteUrl: "https://www.sssaicode.com",
+    apiKeyUrl: "https://www.sssaicode.com/register",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "https://node-hk.sssaicode.com/api",
+        GEMINI_MODEL: "gemini-3.1-pro",
+      },
+    },
+    baseURL: "https://node-hk.sssaicode.com/api",
+    model: "gemini-3.1-pro",
+    description: "SSSAiCode",
+    category: "third_party",
+    endpointCandidates: [
+      "https://node-hk.sssaicode.com/api",
+      "https://claude2.sssaicode.com/api",
+      "https://anti.sssaicode.com/api",
+    ],
+    icon: "sssaicode",
+    iconColor: "#000000",
+  },
+  {
+    name: "CTok.ai",
+    websiteUrl: "https://ctok.ai",
+    apiKeyUrl: "https://ctok.ai",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "https://api.ctok.ai/v1beta",
+        GEMINI_MODEL: "gemini-3.1-pro",
+      },
+    },
+    baseURL: "https://api.ctok.ai/v1beta",
+    model: "gemini-3.1-pro",
+    description: "CTok",
+    category: "third_party",
+    endpointCandidates: ["https://api.ctok.ai/v1beta"],
+    icon: "ctok",
+    iconColor: "#000000",
+  },
+  {
+    name: "OpenRouter",
+    websiteUrl: "https://openrouter.ai",
+    apiKeyUrl: "https://openrouter.ai/keys",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "https://openrouter.ai/api",
+        GEMINI_MODEL: "gemini-3.1-pro",
+      },
+    },
+    baseURL: "https://openrouter.ai/api",
+    model: "gemini-3.1-pro",
+    description: "OpenRouter",
+    category: "aggregator",
+    icon: "openrouter",
+    iconColor: "#6566F1",
+  },
+  {
+    name: "Custom",
+    websiteUrl: "",
+    settingsConfig: {
+      env: {
+        GOOGLE_GEMINI_BASE_URL: "",
+        GEMINI_MODEL: "gemini-3.1-pro",
+      },
+    },
+    model: "gemini-3.1-pro",
+    description: "Custom Gemini API endpoint",
+    category: "custom",
+  },
+];
+
+export function getGeminiPresetByName(
+  name: string,
+): GeminiProviderPreset | undefined {
+  return geminiProviderPresets.find((preset) => preset.name === name);
+}
+
+export function getGeminiPresetByUrl(
+  url: string,
+): GeminiProviderPreset | undefined {
+  if (!url) return undefined;
+  return geminiProviderPresets.find(
+    (preset) =>
+      preset.baseURL &&
+      url.toLowerCase().includes(preset.baseURL.toLowerCase()),
+  );
+}

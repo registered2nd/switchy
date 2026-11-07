@@ -1,0 +1,1263 @@
+//! Usage statistics service
+//!
+//! Aggregate queries over usage data
+
+use crate::database::{lock_conn, Database};
+use crate::error::AppError;
+use chrono::{Local, TimeZone};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::HashMap;
+use std::str::FromStr;
+
+/// Usage summary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSummary {
+    pub total_requests: u64,
+    pub total_cost: String,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_cache_creation_tokens: u64,
+    pub total_cache_read_tokens: u64,
+    pub success_rate: f32,
+}
+
+/// Daily stats
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyStats {
+    pub date: String,
+    pub request_count: u64,
+    pub total_cost: String,
+    pub total_tokens: u64,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_cache_creation_tokens: u64,
+    pub total_cache_read_tokens: u64,
+}
+
+/// Per-provider stats
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderStats {
+    pub provider_id: String,
+    pub provider_name: String,
+    pub app_type: String,
+    /// The signed-in account behind the provider, when it is a pooled login.
+    pub account_email: Option<String>,
+    pub request_count: u64,
+    pub total_tokens: u64,
+    pub total_cost: String,
+    pub success_rate: f32,
+    /// Requests the account refused with 429 (usage limit or rate limit).
+    pub limited_count: u64,
+    pub avg_latency_ms: u64,
+    /// Unix seconds of the newest logged request, if any.
+    pub last_used_at: Option<i64>,
+}
+
+/// Per-model stats
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelStats {
+    pub model: String,
+    pub request_count: u64,
+    pub total_tokens: u64,
+    pub total_cost: String,
+    pub avg_cost_per_request: String,
+}
+
+/// Request log filter
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogFilters {
+    pub app_type: Option<String>,
+    pub provider_name: Option<String>,
+    pub model: Option<String>,
+    pub status_code: Option<u16>,
+    pub start_date: Option<i64>,
+    pub end_date: Option<i64>,
+}
+
+/// Paginated request log response
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaginatedLogs {
+    pub data: Vec<RequestLogDetail>,
+    pub total: u32,
+    pub page: u32,
+    pub page_size: u32,
+}
+
+/// Request log details
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestLogDetail {
+    pub request_id: String,
+    pub provider_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_name: Option<String>,
+    pub app_type: String,
+    pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_model: Option<String>,
+    pub cost_multiplier: String,
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cache_read_tokens: u32,
+    pub cache_creation_tokens: u32,
+    pub input_cost_usd: String,
+    pub output_cost_usd: String,
+    pub cache_read_cost_usd: String,
+    pub cache_creation_cost_usd: String,
+    pub total_cost_usd: String,
+    pub is_streaming: bool,
+    pub latency_ms: u64,
+    pub first_token_ms: Option<u64>,
+    pub duration_ms: Option<u64>,
+    pub status_code: u16,
+    pub error_message: Option<String>,
+    pub created_at: i64,
+}
+
+impl Database {
+    /// Get the usage summary
+    pub fn get_usage_summary(
+        &self,
+        start_date: Option<i64>,
+        end_date: Option<i64>,
+    ) -> Result<UsageSummary, AppError> {
+        let conn = lock_conn!(self.conn);
+
+        let (where_clause, params_vec) = if start_date.is_some() || end_date.is_some() {
+            let mut conditions = Vec::new();
+            let mut params = Vec::new();
+
+            if let Some(start) = start_date {
+                conditions.push("created_at >= ?");
+                params.push(start);
+            }
+            if let Some(end) = end_date {
+                conditions.push("created_at <= ?");
+                params.push(end);
+            }
+
+            (format!("WHERE {}", conditions.join(" AND ")), params)
+        } else {
+            (String::new(), Vec::new())
+        };
+
+        // Build rollup WHERE clause using date strings (use ? for sequential binding)
+        let (rollup_where, rollup_params) = if start_date.is_some() || end_date.is_some() {
+            let mut conditions: Vec<String> = Vec::new();
+            let mut params = Vec::new();
+
+            if let Some(start) = start_date {
+                conditions.push("date >= date(?, 'unixepoch', 'localtime')".to_string());
+                params.push(start);
+            }
+            if let Some(end) = end_date {
+                conditions.push("date <= date(?, 'unixepoch', 'localtime')".to_string());
+                params.push(end);
+            }
+
+            (format!("WHERE {}", conditions.join(" AND ")), params)
+        } else {
+            (String::new(), Vec::new())
+        };
+
+        let sql = format!(
+            "SELECT
+                COALESCE(d.total_requests, 0) + COALESCE(r.total_requests, 0),
+                COALESCE(d.total_cost, 0) + COALESCE(r.total_cost, 0),
+                COALESCE(d.total_input_tokens, 0) + COALESCE(r.total_input_tokens, 0),
+                COALESCE(d.total_output_tokens, 0) + COALESCE(r.total_output_tokens, 0),
+                COALESCE(d.total_cache_creation_tokens, 0) + COALESCE(r.total_cache_creation_tokens, 0),
+                COALESCE(d.total_cache_read_tokens, 0) + COALESCE(r.total_cache_read_tokens, 0),
+                COALESCE(d.success_count, 0) + COALESCE(r.success_count, 0)
+            FROM
+                (SELECT
+                    COUNT(*) as total_requests,
+                    COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0) as total_cost,
+                    COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                    COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                    COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
+                    COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+                    COALESCE(SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END), 0) as success_count
+                 FROM proxy_request_logs {where_clause}) d,
+                (SELECT
+                    COALESCE(SUM(request_count), 0) as total_requests,
+                    COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0) as total_cost,
+                    COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                    COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                    COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
+                    COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens,
+                    COALESCE(SUM(success_count), 0) as success_count
+                 FROM usage_daily_rollups {rollup_where}) r"
+        );
+
+        // Combine params: detail params first, then rollup params
+        let mut all_params: Vec<i64> = params_vec;
+        all_params.extend(rollup_params);
+
+        let result = conn.query_row(&sql, rusqlite::params_from_iter(all_params), |row| {
+            let total_requests: i64 = row.get(0)?;
+            let total_cost: f64 = row.get(1)?;
+            let total_input_tokens: i64 = row.get(2)?;
+            let total_output_tokens: i64 = row.get(3)?;
+            let total_cache_creation_tokens: i64 = row.get(4)?;
+            let total_cache_read_tokens: i64 = row.get(5)?;
+            let success_count: i64 = row.get(6)?;
+
+            let success_rate = if total_requests > 0 {
+                (success_count as f32 / total_requests as f32) * 100.0
+            } else {
+                0.0
+            };
+
+            Ok(UsageSummary {
+                total_requests: total_requests as u64,
+                total_cost: format!("{total_cost:.6}"),
+                total_input_tokens: total_input_tokens as u64,
+                total_output_tokens: total_output_tokens as u64,
+                total_cache_creation_tokens: total_cache_creation_tokens as u64,
+                total_cache_read_tokens: total_cache_read_tokens as u64,
+                success_rate,
+            })
+        })?;
+
+        Ok(result)
+    }
+
+    /// Get the daily trend (sliding window: hourly for <=24h, daily for >24h; same window as the summary)
+    pub fn get_daily_trends(
+        &self,
+        start_date: Option<i64>,
+        end_date: Option<i64>,
+    ) -> Result<Vec<DailyStats>, AppError> {
+        let conn = lock_conn!(self.conn);
+
+        let end_ts = end_date.unwrap_or_else(|| Local::now().timestamp());
+        let mut start_ts = start_date.unwrap_or_else(|| end_ts - 24 * 60 * 60);
+
+        if start_ts >= end_ts {
+            start_ts = end_ts - 24 * 60 * 60;
+        }
+
+        let duration = end_ts - start_ts;
+        let bucket_seconds: i64 = if duration <= 24 * 60 * 60 {
+            60 * 60
+        } else {
+            24 * 60 * 60
+        };
+        let mut bucket_count: i64 = if duration <= 0 {
+            1
+        } else {
+            ((duration as f64) / bucket_seconds as f64).ceil() as i64
+        };
+
+        // A fixed 24-hour window is 24 hourly buckets, which avoids floating-point error
+        if bucket_seconds == 60 * 60 {
+            bucket_count = 24;
+        }
+
+        if bucket_count < 1 {
+            bucket_count = 1;
+        }
+
+        // Query detail logs
+        let sql = "
+            SELECT
+                CAST((created_at - ?1) / ?3 AS INTEGER) as bucket_idx,
+                COUNT(*) as request_count,
+                COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0) as total_cost,
+                COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens,
+                COALESCE(SUM(input_tokens), 0) as total_input_tokens,
+                COALESCE(SUM(output_tokens), 0) as total_output_tokens,
+                COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation_tokens,
+                COALESCE(SUM(cache_read_tokens), 0) as total_cache_read_tokens
+            FROM proxy_request_logs
+            WHERE created_at >= ?1 AND created_at <= ?2
+            GROUP BY bucket_idx
+            ORDER BY bucket_idx ASC";
+
+        let mut stmt = conn.prepare(sql)?;
+        let rows = stmt.query_map(params![start_ts, end_ts, bucket_seconds], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                DailyStats {
+                    date: String::new(),
+                    request_count: row.get::<_, i64>(1)? as u64,
+                    total_cost: format!("{:.6}", row.get::<_, f64>(2)?),
+                    total_tokens: row.get::<_, i64>(3)? as u64,
+                    total_input_tokens: row.get::<_, i64>(4)? as u64,
+                    total_output_tokens: row.get::<_, i64>(5)? as u64,
+                    total_cache_creation_tokens: row.get::<_, i64>(6)? as u64,
+                    total_cache_read_tokens: row.get::<_, i64>(7)? as u64,
+                },
+            ))
+        })?;
+
+        let mut map: HashMap<i64, DailyStats> = HashMap::new();
+        for row in rows {
+            let (mut bucket_idx, stat) = row?;
+            if bucket_idx < 0 {
+                continue;
+            }
+            if bucket_idx >= bucket_count {
+                bucket_idx = bucket_count - 1;
+            }
+            map.insert(bucket_idx, stat);
+        }
+
+        // Also query rollup data (daily granularity, only useful for daily buckets)
+        if bucket_seconds >= 86400 {
+            let rollup_sql = "
+                SELECT
+                    CAST((CAST(strftime('%s', date) AS INTEGER) - ?1) / ?3 AS INTEGER) as bucket_idx,
+                    COALESCE(SUM(request_count), 0),
+                    COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0),
+                    COALESCE(SUM(input_tokens + output_tokens), 0),
+                    COALESCE(SUM(input_tokens), 0),
+                    COALESCE(SUM(output_tokens), 0),
+                    COALESCE(SUM(cache_creation_tokens), 0),
+                    COALESCE(SUM(cache_read_tokens), 0)
+                FROM usage_daily_rollups
+                WHERE date >= date(?1, 'unixepoch', 'localtime') AND date <= date(?2, 'unixepoch', 'localtime')
+                GROUP BY bucket_idx
+                ORDER BY bucket_idx ASC";
+
+            let mut rstmt = conn.prepare(rollup_sql)?;
+            let rrows = rstmt.query_map(params![start_ts, end_ts, bucket_seconds], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    (
+                        row.get::<_, i64>(1)? as u64,
+                        row.get::<_, f64>(2)?,
+                        row.get::<_, i64>(3)? as u64,
+                        row.get::<_, i64>(4)? as u64,
+                        row.get::<_, i64>(5)? as u64,
+                        row.get::<_, i64>(6)? as u64,
+                        row.get::<_, i64>(7)? as u64,
+                    ),
+                ))
+            })?;
+
+            for row in rrows {
+                let (mut bucket_idx, (req, cost, tok, inp, out, cc, cr)) = row?;
+                if bucket_idx < 0 {
+                    continue;
+                }
+                if bucket_idx >= bucket_count {
+                    bucket_idx = bucket_count - 1;
+                }
+                let entry = map.entry(bucket_idx).or_insert_with(|| DailyStats {
+                    date: String::new(),
+                    request_count: 0,
+                    total_cost: "0.000000".to_string(),
+                    total_tokens: 0,
+                    total_input_tokens: 0,
+                    total_output_tokens: 0,
+                    total_cache_creation_tokens: 0,
+                    total_cache_read_tokens: 0,
+                });
+                entry.request_count += req;
+                let existing_cost: f64 = entry.total_cost.parse().unwrap_or(0.0);
+                entry.total_cost = format!("{:.6}", existing_cost + cost);
+                entry.total_tokens += tok;
+                entry.total_input_tokens += inp;
+                entry.total_output_tokens += out;
+                entry.total_cache_creation_tokens += cc;
+                entry.total_cache_read_tokens += cr;
+            }
+        }
+
+        let mut stats = Vec::with_capacity(bucket_count as usize);
+        for i in 0..bucket_count {
+            let bucket_start_ts = start_ts + i * bucket_seconds;
+            let bucket_start = Local
+                .timestamp_opt(bucket_start_ts, 0)
+                .single()
+                .unwrap_or_else(Local::now);
+
+            let date = bucket_start.to_rfc3339();
+
+            if let Some(mut stat) = map.remove(&i) {
+                stat.date = date;
+                stats.push(stat);
+            } else {
+                stats.push(DailyStats {
+                    date,
+                    request_count: 0,
+                    total_cost: "0.000000".to_string(),
+                    total_tokens: 0,
+                    total_input_tokens: 0,
+                    total_output_tokens: 0,
+                    total_cache_creation_tokens: 0,
+                    total_cache_read_tokens: 0,
+                });
+            }
+        }
+
+        Ok(stats)
+    }
+
+    /// Per-provider (per-account) stats over a time range, busiest first.
+    pub fn get_provider_stats(
+        &self,
+        start_date: Option<i64>,
+        end_date: Option<i64>,
+    ) -> Result<Vec<ProviderStats>, AppError> {
+        let (log_where, rollup_where, params) = range_filters(start_date, end_date);
+        let rows = {
+            let conn = lock_conn!(self.conn);
+            // UNION detail logs + rollup data, then aggregate
+            let sql = format!(
+                "SELECT
+                    provider_id, app_type,
+                    SUM(request_count), SUM(total_tokens), SUM(total_cost),
+                    SUM(success_count), SUM(limited_count), SUM(latency_sum),
+                    MAX(last_used_at)
+                FROM (
+                    SELECT provider_id, app_type,
+                        COUNT(*) as request_count,
+                        COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens,
+                        COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0) as total_cost,
+                        COALESCE(SUM(CASE WHEN status_code >= 200 AND status_code < 300 THEN 1 ELSE 0 END), 0) as success_count,
+                        COALESCE(SUM(CASE WHEN status_code = 429 THEN 1 ELSE 0 END), 0) as limited_count,
+                        COALESCE(SUM(latency_ms), 0) as latency_sum,
+                        MAX(created_at) as last_used_at
+                    FROM proxy_request_logs {log_where}
+                    GROUP BY provider_id, app_type
+                    UNION ALL
+                    SELECT provider_id, app_type,
+                        COALESCE(SUM(request_count), 0),
+                        COALESCE(SUM(input_tokens + output_tokens), 0),
+                        COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0),
+                        COALESCE(SUM(success_count), 0),
+                        0,
+                        COALESCE(SUM(avg_latency_ms * request_count), 0),
+                        NULL
+                    FROM usage_daily_rollups {rollup_where}
+                    GROUP BY provider_id, app_type
+                )
+                GROUP BY provider_id, app_type
+                ORDER BY SUM(request_count) DESC"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+                Ok(StatsRow {
+                    provider_id: row.get(0)?,
+                    app_type: row.get(1)?,
+                    requests: row.get(2)?,
+                    tokens: row.get(3)?,
+                    cost: row.get(4)?,
+                    successes: row.get(5)?,
+                    limited: row.get(6)?,
+                    latency_sum: row.get(7)?,
+                    last_used_at: row.get(8)?,
+                })
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()?
+        };
+
+        let mut providers_by_app = std::collections::HashMap::new();
+        let mut stats = Vec::with_capacity(rows.len());
+        for row in rows {
+            let providers = providers_by_app
+                .entry(row.app_type.clone())
+                .or_insert_with(|| self.get_all_providers(&row.app_type).unwrap_or_default());
+            let provider = providers.get(&row.provider_id);
+            let requests = row.requests.max(0);
+            stats.push(ProviderStats {
+                provider_name: provider
+                    .map(|p| p.name.clone())
+                    .unwrap_or_else(|| row.provider_id.clone()),
+                account_email: provider.and_then(|p| p.account_email()),
+                provider_id: row.provider_id,
+                app_type: row.app_type,
+                request_count: requests as u64,
+                total_tokens: row.tokens.max(0) as u64,
+                total_cost: format!("{:.6}", row.cost),
+                success_rate: if requests > 0 {
+                    (row.successes as f32 / requests as f32) * 100.0
+                } else {
+                    0.0
+                },
+                limited_count: row.limited.max(0) as u64,
+                avg_latency_ms: if requests > 0 {
+                    (row.latency_sum / requests as f64) as u64
+                } else {
+                    0
+                },
+                last_used_at: row.last_used_at,
+            });
+        }
+        Ok(stats)
+    }
+
+    /// Get per-model stats
+    pub fn get_model_stats(
+        &self,
+        start_date: Option<i64>,
+        end_date: Option<i64>,
+    ) -> Result<Vec<ModelStats>, AppError> {
+        let (log_where, rollup_where, params) = range_filters(start_date, end_date);
+        let conn = lock_conn!(self.conn);
+
+        // UNION detail logs + rollup data
+        let sql = format!(
+            "SELECT
+                model,
+                SUM(request_count) as request_count,
+                SUM(total_tokens) as total_tokens,
+                SUM(total_cost) as total_cost
+            FROM (
+                SELECT model,
+                    COUNT(*) as request_count,
+                    COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens,
+                    COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0) as total_cost
+                FROM proxy_request_logs {log_where}
+                GROUP BY model
+                UNION ALL
+                SELECT model,
+                    COALESCE(SUM(request_count), 0),
+                    COALESCE(SUM(input_tokens + output_tokens), 0),
+                    COALESCE(SUM(CAST(total_cost_usd AS REAL)), 0)
+                FROM usage_daily_rollups {rollup_where}
+                GROUP BY model
+            )
+            GROUP BY model
+            ORDER BY request_count DESC"
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            let request_count: i64 = row.get(1)?;
+            let total_cost: f64 = row.get(3)?;
+            let avg_cost = if request_count > 0 {
+                total_cost / request_count as f64
+            } else {
+                0.0
+            };
+
+            Ok(ModelStats {
+                model: row.get(0)?,
+                request_count: request_count as u64,
+                total_tokens: row.get::<_, i64>(2)? as u64,
+                total_cost: format!("{total_cost:.6}"),
+                avg_cost_per_request: format!("{avg_cost:.6}"),
+            })
+        })?;
+
+        let mut stats = Vec::new();
+        for row in rows {
+            stats.push(row?);
+        }
+
+        Ok(stats)
+    }
+
+    /// Get the request log list (paginated)
+    pub fn get_request_logs(
+        &self,
+        filters: &LogFilters,
+        page: u32,
+        page_size: u32,
+    ) -> Result<PaginatedLogs, AppError> {
+        let conn = lock_conn!(self.conn);
+
+        let mut conditions = Vec::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(ref app_type) = filters.app_type {
+            conditions.push("l.app_type = ?");
+            params.push(Box::new(app_type.clone()));
+        }
+        if let Some(ref provider_name) = filters.provider_name {
+            conditions.push("p.name LIKE ?");
+            params.push(Box::new(format!("%{provider_name}%")));
+        }
+        if let Some(ref model) = filters.model {
+            conditions.push("l.model LIKE ?");
+            params.push(Box::new(format!("%{model}%")));
+        }
+        if let Some(status) = filters.status_code {
+            conditions.push("l.status_code = ?");
+            params.push(Box::new(status as i64));
+        }
+        if let Some(start) = filters.start_date {
+            conditions.push("l.created_at >= ?");
+            params.push(Box::new(start));
+        }
+        if let Some(end) = filters.end_date {
+            conditions.push("l.created_at <= ?");
+            params.push(Box::new(end));
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        };
+
+        // Get the total count
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM proxy_request_logs l
+             LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
+             {where_clause}"
+        );
+        let count_params: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let total: u32 = conn.query_row(&count_sql, count_params.as_slice(), |row| {
+            row.get::<_, i64>(0).map(|v| v as u32)
+        })?;
+
+        // Get the data
+        let offset = page * page_size;
+        params.push(Box::new(page_size as i64));
+        params.push(Box::new(offset as i64));
+
+        let sql = format!(
+            "SELECT l.request_id, l.provider_id, p.name as provider_name, l.app_type, l.model,
+                    l.request_model, l.cost_multiplier,
+                    l.input_tokens, l.output_tokens, l.cache_read_tokens, l.cache_creation_tokens,
+                    l.input_cost_usd, l.output_cost_usd, l.cache_read_cost_usd, l.cache_creation_cost_usd, l.total_cost_usd,
+                    l.is_streaming, l.latency_ms, l.first_token_ms, l.duration_ms,
+                    l.status_code, l.error_message, l.created_at
+             FROM proxy_request_logs l
+             LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
+             {where_clause}
+             ORDER BY l.created_at DESC
+             LIMIT ? OFFSET ?"
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok(RequestLogDetail {
+                request_id: row.get(0)?,
+                provider_id: row.get(1)?,
+                provider_name: row.get(2)?,
+                app_type: row.get(3)?,
+                model: row.get(4)?,
+                request_model: row.get(5)?,
+                cost_multiplier: row
+                    .get::<_, Option<String>>(6)?
+                    .unwrap_or_else(|| "1".to_string()),
+                input_tokens: row.get::<_, i64>(7)? as u32,
+                output_tokens: row.get::<_, i64>(8)? as u32,
+                cache_read_tokens: row.get::<_, i64>(9)? as u32,
+                cache_creation_tokens: row.get::<_, i64>(10)? as u32,
+                input_cost_usd: row.get(11)?,
+                output_cost_usd: row.get(12)?,
+                cache_read_cost_usd: row.get(13)?,
+                cache_creation_cost_usd: row.get(14)?,
+                total_cost_usd: row.get(15)?,
+                is_streaming: row.get::<_, i64>(16)? != 0,
+                latency_ms: row.get::<_, i64>(17)? as u64,
+                first_token_ms: row.get::<_, Option<i64>>(18)?.map(|v| v as u64),
+                duration_ms: row.get::<_, Option<i64>>(19)?.map(|v| v as u64),
+                status_code: row.get::<_, i64>(20)? as u16,
+                error_message: row.get(21)?,
+                created_at: row.get(22)?,
+            })
+        })?;
+
+        let mut logs = Vec::new();
+        let mut provider_cache = HashMap::new();
+        let mut pricing_cache = HashMap::new();
+
+        for row in rows {
+            let mut log = row?;
+            Self::maybe_backfill_log_costs(
+                &conn,
+                &mut log,
+                &mut provider_cache,
+                &mut pricing_cache,
+            )?;
+            logs.push(log);
+        }
+
+        Ok(PaginatedLogs {
+            data: logs,
+            total,
+            page,
+            page_size,
+        })
+    }
+
+    /// Get a single request's details
+    pub fn get_request_detail(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<RequestLogDetail>, AppError> {
+        let conn = lock_conn!(self.conn);
+
+        let result = conn.query_row(
+            "SELECT l.request_id, l.provider_id, p.name as provider_name, l.app_type, l.model,
+                    l.request_model, l.cost_multiplier,
+                    input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                    input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_creation_cost_usd, total_cost_usd,
+                    is_streaming, latency_ms, first_token_ms, duration_ms,
+                    status_code, error_message, created_at
+             FROM proxy_request_logs l
+             LEFT JOIN providers p ON l.provider_id = p.id AND l.app_type = p.app_type
+             WHERE l.request_id = ?",
+            [request_id],
+            |row| {
+                Ok(RequestLogDetail {
+                    request_id: row.get(0)?,
+                    provider_id: row.get(1)?,
+                    provider_name: row.get(2)?,
+                    app_type: row.get(3)?,
+                    model: row.get(4)?,
+                    request_model: row.get(5)?,
+                    cost_multiplier: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "1".to_string()),
+                    input_tokens: row.get::<_, i64>(7)? as u32,
+                    output_tokens: row.get::<_, i64>(8)? as u32,
+                    cache_read_tokens: row.get::<_, i64>(9)? as u32,
+                    cache_creation_tokens: row.get::<_, i64>(10)? as u32,
+                    input_cost_usd: row.get(11)?,
+                    output_cost_usd: row.get(12)?,
+                    cache_read_cost_usd: row.get(13)?,
+                    cache_creation_cost_usd: row.get(14)?,
+                    total_cost_usd: row.get(15)?,
+                    is_streaming: row.get::<_, i64>(16)? != 0,
+                    latency_ms: row.get::<_, i64>(17)? as u64,
+                    first_token_ms: row.get::<_, Option<i64>>(18)?.map(|v| v as u64),
+                    duration_ms: row.get::<_, Option<i64>>(19)?.map(|v| v as u64),
+                    status_code: row.get::<_, i64>(20)? as u16,
+                    error_message: row.get(21)?,
+                    created_at: row.get(22)?,
+                })
+            },
+        );
+
+        match result {
+            Ok(mut detail) => {
+                let mut provider_cache = HashMap::new();
+                let mut pricing_cache = HashMap::new();
+                Self::maybe_backfill_log_costs(
+                    &conn,
+                    &mut detail,
+                    &mut provider_cache,
+                    &mut pricing_cache,
+                )?;
+                Ok(Some(detail))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(AppError::Database(e.to_string())),
+        }
+    }
+
+    /// Check a provider's usage limits
+    pub fn check_provider_limits(
+        &self,
+        provider_id: &str,
+        app_type: &str,
+    ) -> Result<ProviderLimitStatus, AppError> {
+        let conn = lock_conn!(self.conn);
+
+        // Get the provider's limit settings
+        let (limit_daily, limit_monthly) = conn
+            .query_row(
+                "SELECT meta FROM providers WHERE id = ? AND app_type = ?",
+                params![provider_id, app_type],
+                |row| {
+                    let meta_str: String = row.get(0)?;
+                    Ok(meta_str)
+                },
+            )
+            .ok()
+            .and_then(|meta_str| serde_json::from_str::<serde_json::Value>(&meta_str).ok())
+            .map(|meta| {
+                let daily = meta
+                    .get("limitDailyUsd")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok());
+                let monthly = meta
+                    .get("limitMonthlyUsd")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<f64>().ok());
+                (daily, monthly)
+            })
+            .unwrap_or((None, None));
+
+        // Compute today's usage (detail logs + rollup)
+        let daily_usage: f64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(cost), 0) FROM (
+                    SELECT CAST(total_cost_usd AS REAL) as cost
+                    FROM proxy_request_logs
+                    WHERE provider_id = ? AND app_type = ?
+                      AND date(datetime(created_at, 'unixepoch', 'localtime')) = date('now', 'localtime')
+                    UNION ALL
+                    SELECT CAST(total_cost_usd AS REAL)
+                    FROM usage_daily_rollups
+                    WHERE provider_id = ? AND app_type = ?
+                      AND date = date('now', 'localtime')
+                )",
+                params![provider_id, app_type, provider_id, app_type],
+                |row| row.get(0),
+            )
+            .unwrap_or(0.0);
+
+        // Compute this month's usage (detail logs + rollup)
+        let monthly_usage: f64 = conn
+            .query_row(
+                "SELECT COALESCE(SUM(cost), 0) FROM (
+                    SELECT CAST(total_cost_usd AS REAL) as cost
+                    FROM proxy_request_logs
+                    WHERE provider_id = ? AND app_type = ?
+                      AND strftime('%Y-%m', datetime(created_at, 'unixepoch', 'localtime')) = strftime('%Y-%m', 'now', 'localtime')
+                    UNION ALL
+                    SELECT CAST(total_cost_usd AS REAL)
+                    FROM usage_daily_rollups
+                    WHERE provider_id = ? AND app_type = ?
+                      AND strftime('%Y-%m', date) = strftime('%Y-%m', 'now', 'localtime')
+                )",
+                params![provider_id, app_type, provider_id, app_type],
+                |row| row.get(0),
+            )
+            .unwrap_or(0.0);
+
+        let daily_exceeded = limit_daily
+            .map(|limit| daily_usage >= limit)
+            .unwrap_or(false);
+        let monthly_exceeded = limit_monthly
+            .map(|limit| monthly_usage >= limit)
+            .unwrap_or(false);
+
+        Ok(ProviderLimitStatus {
+            provider_id: provider_id.to_string(),
+            daily_usage: format!("{daily_usage:.6}"),
+            daily_limit: limit_daily.map(|l| format!("{l:.2}")),
+            daily_exceeded,
+            monthly_usage: format!("{monthly_usage:.6}"),
+            monthly_limit: limit_monthly.map(|l| format!("{l:.2}")),
+            monthly_exceeded,
+        })
+    }
+}
+
+/// Provider limit status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderLimitStatus {
+    pub provider_id: String,
+    pub daily_usage: String,
+    pub daily_limit: Option<String>,
+    pub daily_exceeded: bool,
+    pub monthly_usage: String,
+    pub monthly_limit: Option<String>,
+    pub monthly_exceeded: bool,
+}
+
+#[derive(Clone)]
+struct PricingInfo {
+    input: rust_decimal::Decimal,
+    output: rust_decimal::Decimal,
+    cache_read: rust_decimal::Decimal,
+    cache_creation: rust_decimal::Decimal,
+}
+
+impl Database {
+    fn maybe_backfill_log_costs(
+        conn: &Connection,
+        log: &mut RequestLogDetail,
+        provider_cache: &mut HashMap<(String, String), rust_decimal::Decimal>,
+        pricing_cache: &mut HashMap<String, PricingInfo>,
+    ) -> Result<(), AppError> {
+        let total_cost = rust_decimal::Decimal::from_str(&log.total_cost_usd)
+            .unwrap_or(rust_decimal::Decimal::ZERO);
+        let has_cost = total_cost > rust_decimal::Decimal::ZERO;
+        let has_usage = log.input_tokens > 0
+            || log.output_tokens > 0
+            || log.cache_read_tokens > 0
+            || log.cache_creation_tokens > 0;
+
+        if has_cost || !has_usage {
+            return Ok(());
+        }
+
+        let pricing = match Self::get_model_pricing_cached(conn, pricing_cache, &log.model)? {
+            Some(info) => info,
+            None => return Ok(()),
+        };
+        let multiplier = Self::get_cost_multiplier_cached(
+            conn,
+            provider_cache,
+            &log.provider_id,
+            &log.app_type,
+        )?;
+
+        let million = rust_decimal::Decimal::from(1_000_000u64);
+
+        // Same calculation as CostCalculator::calculate:
+        // 1. input_cost excludes cache_read_tokens (so cached tokens are not billed twice)
+        // 2. Each cost is a base cost (without the multiplier)
+        // 3. The multiplier applies only to the final total
+        let billable_input_tokens =
+            (log.input_tokens as u64).saturating_sub(log.cache_read_tokens as u64);
+        let input_cost =
+            rust_decimal::Decimal::from(billable_input_tokens) * pricing.input / million;
+        let output_cost =
+            rust_decimal::Decimal::from(log.output_tokens as u64) * pricing.output / million;
+        let cache_read_cost = rust_decimal::Decimal::from(log.cache_read_tokens as u64)
+            * pricing.cache_read
+            / million;
+        let cache_creation_cost = rust_decimal::Decimal::from(log.cache_creation_tokens as u64)
+            * pricing.cache_creation
+            / million;
+        // Total cost = sum of base costs x multiplier
+        let base_total = input_cost + output_cost + cache_read_cost + cache_creation_cost;
+        let total_cost = base_total * multiplier;
+
+        log.input_cost_usd = format!("{input_cost:.6}");
+        log.output_cost_usd = format!("{output_cost:.6}");
+        log.cache_read_cost_usd = format!("{cache_read_cost:.6}");
+        log.cache_creation_cost_usd = format!("{cache_creation_cost:.6}");
+        log.total_cost_usd = format!("{total_cost:.6}");
+
+        conn.execute(
+            "UPDATE proxy_request_logs
+             SET input_cost_usd = ?1,
+                 output_cost_usd = ?2,
+                 cache_read_cost_usd = ?3,
+                 cache_creation_cost_usd = ?4,
+                 total_cost_usd = ?5
+             WHERE request_id = ?6",
+            params![
+                log.input_cost_usd,
+                log.output_cost_usd,
+                log.cache_read_cost_usd,
+                log.cache_creation_cost_usd,
+                log.total_cost_usd,
+                log.request_id
+            ],
+        )
+        .map_err(|e| AppError::Database(format!("Failed to update request cost: {e}")))?;
+
+        Ok(())
+    }
+
+    fn get_cost_multiplier_cached(
+        conn: &Connection,
+        cache: &mut HashMap<(String, String), rust_decimal::Decimal>,
+        provider_id: &str,
+        app_type: &str,
+    ) -> Result<rust_decimal::Decimal, AppError> {
+        let key = (provider_id.to_string(), app_type.to_string());
+        if let Some(multiplier) = cache.get(&key) {
+            return Ok(*multiplier);
+        }
+
+        let meta_json: Option<String> = conn
+            .query_row(
+                "SELECT meta FROM providers WHERE id = ? AND app_type = ?",
+                params![provider_id, app_type],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| AppError::Database(format!("Failed to query provider meta: {e}")))?;
+
+        let multiplier = meta_json
+            .and_then(|meta| serde_json::from_str::<Value>(&meta).ok())
+            .and_then(|value| value.get("costMultiplier").cloned())
+            .and_then(|val| {
+                val.as_str()
+                    .and_then(|s| rust_decimal::Decimal::from_str(s).ok())
+            })
+            .unwrap_or(rust_decimal::Decimal::ONE);
+
+        cache.insert(key, multiplier);
+        Ok(multiplier)
+    }
+
+    fn get_model_pricing_cached(
+        conn: &Connection,
+        cache: &mut HashMap<String, PricingInfo>,
+        model: &str,
+    ) -> Result<Option<PricingInfo>, AppError> {
+        if let Some(info) = cache.get(model) {
+            return Ok(Some(info.clone()));
+        }
+
+        let row = find_model_pricing_row(conn, model)?;
+        let Some((input, output, cache_read, cache_creation)) = row else {
+            return Ok(None);
+        };
+
+        let pricing = PricingInfo {
+            input: rust_decimal::Decimal::from_str(&input)
+                .map_err(|e| AppError::Database(format!("Failed to parse input price: {e}")))?,
+            output: rust_decimal::Decimal::from_str(&output)
+                .map_err(|e| AppError::Database(format!("Failed to parse output price: {e}")))?,
+            cache_read: rust_decimal::Decimal::from_str(&cache_read).map_err(|e| {
+                AppError::Database(format!("Failed to parse cache read price: {e}"))
+            })?,
+            cache_creation: rust_decimal::Decimal::from_str(&cache_creation).map_err(|e| {
+                AppError::Database(format!("Failed to parse cache write price: {e}"))
+            })?,
+        };
+
+        cache.insert(model.to_string(), pricing.clone());
+        Ok(Some(pricing))
+    }
+}
+
+pub(crate) fn find_model_pricing_row(
+    conn: &Connection,
+    model_id: &str,
+) -> Result<Option<(String, String, String, String)>, AppError> {
+    // Clean the model name: drop the prefix (/) and suffix (:), replace @ with -
+    // e.g. moonshotai/gpt-5.2-codex@low:v2 -> gpt-5.2-codex-low
+    let cleaned = model_id
+        .rsplit_once('/')
+        .map_or(model_id, |(_, r)| r)
+        .split(':')
+        .next()
+        .unwrap_or(model_id)
+        .trim()
+        .replace('@', "-");
+
+    // Exact match on the cleaned name
+    let exact = conn
+        .query_row(
+            "SELECT input_cost_per_million, output_cost_per_million,
+                    cache_read_cost_per_million, cache_creation_cost_per_million
+             FROM model_pricing
+             WHERE model_id = ?1",
+            [&cleaned],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| AppError::Database(format!("Failed to query model pricing: {e}")))?;
+
+    if exact.is_none() {
+        log::warn!("No pricing found for model {model_id} (cleaned: {cleaned}); cost will be recorded as 0");
+    }
+
+    Ok(exact)
+}
+
+/// One aggregated row of the per-provider stats query.
+struct StatsRow {
+    provider_id: String,
+    app_type: String,
+    requests: i64,
+    tokens: i64,
+    cost: f64,
+    successes: i64,
+    limited: i64,
+    latency_sum: f64,
+    last_used_at: Option<i64>,
+}
+
+/// WHERE clauses for a time range over the request log (`created_at`, Unix
+/// seconds) and the daily rollups (`date`, local day), with their parameters
+/// in binding order: log first, then rollup.
+fn range_filters(start_date: Option<i64>, end_date: Option<i64>) -> (String, String, Vec<i64>) {
+    let mut log_conditions = Vec::new();
+    let mut rollup_conditions = Vec::new();
+    let mut log_params = Vec::new();
+    let mut rollup_params = Vec::new();
+    if let Some(start) = start_date {
+        log_conditions.push("created_at >= ?");
+        rollup_conditions.push("date >= date(?, 'unixepoch', 'localtime')");
+        log_params.push(start);
+        rollup_params.push(start);
+    }
+    if let Some(end) = end_date {
+        log_conditions.push("created_at <= ?");
+        rollup_conditions.push("date <= date(?, 'unixepoch', 'localtime')");
+        log_params.push(end);
+        rollup_params.push(end);
+    }
+    let clause = |conditions: Vec<&str>| {
+        if conditions.is_empty() {
+            String::new()
+        } else {
+            format!("WHERE {}", conditions.join(" AND "))
+        }
+    };
+    log_params.extend(rollup_params);
+    (
+        clause(log_conditions),
+        clause(rollup_conditions),
+        log_params,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_usage_summary() -> Result<(), AppError> {
+        let db = Database::memory()?;
+
+        // Insert test data
+        {
+            let conn = lock_conn!(db.conn);
+            conn.execute(
+                "INSERT INTO proxy_request_logs (
+                    request_id, provider_id, app_type, model,
+                    input_tokens, output_tokens, total_cost_usd,
+                    latency_ms, status_code, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params!["req1", "p1", "claude", "claude-3", 100, 50, "0.01", 100, 200, 1000],
+            )?;
+            conn.execute(
+                "INSERT INTO proxy_request_logs (
+                    request_id, provider_id, app_type, model,
+                    input_tokens, output_tokens, total_cost_usd,
+                    latency_ms, status_code, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params!["req2", "p1", "claude", "claude-3", 200, 100, "0.02", 150, 200, 2000],
+            )?;
+        }
+
+        let summary = db.get_usage_summary(None, None)?;
+        assert_eq!(summary.total_requests, 2);
+        assert_eq!(summary.success_rate, 100.0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_model_stats() -> Result<(), AppError> {
+        let db = Database::memory()?;
+
+        // Insert test data
+        {
+            let conn = lock_conn!(db.conn);
+            conn.execute(
+                "INSERT INTO proxy_request_logs (
+                    request_id, provider_id, app_type, model,
+                    input_tokens, output_tokens, total_cost_usd,
+                    latency_ms, status_code, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    "req1",
+                    "p1",
+                    "claude",
+                    "claude-3-sonnet",
+                    100,
+                    50,
+                    "0.01",
+                    100,
+                    200,
+                    1000
+                ],
+            )?;
+        }
+
+        let stats = db.get_model_stats(None, None)?;
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].model, "claude-3-sonnet");
+        assert_eq!(stats[0].request_count, 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn account_stats_follow_the_time_range_and_count_limit_refusals() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        {
+            let conn = lock_conn!(db.conn);
+            for (id, status, created_at) in
+                [("r1", 200, 1_000), ("r2", 429, 2_000), ("r3", 200, 50)]
+            {
+                conn.execute(
+                    "INSERT INTO proxy_request_logs (
+                        request_id, provider_id, app_type, model,
+                        input_tokens, output_tokens, total_cost_usd,
+                        latency_ms, status_code, created_at
+                    ) VALUES (?, 'p1', 'codex', 'gpt-5', 10, 5, '0', 100, ?, ?)",
+                    params![id, status, created_at],
+                )?;
+            }
+        }
+
+        let stats = db.get_provider_stats(Some(500), None)?;
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].app_type, "codex");
+        assert_eq!(stats[0].request_count, 2);
+        assert_eq!(stats[0].limited_count, 1);
+        assert_eq!(stats[0].last_used_at, Some(2_000));
+        assert_eq!(
+            stats[0].provider_name, "p1",
+            "an unknown provider shows its id"
+        );
+
+        assert_eq!(db.get_provider_stats(None, None)?[0].request_count, 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_model_pricing_matching() -> Result<(), AppError> {
+        let db = Database::memory()?;
+        let conn = lock_conn!(db.conn);
+
+        // Add extra pricing data covering the prefix/suffix cleaning cases
+        conn.execute(
+            "INSERT OR REPLACE INTO model_pricing (
+                model_id, display_name, input_cost_per_million, output_cost_per_million,
+                cache_read_cost_per_million, cache_creation_cost_per_million
+            ) VALUES (?, ?, ?, ?, ?, ?)",
+            params![
+                "claude-haiku-4.5",
+                "Claude Haiku 4.5",
+                "1.0",
+                "2.0",
+                "0.0",
+                "0.0"
+            ],
+        )?;
+
+        // Exact match (seed_model_pricing already has claude-sonnet-4-5-20250929)
+        let result = find_model_pricing_row(&conn, "claude-sonnet-4-5-20250929")?;
+        assert!(
+            result.is_some(),
+            "should match claude-sonnet-4-5-20250929 exactly"
+        );
+
+        // Cleaning: strip the prefix and the colon suffix
+        let result = find_model_pricing_row(&conn, "anthropic/claude-haiku-4.5")?;
+        assert!(
+            result.is_some(),
+            "prefixed model anthropic/claude-haiku-4.5 should match claude-haiku-4.5"
+        );
+        let result = find_model_pricing_row(&conn, "moonshotai/kimi-k2-0905:exa")?;
+        assert!(
+            result.is_some(),
+            "a model with a prefix and colon suffix should match kimi-k2-0905 after cleaning"
+        );
+
+        // Cleaning: @ becomes - (seed_model_pricing already has gpt-5.2-codex-low)
+        let result = find_model_pricing_row(&conn, "gpt-5.2-codex@low")?;
+        assert!(
+            result.is_some(),
+            "model gpt-5.2-codex@low with the @ separator should match gpt-5.2-codex-low"
+        );
+
+        // A model that does not exist
+        let result = find_model_pricing_row(&conn, "unknown-model-123")?;
+        assert!(
+            result.is_none(),
+            "should not match a model that does not exist"
+        );
+
+        Ok(())
+    }
+}

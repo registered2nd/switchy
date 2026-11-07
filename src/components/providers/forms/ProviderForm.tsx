@@ -1,0 +1,2179 @@
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Form, FormField, FormItem, FormMessage } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { providerSchema, type ProviderFormData } from "@/lib/schemas/provider";
+import {
+  providersApi,
+  claudeAccountApi,
+  settingsApi,
+  type AppId,
+  type CaptureOutcome,
+  type CapturedIdentity,
+} from "@/lib/api";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import type {
+  ProviderCategory,
+  ProviderMeta,
+  ProviderTestConfig,
+  ProviderProxyConfig,
+  ClaudeApiFormat,
+  ClaudeApiKeyField,
+} from "@/types";
+import {
+  providerPresets,
+  type ProviderPreset,
+  type TokenPlanProvider,
+} from "@/config/claudeProviderPresets";
+import {
+  codexProviderPresets,
+  type CodexProviderPreset,
+} from "@/config/codexProviderPresets";
+import {
+  geminiProviderPresets,
+  type GeminiProviderPreset,
+} from "@/config/geminiProviderPresets";
+import {
+  opencodeProviderPresets,
+  type OpenCodeProviderPreset,
+} from "@/config/opencodeProviderPresets";
+import {
+  openclawProviderPresets,
+  type OpenClawProviderPreset,
+  type OpenClawSuggestedDefaults,
+} from "@/config/openclawProviderPresets";
+import {
+  kimiProviderPresets,
+  type KimiProviderPreset,
+} from "@/config/kimiProviderPresets";
+import { getKimiCustomTemplate } from "@/config/kimiTemplates";
+import KimiConfigEditor from "./KimiConfigEditor";
+import { KimiFormFields } from "./KimiFormFields";
+import { OpenCodeFormFields } from "./OpenCodeFormFields";
+import { OpenClawFormFields } from "./OpenClawFormFields";
+import type { UniversalProviderPreset } from "@/config/universalProviderPresets";
+import {
+  applyTemplateValues,
+  hasApiKeyField,
+} from "@/utils/providerConfigUtils";
+import { mergeProviderMeta } from "@/utils/providerMetaUtils";
+import { getCodexCustomTemplate } from "@/config/codexTemplates";
+import CodexConfigEditor from "./CodexConfigEditor";
+import { CommonConfigEditor } from "./CommonConfigEditor";
+import GeminiConfigEditor from "./GeminiConfigEditor";
+import JsonEditor from "@/components/JsonEditor";
+import { Label } from "@/components/ui/label";
+import { ProviderPresetSelector } from "./ProviderPresetSelector";
+import { BasicFormFields } from "./BasicFormFields";
+import { ClaudeFormFields } from "./ClaudeFormFields";
+import { CodexFormFields } from "./CodexFormFields";
+import { GeminiFormFields } from "./GeminiFormFields";
+import { OmoFormFields } from "./OmoFormFields";
+import { parseOmoOtherFieldsObject } from "@/types/omo";
+import {
+  ProviderAdvancedConfig,
+  type PricingModelSourceOption,
+} from "./ProviderAdvancedConfig";
+import {
+  useProviderCategory,
+  useApiKeyState,
+  useBaseUrlState,
+  useModelState,
+  useCodexConfigState,
+  useApiKeyLink,
+  useTemplateValues,
+  useCommonConfigSnippet,
+  useCodexCommonConfig,
+  useSpeedTestEndpoints,
+  useCodexTomlValidation,
+  useGeminiConfigState,
+  useGeminiCommonConfig,
+  useOmoModelSource,
+  useOpencodeFormState,
+  useOmoDraftState,
+  useOpenclawFormState,
+  useCopilotAuth,
+  useKimiConfigState,
+  useKimiCommonConfig,
+} from "./hooks";
+import {
+  CLAUDE_DEFAULT_CONFIG,
+  CODEX_DEFAULT_CONFIG,
+  KIMI_DEFAULT_CONFIG,
+  GEMINI_DEFAULT_CONFIG,
+  OPENCODE_DEFAULT_CONFIG,
+  OPENCLAW_DEFAULT_CONFIG,
+  normalizePricingSource,
+} from "./helpers/opencodeFormUtils";
+import { resolveManagedAccountId } from "@/lib/authBinding";
+import { useOpenClawLiveProviderIds } from "@/hooks/useOpenClaw";
+
+type PresetEntry = {
+  id: string;
+  preset:
+    | ProviderPreset
+    | CodexProviderPreset
+    | GeminiProviderPreset
+    | OpenCodeProviderPreset
+    | OpenClawProviderPreset
+    | KimiProviderPreset;
+};
+
+interface ProviderFormProps {
+  appId: AppId;
+  providerId?: string;
+  submitLabel: string;
+  onSubmit: (values: ProviderFormValues) => Promise<void> | void;
+  onCancel: () => void;
+  onUniversalPresetSelect?: (preset: UniversalProviderPreset) => void;
+  onManageUniversalProviders?: () => void;
+  onSubmittingChange?: (isSubmitting: boolean) => void;
+  initialData?: {
+    name?: string;
+    websiteUrl?: string;
+    notes?: string;
+    settingsConfig?: Record<string, unknown>;
+    category?: ProviderCategory;
+    meta?: ProviderMeta;
+    icon?: string;
+    iconColor?: string;
+  };
+  showButtons?: boolean;
+  /** Offer only these presets (by name), besides a custom one. */
+  presetNames?: string[];
+}
+
+export function ProviderForm({
+  appId,
+  providerId,
+  submitLabel,
+  onSubmit,
+  onCancel,
+  onUniversalPresetSelect,
+  onManageUniversalProviders,
+  onSubmittingChange,
+  initialData,
+  showButtons = true,
+  presetNames,
+}: ProviderFormProps) {
+  const { t } = useTranslation();
+  const isEditMode = Boolean(initialData);
+
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(
+    initialData ? null : "custom",
+  );
+  const [activePreset, setActivePreset] = useState<{
+    id: string;
+    category?: ProviderCategory;
+    partnerPromotionKey?: string;
+    suggestedDefaults?: OpenClawSuggestedDefaults;
+    tokenPlan?: TokenPlanProvider;
+  } | null>(null);
+  const [isEndpointModalOpen, setIsEndpointModalOpen] = useState(false);
+  const [isCodexEndpointModalOpen, setIsCodexEndpointModalOpen] =
+    useState(false);
+  const [isKimiEndpointModalOpen, setIsKimiEndpointModalOpen] = useState(false);
+
+  const [draftCustomEndpoints, setDraftCustomEndpoints] = useState<string[]>(
+    () => {
+      if (initialData) return [];
+      return [];
+    },
+  );
+  const [endpointAutoSelect, setEndpointAutoSelect] = useState<boolean>(
+    () => initialData?.meta?.endpointAutoSelect ?? true,
+  );
+  const supportsFullUrl = appId === "claude" || appId === "codex";
+  const [localIsFullUrl, setLocalIsFullUrl] = useState<boolean>(() => {
+    if (!supportsFullUrl) return false;
+    return initialData?.meta?.isFullUrl ?? false;
+  });
+
+  const [testConfig, setTestConfig] = useState<ProviderTestConfig>(
+    () => initialData?.meta?.testConfig ?? { enabled: false },
+  );
+  const [proxyConfig, setProxyConfig] = useState<ProviderProxyConfig>(
+    () => initialData?.meta?.proxyConfig ?? { enabled: false },
+  );
+  const [rotationThreshold, setRotationThreshold] = useState<
+    number | undefined
+  >(() => initialData?.meta?.rotationThresholdPercent);
+  const [pricingConfig, setPricingConfig] = useState<{
+    enabled: boolean;
+    costMultiplier?: string;
+    pricingModelSource: PricingModelSourceOption;
+  }>(() => ({
+    enabled:
+      initialData?.meta?.costMultiplier !== undefined ||
+      initialData?.meta?.pricingModelSource !== undefined,
+    costMultiplier: initialData?.meta?.costMultiplier,
+    pricingModelSource: normalizePricingSource(
+      initialData?.meta?.pricingModelSource,
+    ),
+  }));
+
+  const { category } = useProviderCategory({
+    appId,
+    selectedPresetId,
+    isEditMode,
+    initialCategory: initialData?.category,
+  });
+  const [capturedIdentity, setCapturedIdentity] =
+    useState<CapturedIdentity | null>(
+      initialData?.meta?.capturedClaudeAccount ?? null,
+    );
+  const [captureConfirm, setCaptureConfirm] = useState<{
+    existing: CapturedIdentity;
+    incoming: CapturedIdentity;
+  } | null>(null);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const [capturing, setCapturing] = useState(false);
+
+  const showCaptureControls =
+    isEditMode && appId === "claude" && category === "official" && !!providerId;
+  // Pooled accounts: rotation moves Official Claude and Codex accounts by
+  // their usage, so only they take a switch-away limit of their own.
+  const showRotationThreshold =
+    (appId === "claude" || appId === "codex") && category === "official";
+  const { data: poolConfig } = useQuery({
+    queryKey: ["accountPoolConfig"],
+    queryFn: () => settingsApi.getAccountPoolConfig(),
+    enabled: showRotationThreshold,
+  });
+  const isOmoCategory = appId === "opencode" && category === "omo";
+  const isOmoSlimCategory = appId === "opencode" && category === "omo-slim";
+  const isAnyOmoCategory = isOmoCategory || isOmoSlimCategory;
+
+  useEffect(() => {
+    setSelectedPresetId(initialData ? null : "custom");
+    setActivePreset(null);
+
+    if (!initialData) {
+      setDraftCustomEndpoints([]);
+    }
+    setEndpointAutoSelect(initialData?.meta?.endpointAutoSelect ?? true);
+    setLocalIsFullUrl(
+      supportsFullUrl ? (initialData?.meta?.isFullUrl ?? false) : false,
+    );
+    setTestConfig(initialData?.meta?.testConfig ?? { enabled: false });
+    setProxyConfig(initialData?.meta?.proxyConfig ?? { enabled: false });
+    setRotationThreshold(initialData?.meta?.rotationThresholdPercent);
+    setPricingConfig({
+      enabled:
+        initialData?.meta?.costMultiplier !== undefined ||
+        initialData?.meta?.pricingModelSource !== undefined,
+      costMultiplier: initialData?.meta?.costMultiplier,
+      pricingModelSource: normalizePricingSource(
+        initialData?.meta?.pricingModelSource,
+      ),
+    });
+  }, [appId, initialData, supportsFullUrl]);
+
+  const defaultValues: ProviderFormData = useMemo(
+    () => ({
+      name: initialData?.name ?? "",
+      websiteUrl: initialData?.websiteUrl ?? "",
+      notes: initialData?.notes ?? "",
+      settingsConfig: initialData?.settingsConfig
+        ? JSON.stringify(initialData.settingsConfig, null, 2)
+        : appId === "codex"
+          ? CODEX_DEFAULT_CONFIG
+          : appId === "kimi"
+            ? KIMI_DEFAULT_CONFIG
+            : appId === "gemini"
+              ? GEMINI_DEFAULT_CONFIG
+              : appId === "opencode"
+                ? OPENCODE_DEFAULT_CONFIG
+                : appId === "openclaw"
+                  ? OPENCLAW_DEFAULT_CONFIG
+                  : CLAUDE_DEFAULT_CONFIG,
+      icon: initialData?.icon ?? "",
+      iconColor: initialData?.iconColor ?? "",
+    }),
+    [initialData, appId],
+  );
+
+  const form = useForm<ProviderFormData>({
+    resolver: zodResolver(providerSchema),
+    defaultValues,
+    mode: "onSubmit",
+  });
+  const { isSubmitting } = form.formState;
+
+  const handleSettingsConfigChange = useCallback(
+    (config: string) => {
+      form.setValue("settingsConfig", config);
+    },
+    [form],
+  );
+
+  const [localApiKeyField, setLocalApiKeyField] = useState<ClaudeApiKeyField>(
+    () => {
+      if (appId !== "claude") return "ANTHROPIC_AUTH_TOKEN";
+      if (initialData?.meta?.apiKeyField) return initialData.meta.apiKeyField;
+      // Infer from existing config env
+      const env = (initialData?.settingsConfig as Record<string, unknown>)
+        ?.env as Record<string, unknown> | undefined;
+      if (env?.ANTHROPIC_API_KEY !== undefined) return "ANTHROPIC_API_KEY";
+      return "ANTHROPIC_AUTH_TOKEN";
+    },
+  );
+
+  useEffect(() => {
+    onSubmittingChange?.(isSubmitting);
+  }, [isSubmitting, onSubmittingChange]);
+
+  const {
+    apiKey,
+    handleApiKeyChange,
+    showApiKey: shouldShowApiKey,
+  } = useApiKeyState({
+    initialConfig: form.getValues("settingsConfig"),
+    onConfigChange: handleSettingsConfigChange,
+    selectedPresetId,
+    category,
+    appType: appId,
+    apiKeyField: appId === "claude" ? localApiKeyField : undefined,
+  });
+
+  const { baseUrl, handleClaudeBaseUrlChange } = useBaseUrlState({
+    appType: appId,
+    category,
+    settingsConfig: form.getValues("settingsConfig"),
+    codexConfig: "",
+    onSettingsConfigChange: handleSettingsConfigChange,
+    onCodexConfigChange: () => {},
+  });
+
+  const {
+    claudeModel,
+    reasoningModel,
+    defaultHaikuModel,
+    defaultSonnetModel,
+    defaultOpusModel,
+    handleModelChange,
+  } = useModelState({
+    settingsConfig: form.getValues("settingsConfig"),
+    onConfigChange: handleSettingsConfigChange,
+  });
+
+  const [localApiFormat, setLocalApiFormat] = useState<ClaudeApiFormat>(() => {
+    if (appId !== "claude") return "anthropic";
+    return initialData?.meta?.apiFormat ?? "anthropic";
+  });
+
+  const handleApiFormatChange = useCallback((format: ClaudeApiFormat) => {
+    setLocalApiFormat(format);
+  }, []);
+
+  const handleApiKeyFieldChange = useCallback(
+    (field: ClaudeApiKeyField) => {
+      const prev = localApiKeyField;
+      setLocalApiKeyField(field);
+
+      // Swap the env key name in settingsConfig
+      try {
+        const raw = form.getValues("settingsConfig");
+        const config = JSON.parse(raw || "{}");
+        if (config?.env && prev in config.env) {
+          const value = config.env[prev];
+          delete config.env[prev];
+          config.env[field] = value;
+          const updated = JSON.stringify(config, null, 2);
+          form.setValue("settingsConfig", updated);
+          handleSettingsConfigChange(updated);
+        }
+      } catch {
+        // ignore parse errors during editing
+      }
+    },
+    [localApiKeyField, form, handleSettingsConfigChange],
+  );
+
+  // Copilot OAuth state (Claude app only)
+  const { isAuthenticated: isCopilotAuthenticated } = useCopilotAuth();
+
+  // Selected GitHub account ID (multi-account support)
+  const [selectedGitHubAccountId, setSelectedGitHubAccountId] = useState<
+    string | null
+  >(() => resolveManagedAccountId(initialData?.meta, "github_copilot"));
+
+  const {
+    codexAuth,
+    codexConfig,
+    codexApiKey,
+    codexBaseUrl,
+    codexModelName,
+    codexAuthError,
+    setCodexAuth,
+    handleCodexApiKeyChange,
+    handleCodexBaseUrlChange,
+    handleCodexModelNameChange,
+    handleCodexConfigChange: originalHandleCodexConfigChange,
+    resetCodexConfig,
+  } = useCodexConfigState({ initialData });
+
+  const { configError: codexConfigError, debouncedValidate } =
+    useCodexTomlValidation();
+
+  const handleCodexConfigChange = useCallback(
+    (value: string) => {
+      originalHandleCodexConfigChange(value);
+      debouncedValidate(value);
+    },
+    [originalHandleCodexConfigChange, debouncedValidate],
+  );
+
+  useEffect(() => {
+    if (appId === "codex" && !initialData && selectedPresetId === "custom") {
+      const template = getCodexCustomTemplate();
+      resetCodexConfig(template.auth, template.config);
+    }
+  }, [appId, initialData, selectedPresetId, resetCodexConfig]);
+
+  // ── Kimi: credentials JSON + config.toml ──────────────────────────
+  const {
+    kimiCredentials,
+    kimiConfig,
+    kimiApiKey,
+    kimiBaseUrl,
+    kimiModelName,
+    kimiCredentialsError,
+    setKimiCredentials,
+    parseKimiCredentials,
+    handleKimiApiKeyChange,
+    handleKimiBaseUrlChange,
+    handleKimiModelNameChange,
+    handleKimiConfigChange: originalHandleKimiConfigChange,
+    resetKimiConfig,
+  } = useKimiConfigState({
+    initialData: appId === "kimi" ? initialData : undefined,
+  });
+
+  const {
+    configError: kimiConfigError,
+    debouncedValidate: debouncedValidateKimi,
+  } = useCodexTomlValidation();
+
+  const handleKimiConfigChange = useCallback(
+    (value: string) => {
+      originalHandleKimiConfigChange(value);
+      debouncedValidateKimi(value);
+    },
+    [originalHandleKimiConfigChange, debouncedValidateKimi],
+  );
+
+  useEffect(() => {
+    if (appId === "kimi" && !initialData && selectedPresetId === "custom") {
+      const template = getKimiCustomTemplate();
+      resetKimiConfig(template.credentials, template.config);
+    }
+  }, [appId, initialData, selectedPresetId, resetKimiConfig]);
+
+  useEffect(() => {
+    form.reset(defaultValues);
+  }, [defaultValues, form]);
+
+  const presetCategoryLabels: Record<string, string> = useMemo(
+    () => ({
+      official: t("providerForm.categoryOfficial", {
+        defaultValue: "Official",
+      }),
+      cn_official: t("providerForm.categoryCnOfficial", {
+        defaultValue: "Opensource Official",
+      }),
+      aggregator: t("providerForm.categoryAggregation", {
+        defaultValue: "Aggregation",
+      }),
+      third_party: t("providerForm.categoryThirdParty", {
+        defaultValue: "Third Party",
+      }),
+      omo: "OMO",
+    }),
+    [t],
+  );
+
+  const presetEntries = useMemo(() => {
+    if (appId === "codex") {
+      return codexProviderPresets.map<PresetEntry>((preset, index) => ({
+        id: `codex-${index}`,
+        preset,
+      }));
+    } else if (appId === "gemini") {
+      return geminiProviderPresets.map<PresetEntry>((preset, index) => ({
+        id: `gemini-${index}`,
+        preset,
+      }));
+    } else if (appId === "opencode") {
+      return opencodeProviderPresets.map<PresetEntry>((preset, index) => ({
+        id: `opencode-${index}`,
+        preset,
+      }));
+    } else if (appId === "openclaw") {
+      return openclawProviderPresets.map<PresetEntry>((preset, index) => ({
+        id: `openclaw-${index}`,
+        preset,
+      }));
+    } else if (appId === "kimi") {
+      return kimiProviderPresets.map<PresetEntry>((preset, index) => ({
+        id: `kimi-${index}`,
+        preset,
+      }));
+    }
+    return providerPresets
+      .filter((p) => !p.hidden)
+      .map<PresetEntry>((preset, index) => ({
+        id: `claude-${index}`,
+        preset,
+      }));
+  }, [appId]);
+
+  const {
+    templateValues,
+    templateValueEntries,
+    selectedPreset: templatePreset,
+    handleTemplateValueChange,
+    validateTemplateValues,
+  } = useTemplateValues({
+    selectedPresetId: appId === "claude" ? selectedPresetId : null,
+    presetEntries: appId === "claude" ? presetEntries : [],
+    settingsConfig: form.getValues("settingsConfig"),
+    onConfigChange: handleSettingsConfigChange,
+  });
+
+  const {
+    useCommonConfig,
+    commonConfigSnippet,
+    commonConfigError,
+    handleCommonConfigToggle,
+    handleCommonConfigSnippetChange,
+    isExtracting: isClaudeExtracting,
+    handleExtract: handleClaudeExtract,
+  } = useCommonConfigSnippet({
+    settingsConfig: form.getValues("settingsConfig"),
+    onConfigChange: handleSettingsConfigChange,
+    initialData: appId === "claude" ? initialData : undefined,
+    initialEnabled:
+      appId === "claude" ? initialData?.meta?.commonConfigEnabled : undefined,
+    selectedPresetId: selectedPresetId ?? undefined,
+    enabled: appId === "claude",
+  });
+
+  const {
+    useCommonConfig: useCodexCommonConfigFlag,
+    commonConfigSnippet: codexCommonConfigSnippet,
+    commonConfigError: codexCommonConfigError,
+    handleCommonConfigToggle: handleCodexCommonConfigToggle,
+    handleCommonConfigSnippetChange: handleCodexCommonConfigSnippetChange,
+    isExtracting: isCodexExtracting,
+    handleExtract: handleCodexExtract,
+    clearCommonConfigError: clearCodexCommonConfigError,
+  } = useCodexCommonConfig({
+    codexConfig,
+    onConfigChange: handleCodexConfigChange,
+    initialData: appId === "codex" ? initialData : undefined,
+    initialEnabled:
+      appId === "codex" ? initialData?.meta?.commonConfigEnabled : undefined,
+    selectedPresetId: selectedPresetId ?? undefined,
+  });
+
+  const {
+    useCommonConfig: useKimiCommonConfigFlag,
+    commonConfigSnippet: kimiCommonConfigSnippet,
+    commonConfigError: kimiCommonConfigError,
+    handleCommonConfigToggle: handleKimiCommonConfigToggle,
+    handleCommonConfigSnippetChange: handleKimiCommonConfigSnippetChange,
+    isExtracting: isKimiExtracting,
+    handleExtract: handleKimiExtract,
+    clearCommonConfigError: clearKimiCommonConfigError,
+  } = useKimiCommonConfig({
+    kimiConfig,
+    onConfigChange: handleKimiConfigChange,
+    initialData: appId === "kimi" ? initialData : undefined,
+    initialEnabled:
+      appId === "kimi" ? initialData?.meta?.commonConfigEnabled : undefined,
+    selectedPresetId: selectedPresetId ?? undefined,
+    enabled: appId === "kimi",
+  });
+
+  const {
+    geminiEnv,
+    geminiConfig,
+    geminiApiKey,
+    geminiBaseUrl,
+    geminiModel,
+    envError,
+    configError: geminiConfigError,
+    handleGeminiApiKeyChange: originalHandleGeminiApiKeyChange,
+    handleGeminiBaseUrlChange: originalHandleGeminiBaseUrlChange,
+    handleGeminiModelChange: originalHandleGeminiModelChange,
+    handleGeminiEnvChange,
+    handleGeminiConfigChange,
+    resetGeminiConfig,
+    envStringToObj,
+    envObjToString,
+  } = useGeminiConfigState({
+    initialData: appId === "gemini" ? initialData : undefined,
+  });
+
+  const updateGeminiEnvField = useCallback(
+    (
+      key: "GEMINI_API_KEY" | "GOOGLE_GEMINI_BASE_URL" | "GEMINI_MODEL",
+      value: string,
+    ) => {
+      try {
+        const config = JSON.parse(form.getValues("settingsConfig") || "{}") as {
+          env?: Record<string, unknown>;
+        };
+        if (!config.env || typeof config.env !== "object") {
+          config.env = {};
+        }
+        config.env[key] = value;
+        form.setValue("settingsConfig", JSON.stringify(config, null, 2));
+      } catch {}
+    },
+    [form],
+  );
+
+  const handleGeminiApiKeyChange = useCallback(
+    (key: string) => {
+      originalHandleGeminiApiKeyChange(key);
+      updateGeminiEnvField("GEMINI_API_KEY", key.trim());
+    },
+    [originalHandleGeminiApiKeyChange, updateGeminiEnvField],
+  );
+
+  const handleGeminiBaseUrlChange = useCallback(
+    (url: string) => {
+      originalHandleGeminiBaseUrlChange(url);
+      updateGeminiEnvField(
+        "GOOGLE_GEMINI_BASE_URL",
+        url.trim().replace(/\/+$/, ""),
+      );
+    },
+    [originalHandleGeminiBaseUrlChange, updateGeminiEnvField],
+  );
+
+  const handleGeminiModelChange = useCallback(
+    (model: string) => {
+      originalHandleGeminiModelChange(model);
+      updateGeminiEnvField("GEMINI_MODEL", model.trim());
+    },
+    [originalHandleGeminiModelChange, updateGeminiEnvField],
+  );
+
+  const {
+    useCommonConfig: useGeminiCommonConfigFlag,
+    commonConfigSnippet: geminiCommonConfigSnippet,
+    commonConfigError: geminiCommonConfigError,
+    handleCommonConfigToggle: handleGeminiCommonConfigToggle,
+    handleCommonConfigSnippetChange: handleGeminiCommonConfigSnippetChange,
+    isExtracting: isGeminiExtracting,
+    handleExtract: handleGeminiExtract,
+    clearCommonConfigError: clearGeminiCommonConfigError,
+  } = useGeminiCommonConfig({
+    envValue: geminiEnv,
+    onEnvChange: handleGeminiEnvChange,
+    envStringToObj,
+    envObjToString,
+    initialData: appId === "gemini" ? initialData : undefined,
+    initialEnabled:
+      appId === "gemini" ? initialData?.meta?.commonConfigEnabled : undefined,
+    selectedPresetId: selectedPresetId ?? undefined,
+  });
+
+  // ── Extracted hooks: OpenCode / OMO / OpenClaw ─────────────────────
+
+  const {
+    omoModelOptions,
+    omoModelVariantsMap,
+    omoPresetMetaMap,
+    existingOpencodeKeys,
+  } = useOmoModelSource({ isOmoCategory: isAnyOmoCategory, providerId });
+
+  const {
+    data: opencodeLiveProviderIds = [],
+    isLoading: isOpencodeLiveProviderIdsLoading,
+  } = useQuery({
+    queryKey: ["opencodeLiveProviderIds"],
+    queryFn: () => providersApi.getOpenCodeLiveProviderIds(),
+    enabled: appId === "opencode" && !isAnyOmoCategory,
+  });
+
+  const opencodeForm = useOpencodeFormState({
+    initialData,
+    appId,
+    providerId,
+    onSettingsConfigChange: (config) => form.setValue("settingsConfig", config),
+    getSettingsConfig: () => form.getValues("settingsConfig"),
+  });
+
+  const initialOmoSettings =
+    appId === "opencode" &&
+    (initialData?.category === "omo" || initialData?.category === "omo-slim")
+      ? (initialData.settingsConfig as Record<string, unknown> | undefined)
+      : undefined;
+
+  const omoDraft = useOmoDraftState({
+    initialOmoSettings,
+    isEditMode,
+    appId,
+    category,
+  });
+
+  const openclawForm = useOpenclawFormState({
+    initialData,
+    appId,
+    providerId,
+    onSettingsConfigChange: (config) => form.setValue("settingsConfig", config),
+    getSettingsConfig: () => form.getValues("settingsConfig"),
+  });
+  const {
+    data: openclawLiveProviderIds = [],
+    isLoading: isOpenclawLiveProviderIdsLoading,
+  } = useOpenClawLiveProviderIds(appId === "openclaw");
+
+  const additiveExistingProviderKeys = useMemo(() => {
+    if (appId === "opencode" && !isAnyOmoCategory) {
+      return Array.from(
+        new Set(
+          [...existingOpencodeKeys, ...opencodeLiveProviderIds].filter(
+            (key) => key !== providerId,
+          ),
+        ),
+      );
+    }
+
+    if (appId === "openclaw") {
+      return Array.from(
+        new Set(
+          [
+            ...openclawForm.existingOpenclawKeys,
+            ...openclawLiveProviderIds,
+          ].filter((key) => key !== providerId),
+        ),
+      );
+    }
+
+    return [];
+  }, [
+    appId,
+    existingOpencodeKeys,
+    isAnyOmoCategory,
+    openclawForm.existingOpenclawKeys,
+    openclawLiveProviderIds,
+    opencodeLiveProviderIds,
+    providerId,
+  ]);
+
+  const isProviderKeyLockStateLoading = useMemo(() => {
+    if (!isEditMode) return false;
+    if (appId === "opencode" && !isAnyOmoCategory) {
+      return isOpencodeLiveProviderIdsLoading;
+    }
+    if (appId === "openclaw") {
+      return isOpenclawLiveProviderIdsLoading;
+    }
+    return false;
+  }, [
+    appId,
+    isAnyOmoCategory,
+    isEditMode,
+    isOpenclawLiveProviderIdsLoading,
+    isOpencodeLiveProviderIdsLoading,
+  ]);
+
+  const isProviderKeyLocked = useMemo(() => {
+    if (!isEditMode || !providerId) return false;
+    if (appId === "opencode" && !isAnyOmoCategory) {
+      return opencodeLiveProviderIds.includes(providerId);
+    }
+    if (appId === "openclaw") {
+      return openclawLiveProviderIds.includes(providerId);
+    }
+    return false;
+  }, [
+    appId,
+    isAnyOmoCategory,
+    isEditMode,
+    openclawLiveProviderIds,
+    opencodeLiveProviderIds,
+    providerId,
+  ]);
+
+  const [isCommonConfigModalOpen, setIsCommonConfigModalOpen] = useState(false);
+
+  const handleSubmit = async (values: ProviderFormData) => {
+    if (
+      showRotationThreshold &&
+      rotationThreshold !== undefined &&
+      (rotationThreshold < 50 || rotationThreshold > 100)
+    ) {
+      toast.error(
+        t("providerAdvanced.rotationThresholdRange", {
+          defaultValue: "Enter a number from 50 to 100, or leave it empty.",
+        }),
+      );
+      return;
+    }
+    if (appId === "claude" && templateValueEntries.length > 0) {
+      const validation = validateTemplateValues();
+      if (!validation.isValid && validation.missingField) {
+        toast.error(
+          t("providerForm.fillParameter", {
+            label: validation.missingField.label,
+            defaultValue: "Please fill in {{label}}",
+          }),
+        );
+        return;
+      }
+    }
+
+    if (!values.name.trim()) {
+      toast.error(
+        t("providerForm.fillSupplierName", {
+          defaultValue: "Please fill in provider name",
+        }),
+      );
+      return;
+    }
+
+    if (appId === "opencode" && !isAnyOmoCategory) {
+      const keyPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+      if (!opencodeForm.opencodeProviderKey.trim()) {
+        toast.error(t("opencode.providerKeyRequired"));
+        return;
+      }
+      if (!keyPattern.test(opencodeForm.opencodeProviderKey)) {
+        toast.error(t("opencode.providerKeyInvalid"));
+        return;
+      }
+      if (isProviderKeyLockStateLoading) {
+        toast.error(
+          t("providerForm.providerKeyStatusLoading", {
+            defaultValue: "Loading provider identity status, please wait.",
+          }),
+        );
+        return;
+      }
+      if (
+        !isProviderKeyLocked &&
+        additiveExistingProviderKeys.includes(opencodeForm.opencodeProviderKey)
+      ) {
+        toast.error(t("opencode.providerKeyDuplicate"));
+        return;
+      }
+      if (Object.keys(opencodeForm.opencodeModels).length === 0) {
+        toast.error(t("opencode.modelsRequired"));
+        return;
+      }
+    }
+
+    // OpenClaw: validate provider key
+    if (appId === "openclaw") {
+      const keyPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+      if (!openclawForm.openclawProviderKey.trim()) {
+        toast.error(t("openclaw.providerKeyRequired"));
+        return;
+      }
+      if (!keyPattern.test(openclawForm.openclawProviderKey)) {
+        toast.error(t("openclaw.providerKeyInvalid"));
+        return;
+      }
+      if (isProviderKeyLockStateLoading) {
+        toast.error(
+          t("providerForm.providerKeyStatusLoading", {
+            defaultValue: "Loading provider identity status, please wait.",
+          }),
+        );
+        return;
+      }
+      if (
+        !isProviderKeyLocked &&
+        additiveExistingProviderKeys.includes(openclawForm.openclawProviderKey)
+      ) {
+        toast.error(t("openclaw.providerKeyDuplicate"));
+        return;
+      }
+    }
+
+    // Required for non-official providers: endpoint and API key
+    // cloud_provider (e.g. Bedrock) handles auth through template variables, so skip the generic check
+    // GitHub Copilot uses OAuth and needs no API key
+    const isCopilotProvider =
+      templatePreset?.providerType === "github_copilot" ||
+      initialData?.meta?.providerType === "github_copilot" ||
+      baseUrl.includes("githubcopilot.com");
+    // GitHub Copilot must be signed in before it can be added
+    if (isCopilotProvider && !isCopilotAuthenticated) {
+      toast.error(
+        t("copilot.loginRequired", {
+          defaultValue: "Please login to GitHub Copilot first",
+        }),
+      );
+      return;
+    }
+
+    if (category !== "official" && category !== "cloud_provider") {
+      if (appId === "claude") {
+        if (!baseUrl.trim()) {
+          toast.error(
+            t("providerForm.endpointRequired", {
+              defaultValue:
+                "API endpoint is required for non-official providers",
+            }),
+          );
+          return;
+        }
+        if (!isCopilotProvider && !apiKey.trim()) {
+          toast.error(
+            t("providerForm.apiKeyRequired", {
+              defaultValue: "Key is required for non-official providers",
+            }),
+          );
+          return;
+        }
+      } else if (appId === "codex") {
+        if (!codexBaseUrl.trim()) {
+          toast.error(
+            t("providerForm.endpointRequired", {
+              defaultValue:
+                "API endpoint is required for non-official providers",
+            }),
+          );
+          return;
+        }
+        if (!codexApiKey.trim()) {
+          toast.error(
+            t("providerForm.apiKeyRequired", {
+              defaultValue: "Key is required for non-official providers",
+            }),
+          );
+          return;
+        }
+      } else if (appId === "gemini") {
+        if (!geminiBaseUrl.trim()) {
+          toast.error(
+            t("providerForm.endpointRequired", {
+              defaultValue:
+                "API endpoint is required for non-official providers",
+            }),
+          );
+          return;
+        }
+        if (!geminiApiKey.trim()) {
+          toast.error(
+            t("providerForm.apiKeyRequired", {
+              defaultValue: "Key is required for non-official providers",
+            }),
+          );
+          return;
+        }
+      } else if (appId === "kimi") {
+        if (!kimiApiKey.trim()) {
+          toast.error(
+            t("providerForm.apiKeyRequired", {
+              defaultValue: "Key is required for non-official providers",
+            }),
+          );
+          return;
+        }
+      }
+    }
+
+    let settingsConfig: string;
+
+    if (appId === "codex") {
+      try {
+        const authJson = JSON.parse(codexAuth);
+        const configObj = {
+          auth: authJson,
+          config: codexConfig ?? "",
+        };
+        settingsConfig = JSON.stringify(configObj);
+      } catch (err) {
+        settingsConfig = values.settingsConfig.trim();
+      }
+    } else if (appId === "kimi") {
+      if (kimiCredentialsError) {
+        toast.error(kimiCredentialsError);
+        return;
+      }
+      settingsConfig = JSON.stringify({
+        config: kimiConfig ?? "",
+        credentials: parseKimiCredentials(kimiCredentials),
+      });
+    } else if (appId === "gemini") {
+      try {
+        const envObj = envStringToObj(geminiEnv);
+        const configObj = geminiConfig.trim() ? JSON.parse(geminiConfig) : {};
+        const combined = {
+          env: envObj,
+          config: configObj,
+        };
+        settingsConfig = JSON.stringify(combined);
+      } catch (err) {
+        settingsConfig = values.settingsConfig.trim();
+      }
+    } else if (
+      appId === "opencode" &&
+      (category === "omo" || category === "omo-slim")
+    ) {
+      const omoConfig: Record<string, unknown> = {};
+      if (Object.keys(omoDraft.omoAgents).length > 0) {
+        omoConfig.agents = omoDraft.omoAgents;
+      }
+      if (
+        category === "omo" &&
+        Object.keys(omoDraft.omoCategories).length > 0
+      ) {
+        omoConfig.categories = omoDraft.omoCategories;
+      }
+      if (omoDraft.omoOtherFieldsStr.trim()) {
+        try {
+          const otherFields = parseOmoOtherFieldsObject(
+            omoDraft.omoOtherFieldsStr,
+          );
+          if (!otherFields) {
+            toast.error(
+              t("omo.jsonMustBeObject", {
+                field: t("omo.otherFields", {
+                  defaultValue: "Other Config",
+                }),
+                defaultValue: "{{field}} must be a JSON object",
+              }),
+            );
+            return;
+          }
+          omoConfig.otherFields = otherFields;
+        } catch {
+          toast.error(
+            t("omo.invalidJson", {
+              defaultValue: "Other Fields contains invalid JSON",
+            }),
+          );
+          return;
+        }
+      }
+      settingsConfig = JSON.stringify(omoConfig);
+    } else {
+      settingsConfig = values.settingsConfig.trim();
+    }
+
+    const payload: ProviderFormValues = {
+      ...values,
+      name: values.name.trim(),
+      websiteUrl: values.websiteUrl?.trim() ?? "",
+      settingsConfig,
+    };
+
+    if (appId === "opencode") {
+      if (isAnyOmoCategory) {
+        if (!isEditMode) {
+          const prefix = category === "omo" ? "omo" : "omo-slim";
+          payload.providerKey = `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+        }
+      } else {
+        payload.providerKey = opencodeForm.opencodeProviderKey;
+      }
+    } else if (appId === "openclaw") {
+      payload.providerKey = openclawForm.openclawProviderKey;
+    }
+
+    if (isAnyOmoCategory && !payload.presetCategory) {
+      payload.presetCategory = category;
+    }
+
+    if (activePreset) {
+      payload.presetId = activePreset.id;
+      if (activePreset.category) {
+        payload.presetCategory = activePreset.category;
+      }
+      // OpenClaw: pass the preset's suggestedDefaults into the submission
+      if (activePreset.suggestedDefaults) {
+        payload.suggestedDefaults = activePreset.suggestedDefaults;
+      }
+    }
+
+    if (!isEditMode && draftCustomEndpoints.length > 0) {
+      const customEndpointsToSave: Record<
+        string,
+        import("@/types").CustomEndpoint
+      > = draftCustomEndpoints.reduce(
+        (acc, url) => {
+          const now = Date.now();
+          acc[url] = { url, addedAt: now, lastUsed: undefined };
+          return acc;
+        },
+        {} as Record<string, import("@/types").CustomEndpoint>,
+      );
+
+      const hadEndpoints =
+        initialData?.meta?.custom_endpoints &&
+        Object.keys(initialData.meta.custom_endpoints).length > 0;
+      const needsClearEndpoints =
+        hadEndpoints && draftCustomEndpoints.length === 0;
+
+      let mergedMeta = needsClearEndpoints
+        ? mergeProviderMeta(initialData?.meta, {})
+        : mergeProviderMeta(initialData?.meta, customEndpointsToSave);
+
+      if (activePreset?.partnerPromotionKey) {
+        mergedMeta = {
+          ...(mergedMeta ?? {}),
+          partnerPromotionKey: activePreset.partnerPromotionKey,
+        };
+      }
+
+      if (mergedMeta !== undefined) {
+        payload.meta = mergedMeta;
+      }
+    }
+
+    const baseMeta: ProviderMeta | undefined =
+      payload.meta ?? (initialData?.meta ? { ...initialData.meta } : undefined);
+
+    // Resolve providerType (from the preset when creating, from existing data when editing)
+    const providerType =
+      templatePreset?.providerType || initialData?.meta?.providerType;
+
+    payload.meta = {
+      ...(baseMeta ?? {}),
+      commonConfigEnabled:
+        appId === "claude"
+          ? useCommonConfig
+          : appId === "codex"
+            ? useCodexCommonConfigFlag
+            : appId === "kimi"
+              ? useKimiCommonConfigFlag
+              : appId === "gemini"
+                ? useGeminiCommonConfigFlag
+                : undefined,
+      endpointAutoSelect,
+      // Save providerType (identifies special providers such as Copilot)
+      providerType,
+      authBinding: isCopilotProvider
+        ? {
+            source: "managed_account",
+            authProvider: "github_copilot",
+            accountId: selectedGitHubAccountId ?? undefined,
+          }
+        : undefined,
+      // GitHub Copilot multi-account: save the linked account ID
+      githubAccountId:
+        isCopilotProvider && selectedGitHubAccountId
+          ? selectedGitHubAccountId
+          : undefined,
+      testConfig: testConfig.enabled ? testConfig : undefined,
+      proxyConfig: proxyConfig.enabled ? proxyConfig : undefined,
+      rotationThresholdPercent: showRotationThreshold
+        ? rotationThreshold
+        : undefined,
+      costMultiplier: pricingConfig.enabled
+        ? pricingConfig.costMultiplier
+        : undefined,
+      pricingModelSource:
+        pricingConfig.enabled && pricingConfig.pricingModelSource !== "inherit"
+          ? pricingConfig.pricingModelSource
+          : undefined,
+      apiFormat:
+        appId === "claude" && category !== "official"
+          ? localApiFormat
+          : undefined,
+      apiKeyField:
+        appId === "claude" &&
+        category !== "official" &&
+        localApiKeyField !== "ANTHROPIC_AUTH_TOKEN"
+          ? localApiKeyField
+          : undefined,
+      isFullUrl:
+        supportsFullUrl && category !== "official" && localIsFullUrl
+          ? true
+          : undefined,
+      capturedClaudeAccount: capturedIdentity ?? undefined,
+    };
+
+    // A card made from a coding-plan preset shows the plan's quota from the
+    // start, read with the key it was given.
+    if (!initialData && activePreset?.tokenPlan && !payload.meta.usage_script) {
+      payload.meta.usage_script = {
+        enabled: true,
+        language: "javascript",
+        code: "",
+        timeout: 10,
+        templateType: "token_plan",
+        codingPlanProvider: activePreset.tokenPlan,
+        autoQueryInterval: 5,
+      };
+    }
+
+    await onSubmit(payload);
+  };
+
+  const groupedPresets = useMemo(() => {
+    const offered = presetNames
+      ? presetEntries.filter((entry) => presetNames.includes(entry.preset.name))
+      : presetEntries;
+    return offered.reduce<Record<string, PresetEntry[]>>((acc, entry) => {
+      const category = entry.preset.category ?? "others";
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(entry);
+      return acc;
+    }, {});
+  }, [presetEntries, presetNames]);
+
+  const categoryKeys = useMemo(() => {
+    return Object.keys(groupedPresets).filter(
+      (key) => key !== "custom" && groupedPresets[key]?.length,
+    );
+  }, [groupedPresets]);
+
+  const shouldShowSpeedTest =
+    category !== "official" && category !== "cloud_provider";
+
+  const {
+    shouldShowApiKeyLink: shouldShowClaudeApiKeyLink,
+    websiteUrl: claudeWebsiteUrl,
+  } = useApiKeyLink({
+    appId: "claude",
+    category,
+    selectedPresetId,
+    presetEntries,
+    formWebsiteUrl: form.watch("websiteUrl") || "",
+  });
+
+  const {
+    shouldShowApiKeyLink: shouldShowCodexApiKeyLink,
+    websiteUrl: codexWebsiteUrl,
+  } = useApiKeyLink({
+    appId: "codex",
+    category,
+    selectedPresetId,
+    presetEntries,
+    formWebsiteUrl: form.watch("websiteUrl") || "",
+  });
+
+  const {
+    shouldShowApiKeyLink: shouldShowGeminiApiKeyLink,
+    websiteUrl: geminiWebsiteUrl,
+    partnerPromotionKey: geminiPartnerPromotionKey,
+  } = useApiKeyLink({
+    appId: "gemini",
+    category,
+    selectedPresetId,
+    presetEntries,
+    formWebsiteUrl: form.watch("websiteUrl") || "",
+  });
+
+  const {
+    shouldShowApiKeyLink: shouldShowOpencodeApiKeyLink,
+    websiteUrl: opencodeWebsiteUrl,
+  } = useApiKeyLink({
+    appId: "opencode",
+    category,
+    selectedPresetId,
+    presetEntries,
+    formWebsiteUrl: form.watch("websiteUrl") || "",
+  });
+
+  const {
+    shouldShowApiKeyLink: shouldShowKimiApiKeyLink,
+    websiteUrl: kimiWebsiteUrl,
+  } = useApiKeyLink({
+    appId: "kimi",
+    category,
+    selectedPresetId,
+    presetEntries,
+    formWebsiteUrl: form.watch("websiteUrl") || "",
+  });
+
+  // API key link hook (OpenClaw)
+  const {
+    shouldShowApiKeyLink: shouldShowOpenclawApiKeyLink,
+    websiteUrl: openclawWebsiteUrl,
+  } = useApiKeyLink({
+    appId: "openclaw",
+    category,
+    selectedPresetId,
+    presetEntries,
+    formWebsiteUrl: form.watch("websiteUrl") || "",
+  });
+
+  // Endpoint speed-test candidates hook
+  const speedTestEndpoints = useSpeedTestEndpoints({
+    appId,
+    selectedPresetId,
+    presetEntries,
+    baseUrl,
+    codexBaseUrl,
+    kimiBaseUrl,
+    initialData,
+  });
+
+  const handlePresetChange = (value: string) => {
+    setSelectedPresetId(value);
+    if (value === "custom") {
+      setActivePreset(null);
+      form.reset(defaultValues);
+
+      if (appId === "codex") {
+        const template = getCodexCustomTemplate();
+        resetCodexConfig(template.auth, template.config);
+      }
+      if (appId === "kimi") {
+        const template = getKimiCustomTemplate();
+        resetKimiConfig(template.credentials, template.config);
+      }
+      if (appId === "gemini") {
+        resetGeminiConfig({}, {});
+      }
+      if (appId === "opencode") {
+        opencodeForm.resetOpencodeState();
+        omoDraft.resetOmoDraftState();
+      }
+      // OpenClaw custom mode: reset to an empty config
+      if (appId === "openclaw") {
+        openclawForm.resetOpenclawState();
+      }
+      return;
+    }
+
+    const entry = presetEntries.find((item) => item.id === value);
+    if (!entry) {
+      return;
+    }
+
+    setActivePreset({
+      id: value,
+      category: entry.preset.category,
+      partnerPromotionKey:
+        appId === "gemini"
+          ? (entry.preset as GeminiProviderPreset).partnerPromotionKey
+          : undefined,
+      tokenPlan:
+        appId === "claude" || appId === "opencode"
+          ? (entry.preset as ProviderPreset | OpenCodeProviderPreset).tokenPlan
+          : undefined,
+    });
+
+    if (appId === "codex") {
+      const preset = entry.preset as CodexProviderPreset;
+      const auth = preset.auth ?? {};
+      const config = preset.config ?? "";
+
+      resetCodexConfig(auth, config);
+
+      form.reset({
+        name: preset.nameKey ? t(preset.nameKey) : preset.name,
+        websiteUrl: preset.websiteUrl ?? "",
+        settingsConfig: JSON.stringify({ auth, config }, null, 2),
+        icon: preset.icon ?? "",
+        iconColor: preset.iconColor ?? "",
+      });
+      return;
+    }
+
+    if (appId === "kimi") {
+      const preset = entry.preset as KimiProviderPreset;
+      const config = preset.config ?? "";
+      const credentials = preset.credentials ?? null;
+
+      resetKimiConfig(credentials, config);
+
+      form.reset({
+        name: preset.nameKey ? t(preset.nameKey) : preset.name,
+        websiteUrl: preset.websiteUrl ?? "",
+        settingsConfig: JSON.stringify({ config, credentials }, null, 2),
+        icon: preset.icon ?? "",
+        iconColor: preset.iconColor ?? "",
+      });
+      return;
+    }
+
+    if (appId === "gemini") {
+      const preset = entry.preset as GeminiProviderPreset;
+      const env = (preset.settingsConfig as any)?.env ?? {};
+      const config = (preset.settingsConfig as any)?.config ?? {};
+
+      resetGeminiConfig(env, config);
+
+      form.reset({
+        name: preset.nameKey ? t(preset.nameKey) : preset.name,
+        websiteUrl: preset.websiteUrl ?? "",
+        settingsConfig: JSON.stringify(preset.settingsConfig, null, 2),
+        icon: preset.icon ?? "",
+        iconColor: preset.iconColor ?? "",
+      });
+      return;
+    }
+
+    if (appId === "opencode") {
+      const preset = entry.preset as OpenCodeProviderPreset;
+      const config = preset.settingsConfig;
+
+      if (preset.category === "omo" || preset.category === "omo-slim") {
+        omoDraft.resetOmoDraftState();
+        form.reset({
+          name: preset.category === "omo" ? "OMO" : "OMO Slim",
+          websiteUrl: preset.websiteUrl ?? "",
+          settingsConfig: JSON.stringify({}, null, 2),
+          icon: preset.icon ?? "",
+          iconColor: preset.iconColor ?? "",
+        });
+        return;
+      }
+
+      opencodeForm.resetOpencodeState(config);
+
+      form.reset({
+        name: preset.nameKey ? t(preset.nameKey) : preset.name,
+        websiteUrl: preset.websiteUrl ?? "",
+        settingsConfig: JSON.stringify(config, null, 2),
+        icon: preset.icon ?? "",
+        iconColor: preset.iconColor ?? "",
+      });
+      return;
+    }
+
+    // OpenClaw preset handling
+    if (appId === "openclaw") {
+      const preset = entry.preset as OpenClawProviderPreset;
+      const config = preset.settingsConfig;
+
+      // Update activePreset with suggestedDefaults for OpenClaw
+      setActivePreset({
+        id: value,
+        category: preset.category,
+        suggestedDefaults: preset.suggestedDefaults,
+      });
+
+      openclawForm.resetOpenclawState(config);
+
+      // Update form fields
+      form.reset({
+        name: preset.nameKey ? t(preset.nameKey) : preset.name,
+        websiteUrl: preset.websiteUrl ?? "",
+        settingsConfig: JSON.stringify(config, null, 2),
+        icon: preset.icon ?? "",
+        iconColor: preset.iconColor ?? "",
+      });
+      return;
+    }
+
+    const preset = entry.preset as ProviderPreset;
+    const config = applyTemplateValues(
+      preset.settingsConfig,
+      preset.templateValues,
+    );
+
+    if (preset.apiFormat) {
+      setLocalApiFormat(preset.apiFormat);
+    } else {
+      setLocalApiFormat("anthropic");
+    }
+
+    setLocalApiKeyField(preset.apiKeyField ?? "ANTHROPIC_AUTH_TOKEN");
+    setLocalIsFullUrl(false);
+
+    form.reset({
+      name: preset.nameKey ? t(preset.nameKey) : preset.name,
+      websiteUrl: preset.websiteUrl ?? "",
+      settingsConfig: JSON.stringify(config, null, 2),
+      icon: preset.icon ?? "",
+      iconColor: preset.iconColor ?? "",
+    });
+  };
+
+  const settingsConfigErrorField = (
+    <FormField
+      control={form.control}
+      name="settingsConfig"
+      render={() => (
+        <FormItem className="space-y-0">
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+
+  return (
+    <Form {...form}>
+      <form
+        id="provider-form"
+        onSubmit={form.handleSubmit(handleSubmit)}
+        className="space-y-6 glass rounded-xl p-6 border border-white/10"
+      >
+        {!initialData && (
+          <ProviderPresetSelector
+            selectedPresetId={selectedPresetId}
+            groupedPresets={groupedPresets}
+            categoryKeys={categoryKeys}
+            presetCategoryLabels={presetCategoryLabels}
+            onPresetChange={handlePresetChange}
+            onUniversalPresetSelect={onUniversalPresetSelect}
+            onManageUniversalProviders={onManageUniversalProviders}
+            category={category}
+          />
+        )}
+
+        <BasicFormFields
+          form={form}
+          beforeNameSlot={
+            appId === "opencode" && !isAnyOmoCategory ? (
+              <div className="space-y-2">
+                <Label htmlFor="opencode-key">
+                  {t("opencode.providerKey")}
+                  <span className="text-destructive ml-1">*</span>
+                </Label>
+                <Input
+                  id="opencode-key"
+                  value={opencodeForm.opencodeProviderKey}
+                  onChange={(e) =>
+                    opencodeForm.setOpencodeProviderKey(
+                      e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                    )
+                  }
+                  placeholder={t("opencode.providerKeyPlaceholder")}
+                  disabled={
+                    isProviderKeyLocked || isProviderKeyLockStateLoading
+                  }
+                  className={
+                    (additiveExistingProviderKeys.includes(
+                      opencodeForm.opencodeProviderKey,
+                    ) &&
+                      !isProviderKeyLocked) ||
+                    (opencodeForm.opencodeProviderKey.trim() !== "" &&
+                      !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(
+                        opencodeForm.opencodeProviderKey,
+                      ))
+                      ? "border-destructive"
+                      : ""
+                  }
+                />
+                {additiveExistingProviderKeys.includes(
+                  opencodeForm.opencodeProviderKey,
+                ) &&
+                  !isProviderKeyLocked && (
+                    <p className="text-xs text-destructive">
+                      {t("opencode.providerKeyDuplicate")}
+                    </p>
+                  )}
+                {opencodeForm.opencodeProviderKey.trim() !== "" &&
+                  !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(
+                    opencodeForm.opencodeProviderKey,
+                  ) && (
+                    <p className="text-xs text-destructive">
+                      {t("opencode.providerKeyInvalid")}
+                    </p>
+                  )}
+                {!(
+                  additiveExistingProviderKeys.includes(
+                    opencodeForm.opencodeProviderKey,
+                  ) && !isProviderKeyLocked
+                ) &&
+                  (opencodeForm.opencodeProviderKey.trim() === "" ||
+                    /^[a-z0-9]+(-[a-z0-9]+)*$/.test(
+                      opencodeForm.opencodeProviderKey,
+                    )) && (
+                    <p className="text-xs text-muted-foreground">
+                      {isProviderKeyLocked
+                        ? t("opencode.providerKeyLockedHint", {
+                            defaultValue:
+                              "This provider has already been added to the app config, so its key can no longer be changed.",
+                          })
+                        : t("opencode.providerKeyHint")}
+                    </p>
+                  )}
+              </div>
+            ) : appId === "openclaw" ? (
+              <div className="space-y-2">
+                <Label htmlFor="openclaw-key">
+                  {t("openclaw.providerKey")}
+                  <span className="text-destructive ml-1">*</span>
+                </Label>
+                <Input
+                  id="openclaw-key"
+                  value={openclawForm.openclawProviderKey}
+                  onChange={(e) =>
+                    openclawForm.setOpenclawProviderKey(
+                      e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                    )
+                  }
+                  placeholder={t("openclaw.providerKeyPlaceholder")}
+                  disabled={
+                    isProviderKeyLocked || isProviderKeyLockStateLoading
+                  }
+                  className={
+                    (additiveExistingProviderKeys.includes(
+                      openclawForm.openclawProviderKey,
+                    ) &&
+                      !isProviderKeyLocked) ||
+                    (openclawForm.openclawProviderKey.trim() !== "" &&
+                      !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(
+                        openclawForm.openclawProviderKey,
+                      ))
+                      ? "border-destructive"
+                      : ""
+                  }
+                />
+                {additiveExistingProviderKeys.includes(
+                  openclawForm.openclawProviderKey,
+                ) &&
+                  !isProviderKeyLocked && (
+                    <p className="text-xs text-destructive">
+                      {t("openclaw.providerKeyDuplicate")}
+                    </p>
+                  )}
+                {openclawForm.openclawProviderKey.trim() !== "" &&
+                  !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(
+                    openclawForm.openclawProviderKey,
+                  ) && (
+                    <p className="text-xs text-destructive">
+                      {t("openclaw.providerKeyInvalid")}
+                    </p>
+                  )}
+                {!(
+                  additiveExistingProviderKeys.includes(
+                    openclawForm.openclawProviderKey,
+                  ) && !isProviderKeyLocked
+                ) &&
+                  (openclawForm.openclawProviderKey.trim() === "" ||
+                    /^[a-z0-9]+(-[a-z0-9]+)*$/.test(
+                      openclawForm.openclawProviderKey,
+                    )) && (
+                    <p className="text-xs text-muted-foreground">
+                      {isProviderKeyLocked
+                        ? t("openclaw.providerKeyLockedHint", {
+                            defaultValue:
+                              "This provider has already been added to the app config, so its key can no longer be changed.",
+                          })
+                        : t("openclaw.providerKeyHint")}
+                    </p>
+                  )}
+              </div>
+            ) : undefined
+          }
+        />
+
+        {appId === "claude" && (
+          <ClaudeFormFields
+            providerId={providerId}
+            shouldShowApiKey={
+              (category !== "cloud_provider" ||
+                hasApiKeyField(form.getValues("settingsConfig"), "claude")) &&
+              shouldShowApiKey(form.getValues("settingsConfig"), isEditMode)
+            }
+            apiKey={apiKey}
+            onApiKeyChange={handleApiKeyChange}
+            category={category}
+            shouldShowApiKeyLink={shouldShowClaudeApiKeyLink}
+            websiteUrl={claudeWebsiteUrl}
+            isCopilotPreset={
+              templatePreset?.providerType === "github_copilot" ||
+              initialData?.meta?.providerType === "github_copilot" ||
+              baseUrl.includes("githubcopilot.com")
+            }
+            usesOAuth={
+              templatePreset?.requiresOAuth === true ||
+              templatePreset?.providerType === "github_copilot" ||
+              initialData?.meta?.providerType === "github_copilot" ||
+              baseUrl.includes("githubcopilot.com")
+            }
+            isCopilotAuthenticated={isCopilotAuthenticated}
+            selectedGitHubAccountId={selectedGitHubAccountId}
+            onGitHubAccountSelect={setSelectedGitHubAccountId}
+            templateValueEntries={templateValueEntries}
+            templateValues={templateValues}
+            templatePresetName={templatePreset?.name || ""}
+            onTemplateValueChange={handleTemplateValueChange}
+            shouldShowSpeedTest={shouldShowSpeedTest}
+            baseUrl={baseUrl}
+            onBaseUrlChange={handleClaudeBaseUrlChange}
+            isEndpointModalOpen={isEndpointModalOpen}
+            onEndpointModalToggle={setIsEndpointModalOpen}
+            onCustomEndpointsChange={
+              isEditMode ? undefined : setDraftCustomEndpoints
+            }
+            autoSelect={endpointAutoSelect}
+            onAutoSelectChange={setEndpointAutoSelect}
+            shouldShowModelSelector={category !== "official"}
+            claudeModel={claudeModel}
+            reasoningModel={reasoningModel}
+            defaultHaikuModel={defaultHaikuModel}
+            defaultSonnetModel={defaultSonnetModel}
+            defaultOpusModel={defaultOpusModel}
+            onModelChange={handleModelChange}
+            speedTestEndpoints={speedTestEndpoints}
+            apiFormat={localApiFormat}
+            onApiFormatChange={handleApiFormatChange}
+            apiKeyField={localApiKeyField}
+            onApiKeyFieldChange={handleApiKeyFieldChange}
+            isFullUrl={localIsFullUrl}
+            onFullUrlChange={setLocalIsFullUrl}
+          />
+        )}
+
+        {appId === "codex" && (
+          <CodexFormFields
+            providerId={providerId}
+            codexApiKey={codexApiKey}
+            onApiKeyChange={handleCodexApiKeyChange}
+            category={category}
+            shouldShowApiKeyLink={shouldShowCodexApiKeyLink}
+            websiteUrl={codexWebsiteUrl}
+            shouldShowSpeedTest={shouldShowSpeedTest}
+            codexBaseUrl={codexBaseUrl}
+            onBaseUrlChange={handleCodexBaseUrlChange}
+            isFullUrl={localIsFullUrl}
+            onFullUrlChange={setLocalIsFullUrl}
+            isEndpointModalOpen={isCodexEndpointModalOpen}
+            onEndpointModalToggle={setIsCodexEndpointModalOpen}
+            onCustomEndpointsChange={
+              isEditMode ? undefined : setDraftCustomEndpoints
+            }
+            autoSelect={endpointAutoSelect}
+            onAutoSelectChange={setEndpointAutoSelect}
+            shouldShowModelField={category !== "official"}
+            modelName={codexModelName}
+            onModelNameChange={handleCodexModelNameChange}
+            speedTestEndpoints={speedTestEndpoints}
+          />
+        )}
+
+        {appId === "kimi" && (
+          <KimiFormFields
+            providerId={providerId}
+            kimiApiKey={kimiApiKey}
+            onApiKeyChange={handleKimiApiKeyChange}
+            category={category}
+            shouldShowApiKeyLink={shouldShowKimiApiKeyLink}
+            websiteUrl={kimiWebsiteUrl}
+            shouldShowSpeedTest={shouldShowSpeedTest}
+            kimiBaseUrl={kimiBaseUrl}
+            onBaseUrlChange={handleKimiBaseUrlChange}
+            isEndpointModalOpen={isKimiEndpointModalOpen}
+            onEndpointModalToggle={setIsKimiEndpointModalOpen}
+            onCustomEndpointsChange={
+              isEditMode ? undefined : setDraftCustomEndpoints
+            }
+            autoSelect={endpointAutoSelect}
+            onAutoSelectChange={setEndpointAutoSelect}
+            shouldShowModelField={category !== "official"}
+            modelName={kimiModelName}
+            onModelNameChange={handleKimiModelNameChange}
+            speedTestEndpoints={speedTestEndpoints}
+          />
+        )}
+
+        {appId === "gemini" && (
+          <GeminiFormFields
+            providerId={providerId}
+            shouldShowApiKey={shouldShowApiKey(
+              form.getValues("settingsConfig"),
+              isEditMode,
+            )}
+            apiKey={geminiApiKey}
+            onApiKeyChange={handleGeminiApiKeyChange}
+            category={category}
+            shouldShowApiKeyLink={shouldShowGeminiApiKeyLink}
+            websiteUrl={geminiWebsiteUrl}
+            partnerPromotionKey={geminiPartnerPromotionKey}
+            shouldShowSpeedTest={shouldShowSpeedTest}
+            baseUrl={geminiBaseUrl}
+            onBaseUrlChange={handleGeminiBaseUrlChange}
+            isEndpointModalOpen={isEndpointModalOpen}
+            onEndpointModalToggle={setIsEndpointModalOpen}
+            onCustomEndpointsChange={setDraftCustomEndpoints}
+            autoSelect={endpointAutoSelect}
+            onAutoSelectChange={setEndpointAutoSelect}
+            shouldShowModelField={true}
+            model={geminiModel}
+            onModelChange={handleGeminiModelChange}
+            speedTestEndpoints={speedTestEndpoints}
+          />
+        )}
+
+        {appId === "opencode" && !isAnyOmoCategory && (
+          <OpenCodeFormFields
+            npm={opencodeForm.opencodeNpm}
+            onNpmChange={opencodeForm.handleOpencodeNpmChange}
+            apiKey={opencodeForm.opencodeApiKey}
+            onApiKeyChange={opencodeForm.handleOpencodeApiKeyChange}
+            category={category}
+            shouldShowApiKeyLink={shouldShowOpencodeApiKeyLink}
+            websiteUrl={opencodeWebsiteUrl}
+            baseUrl={opencodeForm.opencodeBaseUrl}
+            onBaseUrlChange={opencodeForm.handleOpencodeBaseUrlChange}
+            models={opencodeForm.opencodeModels}
+            onModelsChange={opencodeForm.handleOpencodeModelsChange}
+            extraOptions={opencodeForm.opencodeExtraOptions}
+            onExtraOptionsChange={opencodeForm.handleOpencodeExtraOptionsChange}
+          />
+        )}
+
+        {appId === "opencode" &&
+          (category === "omo" || category === "omo-slim") && (
+            <OmoFormFields
+              modelOptions={omoModelOptions}
+              modelVariantsMap={omoModelVariantsMap}
+              presetMetaMap={omoPresetMetaMap}
+              agents={omoDraft.omoAgents}
+              onAgentsChange={omoDraft.setOmoAgents}
+              categories={
+                category === "omo" ? omoDraft.omoCategories : undefined
+              }
+              onCategoriesChange={
+                category === "omo" ? omoDraft.setOmoCategories : undefined
+              }
+              otherFieldsStr={omoDraft.omoOtherFieldsStr}
+              onOtherFieldsStrChange={omoDraft.setOmoOtherFieldsStr}
+              isSlim={category === "omo-slim"}
+            />
+          )}
+
+        {/* OpenClaw-only fields */}
+        {appId === "openclaw" && (
+          <OpenClawFormFields
+            baseUrl={openclawForm.openclawBaseUrl}
+            onBaseUrlChange={openclawForm.handleOpenclawBaseUrlChange}
+            apiKey={openclawForm.openclawApiKey}
+            onApiKeyChange={openclawForm.handleOpenclawApiKeyChange}
+            category={category}
+            shouldShowApiKeyLink={shouldShowOpenclawApiKeyLink}
+            websiteUrl={openclawWebsiteUrl}
+            api={openclawForm.openclawApi}
+            onApiChange={openclawForm.handleOpenclawApiChange}
+            models={openclawForm.openclawModels}
+            onModelsChange={openclawForm.handleOpenclawModelsChange}
+            userAgent={openclawForm.openclawUserAgent}
+            onUserAgentChange={openclawForm.handleOpenclawUserAgentChange}
+          />
+        )}
+
+        {/* Config editor: Codex, Claude and Gemini each use their own editor */}
+        {appId === "codex" ? (
+          <>
+            <CodexConfigEditor
+              authValue={codexAuth}
+              configValue={codexConfig}
+              onAuthChange={setCodexAuth}
+              onConfigChange={handleCodexConfigChange}
+              useCommonConfig={useCodexCommonConfigFlag}
+              onCommonConfigToggle={handleCodexCommonConfigToggle}
+              commonConfigSnippet={codexCommonConfigSnippet}
+              onCommonConfigSnippetChange={handleCodexCommonConfigSnippetChange}
+              onCommonConfigErrorClear={clearCodexCommonConfigError}
+              commonConfigError={codexCommonConfigError}
+              authError={codexAuthError}
+              configError={codexConfigError}
+              onExtract={handleCodexExtract}
+              isExtracting={isCodexExtracting}
+            />
+            {settingsConfigErrorField}
+          </>
+        ) : appId === "kimi" ? (
+          <>
+            <KimiConfigEditor
+              credentialsValue={kimiCredentials}
+              configValue={kimiConfig}
+              onCredentialsChange={setKimiCredentials}
+              onConfigChange={handleKimiConfigChange}
+              useCommonConfig={useKimiCommonConfigFlag}
+              onCommonConfigToggle={handleKimiCommonConfigToggle}
+              commonConfigSnippet={kimiCommonConfigSnippet}
+              onCommonConfigSnippetChange={handleKimiCommonConfigSnippetChange}
+              onCommonConfigErrorClear={clearKimiCommonConfigError}
+              commonConfigError={kimiCommonConfigError}
+              credentialsError={kimiCredentialsError}
+              configError={kimiConfigError}
+              onExtract={handleKimiExtract}
+              isExtracting={isKimiExtracting}
+            />
+            {settingsConfigErrorField}
+          </>
+        ) : appId === "gemini" ? (
+          <>
+            <GeminiConfigEditor
+              envValue={geminiEnv}
+              configValue={geminiConfig}
+              onEnvChange={handleGeminiEnvChange}
+              onConfigChange={handleGeminiConfigChange}
+              useCommonConfig={useGeminiCommonConfigFlag}
+              onCommonConfigToggle={handleGeminiCommonConfigToggle}
+              commonConfigSnippet={geminiCommonConfigSnippet}
+              onCommonConfigSnippetChange={
+                handleGeminiCommonConfigSnippetChange
+              }
+              onCommonConfigErrorClear={clearGeminiCommonConfigError}
+              commonConfigError={geminiCommonConfigError}
+              envError={envError}
+              configError={geminiConfigError}
+              onExtract={handleGeminiExtract}
+              isExtracting={isGeminiExtracting}
+            />
+            {settingsConfigErrorField}
+          </>
+        ) : appId === "opencode" &&
+          (category === "omo" || category === "omo-slim") ? (
+          <div className="space-y-2">
+            <Label>{t("provider.configJson")}</Label>
+            <JsonEditor
+              value={omoDraft.mergedOmoJsonPreview}
+              onChange={() => {}}
+              rows={14}
+              showValidation={false}
+              language="json"
+            />
+          </div>
+        ) : appId === "opencode" &&
+          category !== "omo" &&
+          category !== "omo-slim" ? (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="settingsConfig">{t("provider.configJson")}</Label>
+              <JsonEditor
+                value={form.getValues("settingsConfig")}
+                onChange={(config) => form.setValue("settingsConfig", config)}
+                placeholder={`{
+  "npm": "@ai-sdk/openai-compatible",
+  "options": {
+    "baseURL": "https://your-api-endpoint.com",
+    "apiKey": "your-api-key-here"
+  },
+  "models": {}
+}`}
+                rows={14}
+                showValidation={true}
+                language="json"
+              />
+            </div>
+            {settingsConfigErrorField}
+          </>
+        ) : appId === "openclaw" ? (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="settingsConfig">{t("provider.configJson")}</Label>
+              <JsonEditor
+                value={form.getValues("settingsConfig")}
+                onChange={(config) => form.setValue("settingsConfig", config)}
+                placeholder={`{
+  "baseUrl": "https://api.example.com/v1",
+  "apiKey": "your-api-key-here",
+  "api": "openai-completions",
+  "models": []
+}`}
+                rows={14}
+                showValidation={true}
+                language="json"
+              />
+            </div>
+            <FormField
+              control={form.control}
+              name="settingsConfig"
+              render={() => (
+                <FormItem className="space-y-0">
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </>
+        ) : (
+          <>
+            <CommonConfigEditor
+              value={form.getValues("settingsConfig")}
+              onChange={(value) => form.setValue("settingsConfig", value)}
+              useCommonConfig={useCommonConfig}
+              onCommonConfigToggle={handleCommonConfigToggle}
+              commonConfigSnippet={commonConfigSnippet}
+              onCommonConfigSnippetChange={handleCommonConfigSnippetChange}
+              commonConfigError={commonConfigError}
+              onEditClick={() => setIsCommonConfigModalOpen(true)}
+              isModalOpen={isCommonConfigModalOpen}
+              onModalClose={() => setIsCommonConfigModalOpen(false)}
+              onExtract={handleClaudeExtract}
+              isExtracting={isClaudeExtracting}
+            />
+            {settingsConfigErrorField}
+          </>
+        )}
+
+        {!isAnyOmoCategory && appId !== "opencode" && appId !== "openclaw" && (
+          <ProviderAdvancedConfig
+            testConfig={testConfig}
+            proxyConfig={proxyConfig}
+            pricingConfig={pricingConfig}
+            onTestConfigChange={setTestConfig}
+            onProxyConfigChange={setProxyConfig}
+            onPricingConfigChange={setPricingConfig}
+            rotationThreshold={
+              showRotationThreshold
+                ? {
+                    value: rotationThreshold,
+                    poolThreshold: poolConfig?.thresholdPercent,
+                    onChange: setRotationThreshold,
+                  }
+                : undefined
+            }
+          />
+        )}
+
+        {showCaptureControls && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+            <div className="text-xs text-muted-foreground">
+              {capturedIdentity
+                ? t("claudeAccount.card.captured", {
+                    email: capturedIdentity.emailAddress,
+                    defaultValue: `Captured: ${capturedIdentity.emailAddress}`,
+                  })
+                : t("claudeAccount.card.none", {
+                    defaultValue: "No Claude account captured yet.",
+                  })}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                type="button"
+                size="sm"
+                disabled={capturing}
+                onClick={async () => {
+                  if (!providerId) return;
+                  setCapturing(true);
+                  try {
+                    const result: CaptureOutcome =
+                      await claudeAccountApi.capture(providerId, false);
+                    if (result.kind === "captured") {
+                      setCapturedIdentity(result.identity);
+                      void queryClient.invalidateQueries({
+                        queryKey: ["providers"],
+                      });
+                      toast.success(
+                        t("claudeAccount.capture.success", {
+                          email: result.identity.emailAddress,
+                          defaultValue: `Captured ${result.identity.emailAddress}`,
+                        }),
+                      );
+                    } else {
+                      setCaptureConfirm({
+                        existing: result.existing,
+                        incoming: result.incoming,
+                      });
+                    }
+                  } catch (err) {
+                    toast.error(String(err));
+                  } finally {
+                    setCapturing(false);
+                  }
+                }}
+              >
+                {t("claudeAccount.capture.button", {
+                  defaultValue: "Capture current account",
+                })}
+              </Button>
+              <Button
+                variant="outline"
+                type="button"
+                size="sm"
+                disabled={!capturedIdentity || capturing}
+                onClick={() => setClearConfirmOpen(true)}
+              >
+                {t("claudeAccount.clear.button", {
+                  defaultValue: "Clear captured account",
+                })}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <ConfirmDialog
+          isOpen={!!captureConfirm}
+          title={t("claudeAccount.capture.confirm.title", {
+            defaultValue: "Account UUID changed",
+          })}
+          message={t("claudeAccount.capture.confirm.body", {
+            oldEmail: captureConfirm?.existing.emailAddress ?? "",
+            newEmail: captureConfirm?.incoming.emailAddress ?? "",
+            defaultValue: `Stored: ${captureConfirm?.existing.emailAddress ?? ""}\nIncoming: ${captureConfirm?.incoming.emailAddress ?? ""}\nOverwrite the stored snapshot?`,
+          })}
+          variant="info"
+          onCancel={() => setCaptureConfirm(null)}
+          onConfirm={async () => {
+            if (!providerId) return;
+            setCapturing(true);
+            try {
+              const result = await claudeAccountApi.capture(providerId, true);
+              if (result.kind === "captured") {
+                setCapturedIdentity(result.identity);
+                void queryClient.invalidateQueries({ queryKey: ["providers"] });
+                toast.success(
+                  t("claudeAccount.capture.success", {
+                    email: result.identity.emailAddress,
+                    defaultValue: `Captured ${result.identity.emailAddress}`,
+                  }),
+                );
+              }
+            } catch (err) {
+              toast.error(String(err));
+            } finally {
+              setCapturing(false);
+              setCaptureConfirm(null);
+            }
+          }}
+        />
+
+        <ConfirmDialog
+          isOpen={clearConfirmOpen}
+          title={t("claudeAccount.clear.button", {
+            defaultValue: "Clear captured account",
+          })}
+          message={t("claudeAccount.clear.confirm", {
+            defaultValue:
+              "Forget this captured account? Claude Code stays logged in — this only removes Switchy's snapshot.",
+          })}
+          onCancel={() => setClearConfirmOpen(false)}
+          onConfirm={async () => {
+            if (!providerId) {
+              setClearConfirmOpen(false);
+              return;
+            }
+            try {
+              await claudeAccountApi.clear(providerId);
+              setCapturedIdentity(null);
+              void queryClient.invalidateQueries({ queryKey: ["providers"] });
+            } catch (err) {
+              toast.error(String(err));
+            } finally {
+              setClearConfirmOpen(false);
+            }
+          }}
+        />
+
+        {showButtons && (
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" type="button" onClick={onCancel}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {submitLabel}
+            </Button>
+          </div>
+        )}
+      </form>
+    </Form>
+  );
+}
+
+export type ProviderFormValues = ProviderFormData & {
+  presetId?: string;
+  presetCategory?: ProviderCategory;
+  meta?: ProviderMeta;
+  providerKey?: string; // OpenCode/OpenClaw: user-defined provider key
+  suggestedDefaults?: OpenClawSuggestedDefaults; // OpenClaw: suggested default model configuration
+};

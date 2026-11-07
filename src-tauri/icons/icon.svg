@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Same abstract geometric motif (two interlocking 3/4 arcs with
+       arrowheads around a pivot dot), new palette:
+       indigo + magenta + lime — no overlap with the teal/coral/amber
+       starburst of the upstream mark. -->
+
+  <!-- Arc A: deep indigo, arrow points up-right -->
+  <g transform="translate(256 256)">
+    <path d="M -130 0
+             A 130 130 0 1 1 0 130"
+          fill="none" stroke="#4f46e5" stroke-width="56" stroke-linecap="round"/>
+    <polygon points="128,-40 172,-10 124,24" fill="#4f46e5"/>
+  </g>
+
+  <!-- Arc B: magenta/pink, arrow points down-left -->
+  <g transform="translate(256 256) rotate(180)">
+    <path d="M -130 0
+             A 130 130 0 1 1 0 130"
+          fill="none" stroke="#ec4899" stroke-width="56" stroke-linecap="round"/>
+    <polygon points="128,-40 172,-10 124,24" fill="#ec4899"/>
+  </g>
+
+  <!-- Lime pivot dot -->
+  <circle cx="256" cy="256" r="22" fill="#a3e635"/>
+</svg>

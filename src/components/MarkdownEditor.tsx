@@ -1,0 +1,159 @@
+import React, { useRef, useEffect } from "react";
+import { EditorView, basicSetup } from "codemirror";
+import { markdown } from "@codemirror/lang-markdown";
+import { oneDark } from "@codemirror/theme-one-dark";
+import { EditorState } from "@codemirror/state";
+import { placeholder as placeholderExt } from "@codemirror/view";
+
+interface MarkdownEditorProps {
+  value: string;
+  onChange?: (value: string) => void;
+  placeholder?: string;
+  darkMode?: boolean;
+  readOnly?: boolean;
+  className?: string;
+  minHeight?: string;
+  maxHeight?: string;
+}
+
+const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
+  value,
+  onChange,
+  placeholder: placeholderText = "",
+  darkMode = false,
+  readOnly = false,
+  className = "",
+  minHeight = "300px",
+  maxHeight,
+}) => {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+
+  useEffect(() => {
+    if (!editorRef.current) return;
+
+    // Base theme
+    const baseTheme = EditorView.baseTheme({
+      "&": {
+        height: "100%",
+        minHeight,
+        maxHeight: maxHeight || "none",
+      },
+      ".cm-scroller": {
+        overflow: "auto",
+        fontFamily:
+          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+        fontSize: "14px",
+      },
+      "&light .cm-content, &dark .cm-content": {
+        padding: "12px 0",
+      },
+      "&light .cm-editor, &dark .cm-editor": {
+        backgroundColor: "transparent",
+      },
+      "&.cm-focused": {
+        outline: "none",
+      },
+    });
+
+    const extensions = [
+      basicSetup,
+      markdown(),
+      baseTheme,
+      EditorView.lineWrapping,
+      EditorState.readOnly.of(readOnly),
+    ];
+
+    if (!readOnly) {
+      extensions.push(
+        placeholderExt(placeholderText),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged && onChange) {
+            onChange(update.state.doc.toString());
+          }
+        }),
+      );
+    } else {
+      // Hide the cursor and active-line highlight when read-only
+      extensions.push(
+        EditorView.theme({
+          ".cm-cursor, .cm-dropCursor": { border: "none" },
+          ".cm-activeLine": { backgroundColor: "transparent !important" },
+          ".cm-activeLineGutter": { backgroundColor: "transparent !important" },
+        }),
+      );
+    }
+
+    // Add the dark theme in dark mode
+    if (darkMode) {
+      extensions.push(oneDark);
+    } else {
+      // Light-mode tweaks so the editor blends into the UI
+      extensions.push(
+        EditorView.theme(
+          {
+            "&": {
+              backgroundColor: "transparent",
+            },
+            ".cm-content": {
+              color: "#374151", // text-gray-700
+            },
+            ".cm-gutters": {
+              backgroundColor: "#f9fafb", // bg-gray-50
+              color: "#9ca3af", // text-gray-400
+              borderRight: "1px solid #e5e7eb", // border-gray-200
+            },
+            ".cm-activeLineGutter": {
+              backgroundColor: "#e5e7eb",
+            },
+          },
+          { dark: false },
+        ),
+      );
+    }
+
+    // Initial state
+    const state = EditorState.create({
+      doc: value,
+      extensions,
+    });
+
+    // Editor view
+    const view = new EditorView({
+      state,
+      parent: editorRef.current,
+    });
+
+    viewRef.current = view;
+
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [darkMode, readOnly, minHeight, maxHeight, placeholderText]); // placeholderText is a dep so the placeholder follows language changes
+
+  // Update the editor when value changes from outside
+  useEffect(() => {
+    if (viewRef.current && viewRef.current.state.doc.toString() !== value) {
+      const transaction = viewRef.current.state.update({
+        changes: {
+          from: 0,
+          to: viewRef.current.state.doc.length,
+          insert: value,
+        },
+      });
+      viewRef.current.dispatch(transaction);
+    }
+  }, [value]);
+
+  return (
+    <div
+      ref={editorRef}
+      className={`border rounded-md overflow-hidden ${
+        darkMode ? "border-gray-800" : "border-gray-200"
+      } ${className}`}
+    />
+  );
+};
+
+export default MarkdownEditor;

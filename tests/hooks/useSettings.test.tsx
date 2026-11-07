@@ -1,0 +1,323 @@
+import { renderHook, act } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { useSettings } from "@/hooks/useSettings";
+import type { Settings } from "@/types";
+
+const mutateAsyncMock = vi.fn();
+const useSettingsQueryMock = vi.fn();
+const setAppConfigDirOverrideMock = vi.fn();
+const applyClaudePluginConfigMock = vi.fn();
+const applyClaudeOnboardingSkipMock = vi.fn();
+const clearClaudeOnboardingSkipMock = vi.fn();
+const syncCurrentProvidersLiveMock = vi.fn();
+const updateTrayMenuMock = vi.fn();
+const toastErrorMock = vi.fn();
+const toastSuccessMock = vi.fn();
+
+let settingsFormMock: any;
+let directorySettingsMock: any;
+let metadataMock: any;
+let serverSettings: Settings;
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: (...args: unknown[]) => toastErrorMock(...args),
+    success: (...args: unknown[]) => toastSuccessMock(...args),
+  },
+}));
+
+vi.mock("@/hooks/useSettingsForm", () => ({
+  useSettingsForm: () => settingsFormMock,
+}));
+
+vi.mock("@/hooks/useDirectorySettings", () => ({
+  useDirectorySettings: () => directorySettingsMock,
+}));
+
+vi.mock("@/hooks/useSettingsMetadata", () => ({
+  useSettingsMetadata: () => metadataMock,
+}));
+
+vi.mock("@/lib/query", () => ({
+  useSettingsQuery: (...args: unknown[]) => useSettingsQueryMock(...args),
+  useSaveSettingsMutation: () => ({
+    mutateAsync: mutateAsyncMock,
+    isPending: false,
+  }),
+}));
+
+vi.mock("@/lib/api", () => ({
+  settingsApi: {
+    setAppConfigDirOverride: (...args: unknown[]) =>
+      setAppConfigDirOverrideMock(...args),
+    applyClaudePluginConfig: (...args: unknown[]) =>
+      applyClaudePluginConfigMock(...args),
+    applyClaudeOnboardingSkip: (...args: unknown[]) =>
+      applyClaudeOnboardingSkipMock(...args),
+    clearClaudeOnboardingSkip: (...args: unknown[]) =>
+      clearClaudeOnboardingSkipMock(...args),
+    syncCurrentProvidersLive: (...args: unknown[]) =>
+      syncCurrentProvidersLiveMock(...args),
+  },
+  providersApi: {
+    updateTrayMenu: (...args: unknown[]) => updateTrayMenuMock(...args),
+  },
+}));
+
+const createSettingsFormMock = (overrides: Record<string, unknown> = {}) => ({
+  settings: {
+    showInTray: true,
+    minimizeToTrayOnClose: true,
+    claudeConfigDir: "/claude",
+    codexConfigDir: "/codex",
+    language: "zh",
+  },
+  isLoading: false,
+  initialLanguage: "zh",
+  updateSettings: vi.fn(),
+  resetSettings: vi.fn(),
+  syncLanguage: vi.fn(),
+  ...overrides,
+});
+
+const createDirectorySettingsMock = (
+  overrides: Record<string, unknown> = {},
+) => ({
+  appConfigDir: undefined,
+  resolvedDirs: {
+    appConfig: "/home/mock/.switchy",
+    claude: "/default/claude",
+    codex: "/default/codex",
+  },
+  isLoading: false,
+  initialAppConfigDir: undefined,
+  updateDirectory: vi.fn(),
+  updateAppConfigDir: vi.fn(),
+  browseDirectory: vi.fn(),
+  browseAppConfigDir: vi.fn(),
+  resetDirectory: vi.fn(),
+  resetAppConfigDir: vi.fn(),
+  resetAllDirectories: vi.fn(),
+  ...overrides,
+});
+
+const createMetadataMock = (overrides: Record<string, unknown> = {}) => ({
+  isPortable: false,
+  requiresRestart: false,
+  isLoading: false,
+  acknowledgeRestart: vi.fn(),
+  setRequiresRestart: vi.fn(),
+  ...overrides,
+});
+
+describe("useSettings hook", () => {
+  beforeEach(() => {
+    mutateAsyncMock.mockReset();
+    useSettingsQueryMock.mockReset();
+    setAppConfigDirOverrideMock.mockReset();
+    applyClaudePluginConfigMock.mockReset();
+    applyClaudeOnboardingSkipMock.mockReset();
+    clearClaudeOnboardingSkipMock.mockReset();
+    syncCurrentProvidersLiveMock.mockReset();
+    toastErrorMock.mockReset();
+    toastSuccessMock.mockReset();
+    window.localStorage.clear();
+
+    serverSettings = {
+      showInTray: true,
+      minimizeToTrayOnClose: true,
+      claudeConfigDir: "/server/claude",
+      codexConfigDir: "/server/codex",
+      language: "zh",
+    };
+
+    useSettingsQueryMock.mockReturnValue({
+      data: serverSettings,
+      isLoading: false,
+    });
+
+    settingsFormMock = createSettingsFormMock({
+      settings: {
+        ...serverSettings,
+        language: "zh",
+      },
+    });
+    directorySettingsMock = createDirectorySettingsMock();
+    metadataMock = createMetadataMock();
+
+    mutateAsyncMock.mockResolvedValue(true);
+    setAppConfigDirOverrideMock.mockResolvedValue(true);
+    applyClaudePluginConfigMock.mockResolvedValue(true);
+    applyClaudeOnboardingSkipMock.mockResolvedValue(true);
+    clearClaudeOnboardingSkipMock.mockResolvedValue(true);
+  });
+
+  it("saves settings and flags restart when app config directory changes", async () => {
+    serverSettings = {
+      ...serverSettings,
+      claudeConfigDir: "/server/claude",
+      codexConfigDir: undefined,
+      language: "en",
+    };
+    useSettingsQueryMock.mockReturnValue({
+      data: serverSettings,
+      isLoading: false,
+    });
+
+    settingsFormMock = createSettingsFormMock({
+      settings: {
+        ...serverSettings,
+        claudeConfigDir: "  /custom/claude  ",
+        codexConfigDir: "   ",
+        language: "en", // state changes from false to true
+      },
+      initialLanguage: "en",
+    });
+
+    directorySettingsMock = createDirectorySettingsMock({
+      appConfigDir: "  /override/app  ",
+      initialAppConfigDir: "/previous/app",
+    });
+
+    const { result } = renderHook(() => useSettings());
+
+    let saveResult: { requiresRestart: boolean } | null = null;
+    await act(async () => {
+      saveResult = await result.current.saveSettings();
+    });
+
+    expect(saveResult).toEqual({ requiresRestart: true });
+    expect(mutateAsyncMock).toHaveBeenCalledTimes(1);
+    const payload = mutateAsyncMock.mock.calls[0][0] as Settings;
+    expect(payload.claudeConfigDir).toBe("/custom/claude");
+    expect(payload.codexConfigDir).toBeUndefined();
+    expect(payload.language).toBe("en");
+    expect(setAppConfigDirOverrideMock).toHaveBeenCalledWith("/override/app");
+    expect(metadataMock.setRequiresRestart).toHaveBeenCalledWith(true);
+    expect(window.localStorage.getItem("language")).toBe("en");
+    expect(toastErrorMock).not.toHaveBeenCalled();
+    // Directory changed: should sync the current provider to live once
+    expect(syncCurrentProvidersLiveMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves settings without restart when directory unchanged", async () => {
+    // Keep server and local state identical so no API call fires
+    serverSettings = {
+      ...serverSettings,
+      launchOnStartup: false,
+    };
+    useSettingsQueryMock.mockReturnValue({
+      data: serverSettings,
+      isLoading: false,
+    });
+
+    settingsFormMock = createSettingsFormMock({
+      settings: {
+        ...serverSettings, // unchanged
+        launchOnStartup: false, // unchanged
+        language: "zh",
+      },
+      initialLanguage: "zh",
+    });
+
+    directorySettingsMock = createDirectorySettingsMock({
+      appConfigDir: undefined,
+      initialAppConfigDir: undefined,
+    });
+
+    const { result } = renderHook(() => useSettings());
+
+    let saveResult: { requiresRestart: boolean } | null = null;
+    await act(async () => {
+      saveResult = await result.current.saveSettings();
+    });
+
+    expect(saveResult).toEqual({ requiresRestart: false });
+    expect(setAppConfigDirOverrideMock).toHaveBeenCalledWith(null);
+    // State unchanged: the API should not be called
+    expect(metadataMock.setRequiresRestart).toHaveBeenCalledWith(false);
+    // Directory unchanged: no sync should fire
+    expect(syncCurrentProvidersLiveMock).not.toHaveBeenCalled();
+  });
+
+  it("resets form, language and directories using server data", () => {
+    serverSettings = {
+      ...serverSettings,
+      claudeConfigDir: "  /server/claude  ",
+      codexConfigDir: "   ",
+      language: "zh",
+    };
+    useSettingsQueryMock.mockReturnValue({
+      data: serverSettings,
+      isLoading: false,
+    });
+
+    settingsFormMock = createSettingsFormMock({
+      settings: {
+        ...serverSettings,
+        language: "zh",
+      },
+      initialLanguage: "zh",
+    });
+    directorySettingsMock = createDirectorySettingsMock();
+
+    const { result } = renderHook(() => useSettings());
+
+    act(() => {
+      result.current.resetSettings();
+    });
+
+    expect(settingsFormMock.resetSettings).toHaveBeenCalledWith(serverSettings);
+    expect(settingsFormMock.syncLanguage).toHaveBeenCalledWith(
+      settingsFormMock.initialLanguage,
+    );
+    expect(directorySettingsMock.resetAllDirectories).toHaveBeenCalledWith(
+      "/server/claude",
+      undefined, // claudeMirrorConfigDir
+      undefined, // codexConfigDir
+      undefined, // geminiConfigDir
+      undefined, // opencodeConfigDir
+      undefined, // codexMirrorConfigDir
+      undefined, // kimiConfigDir
+    );
+    expect(metadataMock.setRequiresRestart).toHaveBeenCalledWith(false);
+  });
+
+  it("returns null immediately when settings state is missing", async () => {
+    settingsFormMock = createSettingsFormMock({
+      settings: null,
+    });
+
+    const { result } = renderHook(() => useSettings());
+
+    let resultValue: { requiresRestart: boolean } | null = null;
+    await act(async () => {
+      resultValue = await result.current.saveSettings();
+    });
+
+    expect(resultValue).toBeNull();
+    expect(mutateAsyncMock).not.toHaveBeenCalled();
+    expect(setAppConfigDirOverrideMock).not.toHaveBeenCalled();
+  });
+
+  it("throws when save mutation rejects and keeps restart flag untouched", async () => {
+    settingsFormMock = createSettingsFormMock();
+    directorySettingsMock = createDirectorySettingsMock({
+      appConfigDir: "/override/app",
+      initialAppConfigDir: "/override/app",
+    });
+    const rejection = new Error("save failed");
+    mutateAsyncMock.mockRejectedValueOnce(rejection);
+
+    const { result } = renderHook(() => useSettings());
+
+    await expect(
+      act(async () => {
+        await result.current.saveSettings();
+      }),
+    ).rejects.toThrow("save failed");
+
+    expect(setAppConfigDirOverrideMock).not.toHaveBeenCalled();
+    expect(metadataMock.setRequiresRestart).not.toHaveBeenCalledWith(true);
+  });
+});

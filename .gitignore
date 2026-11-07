@@ -1,0 +1,31 @@
+node_modules/
+dist/
+release/
+.DS_Store
+*.log
+.env
+.env.local
+*.tsbuildinfo
+.npmrc
+CLAUDE.md
+# AGENTS.md
+GEMINI.md
+/.claude
+/.codex
+/.gemini
+/.idea
+/.vscode
+vitest-report.json
+nul
+
+.worktrees/
+.spec-workflow/
+.playwright-mcp/
+
+# Distribution installers live in installers/. Ignore everything there,
+# then re-include only the current versioned installers so they're tracked.
+/installers/*
+!/installers/Switchy_*-setup.exe
+!/installers/Switchy_*_en-US.msi
+!/installers/Switchy_*.dmg
+.specstory/

@@ -1,0 +1,221 @@
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UsageSummaryCards } from "./UsageSummaryCards";
+import { UsageTrendChart } from "./UsageTrendChart";
+import { RequestLogTable } from "./RequestLogTable";
+import { AccountStatsTable } from "./AccountStatsTable";
+import { SwitchHistoryTable } from "./SwitchHistoryTable";
+import { ModelStatsTable } from "./ModelStatsTable";
+import type { TimeRange } from "@/types/usage";
+import { motion } from "framer-motion";
+import {
+  BarChart3,
+  ListFilter,
+  Users,
+  ArrowLeftRight,
+  RefreshCw,
+  Coins,
+  Info,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useQueryClient } from "@tanstack/react-query";
+import { usageKeys } from "@/lib/query/usage";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { PricingConfigPanel } from "@/components/usage/PricingConfigPanel";
+import {
+  useGlobalProxyConfig,
+  useUpdateGlobalProxyConfig,
+} from "@/lib/query/proxy";
+
+export function UsageDashboard() {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [timeRange, setTimeRange] = useState<TimeRange>("1d");
+  const [refreshIntervalMs, setRefreshIntervalMs] = useState(30000);
+
+  const refreshIntervalOptionsMs = [0, 5000, 10000, 30000, 60000] as const;
+  const changeRefreshInterval = () => {
+    const currentIndex = refreshIntervalOptionsMs.indexOf(
+      refreshIntervalMs as (typeof refreshIntervalOptionsMs)[number],
+    );
+    const safeIndex = currentIndex >= 0 ? currentIndex : 3; // default 30s
+    const nextIndex = (safeIndex + 1) % refreshIntervalOptionsMs.length;
+    const next = refreshIntervalOptionsMs[nextIndex];
+    setRefreshIntervalMs(next);
+    queryClient.invalidateQueries({ queryKey: usageKeys.all });
+  };
+
+  const days = timeRange === "1d" ? 1 : timeRange === "7d" ? 7 : 30;
+
+  // Successful requests are recorded only while request logging is on.
+  const { data: globalProxyConfig } = useGlobalProxyConfig();
+  const updateGlobalProxyConfig = useUpdateGlobalProxyConfig();
+  const loggingOff = globalProxyConfig?.enableLogging === false;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="space-y-8 pb-8"
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <p className="text-[13px] text-muted-foreground">{t("usage.subtitle")}</p>
+
+        <Tabs
+          value={timeRange}
+          onValueChange={(v) => setTimeRange(v as TimeRange)}
+          className="w-full sm:w-auto"
+        >
+          <div className="flex w-full sm:w-auto items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9 px-2 text-xs text-muted-foreground"
+              title={t("common.refresh", "Refresh")}
+              onClick={changeRefreshInterval}
+            >
+              <RefreshCw className="mr-1 h-3.5 w-3.5" />
+              {refreshIntervalMs > 0 ? `${refreshIntervalMs / 1000}s` : "--"}
+            </Button>
+            <TabsList className="flex h-9 w-full gap-0.5 rounded-md bg-muted p-0.5 sm:w-auto">
+              <TabsTrigger
+                value="1d"
+                className="flex-1 rounded sm:flex-none sm:px-5 text-muted-foreground hover:text-foreground data-[state=active]:bg-card data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+              >
+                {t("usage.today")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="7d"
+                className="flex-1 rounded sm:flex-none sm:px-5 text-muted-foreground hover:text-foreground data-[state=active]:bg-card data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+              >
+                {t("usage.last7days")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="30d"
+                className="flex-1 rounded sm:flex-none sm:px-5 text-muted-foreground hover:text-foreground data-[state=active]:bg-card data-[state=active]:font-medium data-[state=active]:text-foreground data-[state=active]:shadow-[inset_0_-2px_0_hsl(var(--primary))]"
+              >
+                {t("usage.last30days")}
+              </TabsTrigger>
+            </TabsList>
+          </div>
+        </Tabs>
+      </div>
+
+      {loggingOff && (
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
+          <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+            <Info className="h-4 w-4 shrink-0" />
+            {t("usage.loggingOff")}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={updateGlobalProxyConfig.isPending}
+            onClick={() =>
+              globalProxyConfig &&
+              updateGlobalProxyConfig.mutate({
+                ...globalProxyConfig,
+                enableLogging: true,
+              })
+            }
+          >
+            {t("usage.turnOnLogging")}
+          </Button>
+        </div>
+      )}
+
+      <UsageSummaryCards days={days} refreshIntervalMs={refreshIntervalMs} />
+
+      <UsageTrendChart days={days} refreshIntervalMs={refreshIntervalMs} />
+
+      <div className="space-y-4">
+        <Tabs defaultValue="accounts" className="w-full">
+          <div className="flex items-center justify-between mb-4">
+            <TabsList className="bg-muted/50">
+              <TabsTrigger value="accounts" className="gap-2">
+                <Users className="h-4 w-4" />
+                {t("usage.accounts")}
+              </TabsTrigger>
+              <TabsTrigger value="switches" className="gap-2">
+                <ArrowLeftRight className="h-4 w-4" />
+                {t("usage.switches")}
+              </TabsTrigger>
+              <TabsTrigger value="logs" className="gap-2">
+                <ListFilter className="h-4 w-4" />
+                {t("usage.requestLogs")}
+              </TabsTrigger>
+              <TabsTrigger value="models" className="gap-2">
+                <BarChart3 className="h-4 w-4" />
+                {t("usage.modelStats")}
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            <TabsContent value="accounts" className="mt-0">
+              <AccountStatsTable
+                days={days}
+                refreshIntervalMs={refreshIntervalMs}
+              />
+            </TabsContent>
+
+            <TabsContent value="switches" className="mt-0">
+              <SwitchHistoryTable
+                days={days}
+                refreshIntervalMs={refreshIntervalMs}
+              />
+            </TabsContent>
+
+            <TabsContent value="logs" className="mt-0">
+              <RequestLogTable refreshIntervalMs={refreshIntervalMs} />
+            </TabsContent>
+
+            <TabsContent value="models" className="mt-0">
+              <ModelStatsTable
+                days={days}
+                refreshIntervalMs={refreshIntervalMs}
+              />
+            </TabsContent>
+          </motion.div>
+        </Tabs>
+      </div>
+
+      {/* Pricing Configuration */}
+      <Accordion type="multiple" defaultValue={[]} className="w-full space-y-4">
+        <AccordionItem
+          value="pricing"
+          className="rounded-xl glass-card overflow-hidden"
+        >
+          <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 data-[state=open]:bg-muted/50">
+            <div className="flex items-center gap-3">
+              <Coins className="h-5 w-5 text-yellow-500" />
+              <div className="text-left">
+                <h3 className="text-base font-semibold">
+                  {t("settings.advanced.pricing.title")}
+                </h3>
+                <p className="text-sm text-muted-foreground font-normal">
+                  {t("settings.advanced.pricing.description")}
+                </p>
+              </div>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-6 pb-6 pt-4 border-t border-border/50">
+            <PricingConfigPanel />
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+    </motion.div>
+  );
+}

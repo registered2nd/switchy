@@ -1,0 +1,253 @@
+#![allow(non_snake_case)]
+
+use tauri::AppHandle;
+
+/// Get the settings
+#[tauri::command]
+pub async fn get_settings() -> Result<crate::settings::AppSettings, String> {
+    Ok(crate::settings::get_settings_for_frontend())
+}
+
+/// Save the settings
+#[tauri::command]
+pub async fn save_settings(settings: crate::settings::AppSettings) -> Result<bool, String> {
+    let previous = crate::settings::get_settings();
+    crate::settings::update_settings(settings.clone()).map_err(|e| e.to_string())?;
+    let directories_changed = previous.claude_config_dir != settings.claude_config_dir
+        || previous.claude_mirror_config_dir != settings.claude_mirror_config_dir
+        || previous.codex_config_dir != settings.codex_config_dir
+        || previous.codex_mirror_config_dir != settings.codex_mirror_config_dir;
+    if previous.manual_sign_in == settings.manual_sign_in
+        && !(directories_changed && settings.manual_sign_in)
+    {
+        return Ok(true);
+    }
+    if let Err(error) = crate::services::manual_sign_in::reconfigure(&previous, &settings) {
+        let mut off = settings.clone();
+        off.manual_sign_in = false;
+        if let Err(cleanup) = crate::services::manual_sign_in::apply(&off) {
+            log::warn!("Could not undo a partial manual sign-in change: {cleanup}");
+        }
+        crate::settings::update_settings(previous.clone()).map_err(|rollback| {
+            format!("{error}; restoring the previous settings also failed: {rollback}")
+        })?;
+        if let Err(rollback) = crate::services::manual_sign_in::apply(&previous) {
+            return Err(format!(
+                "{error}; restoring the previous sign-in setting also failed: {rollback}"
+            ));
+        }
+        return Err(error.to_string());
+    }
+    Ok(true)
+}
+
+/// Restart the app (used after app_config_dir changes)
+#[tauri::command]
+pub async fn restart_app(app: AppHandle) -> Result<bool, String> {
+    log::info!("Restart requested from the settings page");
+    // Restart after a short delay in the background so this call can return
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        app.restart();
+    });
+    Ok(true)
+}
+
+/// Get the app_config_dir override (from the Store)
+#[tauri::command]
+pub async fn get_app_config_dir_override(app: AppHandle) -> Result<Option<String>, String> {
+    Ok(crate::app_store::refresh_app_config_dir_override(&app)
+        .map(|p| p.to_string_lossy().to_string()))
+}
+
+/// Set the app_config_dir override (in the Store)
+#[tauri::command]
+pub async fn set_app_config_dir_override(
+    app: AppHandle,
+    path: Option<String>,
+) -> Result<bool, String> {
+    crate::app_store::set_app_config_dir_to_store(&app, path.as_deref())?;
+    Ok(true)
+}
+
+/// Turn launch at login on or off
+#[tauri::command]
+pub async fn set_auto_launch(enabled: bool) -> Result<bool, String> {
+    if enabled {
+        crate::auto_launch::enable_auto_launch()
+            .map_err(|e| format!("Could not turn on launch at login: {e}"))?;
+    } else {
+        crate::auto_launch::disable_auto_launch()
+            .map_err(|e| format!("Could not turn off launch at login: {e}"))?;
+    }
+    Ok(true)
+}
+
+/// Whether launch at login is on
+#[tauri::command]
+pub async fn get_auto_launch_status() -> Result<bool, String> {
+    crate::auto_launch::is_auto_launch_enabled()
+        .map_err(|e| format!("Could not read the launch-at-login setting: {e}"))
+}
+
+/// Get the rectifier config
+#[tauri::command]
+pub async fn get_rectifier_config(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<crate::proxy::types::RectifierConfig, String> {
+    state.db.get_rectifier_config().map_err(|e| e.to_string())
+}
+
+/// Set the rectifier config
+#[tauri::command]
+pub async fn set_rectifier_config(
+    state: tauri::State<'_, crate::AppState>,
+    config: crate::proxy::types::RectifierConfig,
+) -> Result<bool, String> {
+    state
+        .db
+        .set_rectifier_config(&config)
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// Account pool settings: quota rotation, required routes and region warnings.
+#[tauri::command]
+pub async fn get_account_pool_config(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<crate::proxy::account_pool::AccountPoolConfig, String> {
+    state
+        .db
+        .get_account_pool_config()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_account_pool_config(
+    state: tauri::State<'_, crate::AppState>,
+    config: crate::proxy::account_pool::AccountPoolConfig,
+) -> Result<bool, String> {
+    if !(crate::proxy::account_pool::THRESHOLD_MIN..=100).contains(&config.threshold_percent) {
+        return Err("threshold must be between 50 and 100".to_string());
+    }
+    state
+        .db
+        .set_account_pool_config(&config)
+        .map_err(|e| e.to_string())?;
+    crate::proxy::http_client::set_require_proxy(config.require_proxy);
+    crate::proxy::codex_engine::nudge();
+    Ok(true)
+}
+
+/// Quota each pooled account last reported, keyed by provider id.
+#[tauri::command]
+pub async fn get_account_pool_quota(
+) -> Result<std::collections::HashMap<String, crate::proxy::account_pool::AccountQuota>, String> {
+    Ok(crate::proxy::account_pool::quota_snapshot())
+}
+
+#[tauri::command]
+pub fn get_proxy_route_status() -> Vec<crate::proxy::account_pool::ProxyRouteStatus> {
+    crate::proxy::account_pool::proxy_route_status()
+}
+
+/// The terminals whose Codex started before the installed CLI or selected
+/// model catalog changed, keyed by `socket`.
+#[tauri::command]
+pub async fn get_codex_terminal_updates(
+) -> Result<Vec<crate::proxy::codex_engine::WindowUpdate>, String> {
+    crate::proxy::codex_engine::window_updates().await
+}
+
+/// Refreshes the Codex in one terminal, as its Refresh button does.
+#[tauri::command]
+pub fn refresh_codex_terminal(socket: String) -> Result<(), String> {
+    crate::proxy::codex_engine::request_refresh(&socket)
+}
+
+/// Cancels a terminal's refresh that has not yet ended its Codex.
+#[tauri::command]
+pub fn cancel_codex_terminal_refresh(socket: String) -> Result<(), String> {
+    crate::proxy::codex_engine::cancel_refresh(&socket)
+}
+
+/// Get the optimizer config
+#[tauri::command]
+pub async fn get_optimizer_config(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<crate::proxy::types::OptimizerConfig, String> {
+    state.db.get_optimizer_config().map_err(|e| e.to_string())
+}
+
+/// Set the optimizer config
+#[tauri::command]
+pub async fn set_optimizer_config(
+    state: tauri::State<'_, crate::AppState>,
+    config: crate::proxy::types::OptimizerConfig,
+) -> Result<bool, String> {
+    // Validate cache_ttl: only allow known values
+    match config.cache_ttl.as_str() {
+        "5m" | "1h" => {}
+        other => {
+            return Err(format!(
+                "Invalid cache_ttl value: '{other}'. Allowed values: '5m', '1h'"
+            ))
+        }
+    }
+    state
+        .db
+        .set_optimizer_config(&config)
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// Get the Copilot optimizer config
+#[tauri::command]
+pub async fn get_copilot_optimizer_config(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<crate::proxy::types::CopilotOptimizerConfig, String> {
+    state
+        .db
+        .get_copilot_optimizer_config()
+        .map_err(|e| e.to_string())
+}
+
+/// Set the Copilot optimizer config
+#[tauri::command]
+pub async fn set_copilot_optimizer_config(
+    state: tauri::State<'_, crate::AppState>,
+    config: crate::proxy::types::CopilotOptimizerConfig,
+) -> Result<bool, String> {
+    state
+        .db
+        .set_copilot_optimizer_config(&config)
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+/// Get the log config
+#[tauri::command]
+pub async fn get_log_config(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<crate::proxy::types::LogConfig, String> {
+    state.db.get_log_config().map_err(|e| e.to_string())
+}
+
+/// Set the log config
+#[tauri::command]
+pub async fn set_log_config(
+    state: tauri::State<'_, crate::AppState>,
+    config: crate::proxy::types::LogConfig,
+) -> Result<bool, String> {
+    state
+        .db
+        .set_log_config(&config)
+        .map_err(|e| e.to_string())?;
+    log::set_max_level(config.to_level_filter());
+    log::info!(
+        "Log config updated: enabled={}, level={}",
+        config.enabled,
+        config.level
+    );
+    Ok(true)
+}
