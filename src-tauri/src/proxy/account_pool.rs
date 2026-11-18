@@ -315,6 +315,10 @@ pub struct AccountQuota {
     pub limited_until: Option<i64>,
     /// Model-scoped windows upstream refused, by window name; unix seconds.
     pub scoped_limited_until: HashMap<String, i64>,
+    /// When a usage reset was last taken, by window name and length; unix
+    /// seconds.
+    #[serde(skip)]
+    usage_reset_at: HashMap<(Option<String>, i64), i64>,
 }
 
 static QUOTAS: Lazy<RwLock<HashMap<String, AccountQuota>>> =
@@ -331,8 +335,7 @@ static MODEL_SCOPES: Lazy<RwLock<HashMap<String, Vec<String>>>> =
 /// Account-wide windows replace the previous ones; a model-scoped window
 /// replaces only its own earlier reading, since a response for another model
 /// does not carry it. `model` is the model the response answered, when known.
-pub fn record_windows(provider_id: &str, model: Option<&str>, windows: Vec<QuotaWindow>) {
-    let changed = changed_readings(provider_id, &windows);
+pub fn record_windows(provider_id: &str, model: Option<&str>, mut windows: Vec<QuotaWindow>) {
     if let Some(model) = model {
         let scoped = windows
             .iter()
@@ -343,14 +346,94 @@ pub fn record_windows(provider_id: &str, model: Option<&str>, windows: Vec<Quota
             .unwrap_or_else(|e| e.into_inner())
             .insert(model.to_string(), scoped);
     }
+    let now = chrono::Utc::now().timestamp();
     let mut quotas = QUOTAS.write().unwrap_or_else(|e| e.into_inner());
     let entry = quotas.entry(provider_id.to_string()).or_default();
+    ignore_late_answers(provider_id, entry, &mut windows, now);
+    let changed = if QUOTA_HISTORY.get().is_some() {
+        changed_readings(&entry.windows, &windows)
+    } else {
+        Vec::new()
+    };
     merge_windows(entry, windows);
-    entry.observed_at = chrono::Utc::now().timestamp();
+    entry.observed_at = now;
     entry.limited_until = None;
     let observed_at = entry.observed_at;
     drop(quotas);
     save_readings(provider_id, &changed, observed_at);
+}
+
+/// Reset times this close count as the same: one window's reset moves by
+/// seconds from one answer to the next, and two accounts' weeks can end
+/// within seconds of each other.
+const SAME_RESET_SECS: i64 = 3600;
+
+/// Whether two readings are of the same window: same name and length, and
+/// resets within `SAME_RESET_SECS` of each other.
+fn same_window(a: &QuotaWindow, b: &QuotaWindow) -> bool {
+    a.limit_name == b.limit_name
+        && a.window_minutes == b.window_minutes
+        && match (a.reset_at, b.reset_at) {
+            (Some(x), Some(y)) => (x - y).abs() <= SAME_RESET_SECS,
+            (x, y) => x == y,
+        }
+}
+
+/// A reading at most this many points below the stored one of the same window
+/// is an earlier answer arriving late; one further below is a usage reset,
+/// which leaves the window's end where it was. In the readings kept to
+/// 2026-11-14, 901 late answers read one or two points low; the resets read
+/// 11 to 99 points lower (99 to 0 on 2026-11-14; 99 to 76 after a Fable reset
+/// on 2026-11-18).
+const LATE_ANSWER_MAX_DROP: f64 = 5.0;
+
+/// For this long after a reset is taken, a reading more than
+/// `LATE_ANSWER_MAX_DROP` above the stored one is an answer from before the
+/// reset arriving late. Late answers have come up to two minutes behind a
+/// newer one, and usage that is being read climbs a point or two at a time.
+const LATE_ANSWER_SECS: i64 = 600;
+
+/// Answers to requests running side by side arrive out of order, so a reading
+/// a few points below the stored one of the same window is an older answer
+/// and the stored one stands. Without this an account at its switch-away
+/// limit reads 99, 98, 99 within seconds and is passed over and taken back in
+/// turn. A reading further below is a reset the provider granted and is taken
+/// at once; for `LATE_ANSWER_SECS` after it, a reading as far above the
+/// stored one is an answer from before the reset, and the stored one stands.
+fn ignore_late_answers(
+    provider_id: &str,
+    stored: &mut AccountQuota,
+    windows: &mut [QuotaWindow],
+    now: i64,
+) {
+    for new in windows.iter_mut().filter(|w| w.reset_at.is_some()) {
+        let Some(old) = stored
+            .windows
+            .iter()
+            .find(|old| same_window(old, new))
+            .map(|old| old.used_percent)
+        else {
+            continue;
+        };
+        let key = (new.limit_name.clone(), new.window_minutes);
+        if new.used_percent < old - LATE_ANSWER_MAX_DROP {
+            log::info!(
+                "[account_pool] provider={provider_id}: {} {}-minute window fell from {old:.0}% to {:.0}% before its reset; taking it as a usage reset",
+                new.limit_name.as_deref().unwrap_or("account-wide"),
+                new.window_minutes,
+                new.used_percent
+            );
+            stored.usage_reset_at.insert(key, now);
+        } else if new.used_percent < old
+            || (new.used_percent > old + LATE_ANSWER_MAX_DROP
+                && stored
+                    .usage_reset_at
+                    .get(&key)
+                    .is_some_and(|at| now - at < LATE_ANSWER_SECS))
+        {
+            new.used_percent = old;
+        }
+    }
 }
 
 /// Where readings are kept; set once the database is open.
@@ -364,26 +447,12 @@ pub fn keep_quota_history(db: std::sync::Arc<crate::database::Database>) {
 
 /// The windows worth a history row: a whole-point change in the share used,
 /// or a new window (its reset moved by more than an hour).
-fn changed_readings(provider_id: &str, windows: &[QuotaWindow]) -> Vec<QuotaWindow> {
-    if QUOTA_HISTORY.get().is_none() {
-        return Vec::new();
-    }
-    let quotas = QUOTAS.read().unwrap_or_else(|e| e.into_inner());
-    let previous = quotas
-        .get(provider_id)
-        .map(|q| q.windows.as_slice())
-        .unwrap_or(&[]);
+fn changed_readings(previous: &[QuotaWindow], windows: &[QuotaWindow]) -> Vec<QuotaWindow> {
     windows
         .iter()
         .filter(|new| {
             !previous.iter().any(|old| {
-                old.limit_name == new.limit_name
-                    && old.window_minutes == new.window_minutes
-                    && old.used_percent.floor() == new.used_percent.floor()
-                    && match (old.reset_at, new.reset_at) {
-                        (Some(a), Some(b)) => (a - b).abs() <= 3600,
-                        (a, b) => a == b,
-                    }
+                same_window(old, new) && old.used_percent.floor() == new.used_percent.floor()
             })
         })
         .cloned()
@@ -575,31 +644,95 @@ pub fn threshold_for(provider: &Provider, pool_threshold: u8) -> u8 {
 /// The lowest switch-away limit, for the pool and for one account.
 pub const THRESHOLD_MIN: u8 = 50;
 
-/// Orders accounts for `model`. Those not at their limit come first, the one
-/// whose weekly window resets soonest leading, so its quota is used before it
-/// expires; an account that went to the back for its session window comes
-/// back to the front as soon as that window resets. Accounts with no running
-/// weekly window follow in queue order. Accounts at their limit go last, in
-/// queue order. They stay in the list: when every account is spent the
-/// request still goes out and upstream's own answer reaches the client.
+/// How long an account the pool passed over is kept from taking an app back
+/// by recovery: until this long has gone by without it being passed over
+/// again. Recovery serves quota that would expire at a weekly reset, so an
+/// hour's wait costs little of it.
+const RECOVERY_HOLD_SECS: i64 = 3600;
+
+/// When the pool last passed each account over for a reason that leaves it
+/// able to serve other requests: a window or refusal scoped to one model, or
+/// a failure that says something about the account. Unix seconds.
+static PASSED_OVER: Lazy<Mutex<HashMap<String, i64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Notes that a request moved off `provider_id` after a failure that says
+/// something about the account, so recovery does not move the app straight
+/// back onto it.
+pub fn note_passed_over(provider_id: &str) {
+    note_passed_over_at(provider_id, chrono::Utc::now().timestamp());
+}
+
+fn note_passed_over_at(provider_id: &str, now: i64) {
+    PASSED_OVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(provider_id.to_string(), now);
+}
+
+fn passed_over_recently(provider_id: &str, now: i64) -> bool {
+    PASSED_OVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(provider_id)
+        .is_some_and(|at| now - at < RECOVERY_HOLD_SECS)
+}
+
+/// Whether an account whose week ends at `challenger` takes the lead from the
+/// current account, whose week ends at `current`: only when it ends more than
+/// `SAME_RESET_SECS` sooner, or the current account has no running week.
+fn takes_the_lead(challenger: Option<i64>, current: Option<i64>) -> bool {
+    match (challenger, current) {
+        (Some(challenger), Some(current)) => challenger + SAME_RESET_SECS < current,
+        (Some(_), None) => true,
+        (None, _) => false,
+    }
+}
+
+/// Orders accounts for `model`. The switching order lists the app's current
+/// account first, and it keeps the lead while it is not at its limit, unless
+/// another account's weekly window resets more than an hour sooner: that one
+/// leads, so its quota is used before it expires, and an account that went to
+/// the back for its session window comes back to the front once that window
+/// resets. An account passed over in the last hour for one model's quota, or
+/// after a failure of its own, does not take the lead that way; it follows
+/// the others. Other accounts not at their limit follow by weekly reset,
+/// those with no running weekly window in queue order. Accounts at their
+/// limit go last, in queue order. They stay in the list: when every account
+/// is spent the request still goes out and upstream's own answer reaches the
+/// client.
 pub fn order_by_quota(
     providers: Vec<Provider>,
     model: Option<&str>,
     threshold_percent: u8,
 ) -> Vec<Provider> {
     let now = chrono::Utc::now().timestamp();
+    let current = providers.first().map(|p| p.id.clone());
     let (mut fresh, spent): (Vec<_>, Vec<_>) = providers
         .into_iter()
         .partition(|p| !is_spent(&p.id, model, threshold_for(p, threshold_percent), now));
-    {
-        let quotas = QUOTAS.read().unwrap_or_else(|e| e.into_inner());
-        fresh.sort_by_key(
-            |p| match quotas.get(&p.id).and_then(|q| weekly_reset_of(q, now)) {
-                Some(reset) => (0, reset),
-                None => (1, 0),
-            },
-        );
+    // Spent for this model alone, the account can still serve requests for
+    // others; noted, it does not take the app back on one of them.
+    for p in &spent {
+        if !is_spent(&p.id, None, threshold_for(p, threshold_percent), now) {
+            note_passed_over_at(&p.id, now);
+        }
     }
+    let quotas = QUOTAS.read().unwrap_or_else(|e| e.into_inner());
+    let reset = |p: &Provider| quotas.get(&p.id).and_then(|q| weekly_reset_of(q, now));
+    fresh.sort_by_cached_key(|p| {
+        let held = current.as_deref() != Some(p.id.as_str()) && passed_over_recently(&p.id, now);
+        (held, reset(p).map_or((1, 0), |r| (0, r)))
+    });
+    if let Some(at) = fresh
+        .iter()
+        .position(|p| current.as_deref() == Some(p.id.as_str()))
+    {
+        if at > 0 && !takes_the_lead(reset(&fresh[0]), reset(&fresh[at])) {
+            let kept = fresh.remove(at);
+            fresh.insert(0, kept);
+        }
+    }
+    drop(quotas);
     fresh.into_iter().chain(spent).collect()
 }
 
@@ -774,6 +907,7 @@ mod tests {
             observed_at: 1000,
             limited_until: None,
             scoped_limited_until: HashMap::new(),
+            usage_reset_at: HashMap::new(),
         }
     }
 
@@ -1015,6 +1149,245 @@ mod tests {
         assert_eq!(
             ids(order_by_quota(queue(Some(99)), None, 90)),
             ["own-high-busy", "own-high-other"]
+        );
+    }
+
+    fn account(id: &str) -> Provider {
+        Provider::with_id(id.into(), id.into(), serde_json::json!({}), None)
+    }
+
+    fn queue(ids: &[&str]) -> Vec<Provider> {
+        ids.iter().map(|id| account(id)).collect()
+    }
+
+    #[test]
+    fn a_lower_reading_of_the_same_window_is_an_older_one() {
+        // Claude 2026-11-10: answers read 99, 98, 99 within seconds at a 99%
+        // limit, and the account was passed over and taken back in turn.
+        let now = chrono::Utc::now().timestamp();
+        let reset = now + 4 * 86_400;
+        session_at("flicker", 99.0, reset);
+        session_at("flicker", 98.0, reset + 7);
+        assert!(is_spent("flicker", None, 99, now));
+        assert_eq!(quota_snapshot()["flicker"].windows[0].used_percent, 99.0);
+        // A new window starts low.
+        session_at("flicker", 1.0, reset + 7 * 86_400);
+        assert!(!is_spent("flicker", None, 99, now));
+    }
+
+    #[test]
+    fn a_reset_that_lowers_usage_in_the_same_window_is_taken() {
+        // 2026-11-18: after a Fable reset, card 58cad6b9 read 76% account-wide
+        // and 0% for Fable, its week ending at the same second, while the pool
+        // kept 99% and passed it over.
+        let now = chrono::Utc::now().timestamp();
+        let reset = now + 4 * 86_400;
+        let read = |week: f64, fable: f64| {
+            record_windows(
+                "fable-reset",
+                Some("reset-test-fable"),
+                vec![
+                    QuotaWindow {
+                        limit_name: None,
+                        window_minutes: 10080,
+                        used_percent: week,
+                        reset_at: Some(reset),
+                    },
+                    QuotaWindow {
+                        limit_name: Some("7d_oi".into()),
+                        window_minutes: 10080,
+                        used_percent: fable,
+                        reset_at: Some(reset),
+                    },
+                ],
+            )
+        };
+        let used = || {
+            quota_snapshot()["fable-reset"]
+                .windows
+                .iter()
+                .map(|w| w.used_percent)
+                .collect::<Vec<_>>()
+        };
+        read(99.0, 49.0);
+        assert!(is_spent("fable-reset", Some("reset-test-fable"), 99, now));
+        read(76.0, 0.0);
+        assert_eq!(used(), [76.0, 0.0]);
+        assert!(!is_spent("fable-reset", Some("reset-test-fable"), 99, now));
+        // An answer from before the reset, arriving after it, does not undo it.
+        read(99.0, 49.0);
+        assert_eq!(used(), [76.0, 0.0]);
+        // Usage then climbs as before, and late answers stay ignored.
+        read(77.0, 1.0);
+        read(76.0, 0.0);
+        assert_eq!(used(), [77.0, 1.0]);
+    }
+
+    #[test]
+    fn only_a_drop_of_more_than_a_few_points_is_a_reset() {
+        let reset = 1_000_000;
+        let reading = |used: f64| QuotaWindow {
+            limit_name: None,
+            window_minutes: 10080,
+            used_percent: used,
+            reset_at: Some(reset + 30),
+        };
+        let take = |q: &mut AccountQuota, used: f64, now: i64| {
+            let mut windows = vec![reading(used)];
+            ignore_late_answers("drop-size", q, &mut windows, now);
+            merge_windows(q, windows);
+            q.windows[0].used_percent
+        };
+        let mut q = quota(99.0, Some(reset), None);
+        assert_eq!(
+            take(&mut q, 94.0, 1000),
+            99.0,
+            "five points is a late answer"
+        );
+        assert_eq!(take(&mut q, 93.0, 1000), 93.0, "six points is a reset");
+        assert_eq!(take(&mut q, 99.0, 1000 + LATE_ANSWER_SECS - 1), 93.0);
+        assert_eq!(take(&mut q, 99.0, 1000 + LATE_ANSWER_SECS), 99.0);
+        // A reading of another window is not compared.
+        let mut q = quota(99.0, Some(reset - 2 * 3_600), None);
+        assert_eq!(take(&mut q, 10.0, 1000), 10.0);
+        assert!(q.usage_reset_at.is_empty());
+    }
+
+    #[test]
+    fn weeks_ending_within_an_hour_keep_the_current_account_in_front() {
+        // Codex 2026-11-06: both weeks ended at 06:43, each reading's reset
+        // seconds off the last, and the pool moved between them on every one.
+        let now = chrono::Utc::now().timestamp();
+        let reset = now + 5 * 86_400;
+        for (a, b) in [(reset + 20, reset), (reset, reset + 20)] {
+            session_at("same-week-a", 40.0, a);
+            session_at("same-week-b", 60.0, b);
+            assert_eq!(
+                ids(order_by_quota(
+                    queue(&["same-week-a", "same-week-b"]),
+                    None,
+                    98
+                )),
+                ["same-week-a", "same-week-b"]
+            );
+            assert_eq!(
+                ids(order_by_quota(
+                    queue(&["same-week-b", "same-week-a"]),
+                    None,
+                    98
+                )),
+                ["same-week-b", "same-week-a"]
+            );
+        }
+        // A week ending more than an hour sooner takes the lead.
+        session_at("same-week-b", 60.0, reset - 2 * 3_600);
+        assert_eq!(
+            ids(order_by_quota(
+                queue(&["same-week-a", "same-week-b"]),
+                None,
+                98
+            )),
+            ["same-week-b", "same-week-a"]
+        );
+    }
+
+    #[test]
+    fn an_account_passed_over_for_one_model_does_not_take_the_app_back_for_another() {
+        let now = chrono::Utc::now().timestamp();
+        let day = 86_400;
+        record_windows(
+            "scoped-spent",
+            Some("scoped-test-fable"),
+            vec![
+                QuotaWindow {
+                    limit_name: None,
+                    window_minutes: 10080,
+                    used_percent: 50.0,
+                    reset_at: Some(now + day),
+                },
+                QuotaWindow {
+                    limit_name: Some("7d_oi".into()),
+                    window_minutes: 10080,
+                    used_percent: 99.0,
+                    reset_at: Some(now + day),
+                },
+            ],
+        );
+        session_at("scoped-other", 10.0, now + 5 * day);
+        // Its week ends first, so it leads while nothing has passed it over.
+        assert_eq!(
+            ids(order_by_quota(
+                queue(&["scoped-other", "scoped-spent"]),
+                Some("scoped-test-opus"),
+                98
+            )),
+            ["scoped-spent", "scoped-other"]
+        );
+        // A Fable request passes it over and the app moves on.
+        assert_eq!(
+            ids(order_by_quota(
+                queue(&["scoped-spent", "scoped-other"]),
+                Some("scoped-test-fable"),
+                98
+            )),
+            ["scoped-other", "scoped-spent"]
+        );
+        // An Opus request next does not take the app back.
+        assert_eq!(
+            ids(order_by_quota(
+                queue(&["scoped-other", "scoped-spent"]),
+                Some("scoped-test-opus"),
+                98
+            )),
+            ["scoped-other", "scoped-spent"]
+        );
+        // An hour without being passed over, it leads again.
+        note_passed_over_at("scoped-spent", now - RECOVERY_HOLD_SECS);
+        assert_eq!(
+            ids(order_by_quota(
+                queue(&["scoped-other", "scoped-spent"]),
+                Some("scoped-test-opus"),
+                98
+            )),
+            ["scoped-spent", "scoped-other"]
+        );
+    }
+
+    #[test]
+    fn an_account_that_failed_follows_the_others_until_an_hour_has_passed() {
+        let now = chrono::Utc::now().timestamp();
+        let day = 86_400;
+        session_at("failed-soonest", 10.0, now + day);
+        session_at("failed-current", 10.0, now + 3 * day);
+        session_at("failed-third", 10.0, now + 5 * day);
+        note_passed_over("failed-soonest");
+        assert_eq!(
+            ids(order_by_quota(
+                queue(&["failed-current", "failed-soonest", "failed-third"]),
+                None,
+                98
+            )),
+            ["failed-current", "failed-third", "failed-soonest"]
+        );
+        // When the current account is spent, the pool moves to one that has
+        // not failed.
+        session_at("failed-current", 99.0, now + 3 * day);
+        assert_eq!(
+            ids(order_by_quota(
+                queue(&["failed-current", "failed-soonest", "failed-third"]),
+                None,
+                98
+            )),
+            ["failed-third", "failed-soonest", "failed-current"]
+        );
+        note_passed_over_at("failed-soonest", now - RECOVERY_HOLD_SECS);
+        assert_eq!(
+            ids(order_by_quota(
+                queue(&["failed-current", "failed-soonest", "failed-third"]),
+                None,
+                98
+            )),
+            ["failed-soonest", "failed-third", "failed-current"]
         );
     }
 

@@ -158,8 +158,32 @@ export const deleteAccount = (id: string) => {
   accountsState = accountsState.filter((a) => a.id !== id);
 };
 
+/** The account each app is locked on, by provider id. */
+let accountLocksState: Record<string, string> = {};
+
+export const getAccountLocks = () => ({ ...accountLocksState });
+export const lockAccountOn = (appType: AppId, providerId: string) => {
+  accountLocksState = { ...accountLocksState, [appType]: providerId };
+};
+export const unlockAccountOn = (appType: AppId) => {
+  const next = { ...accountLocksState };
+  delete next[appType];
+  accountLocksState = next;
+};
+
+/** Each relay card's balance, by provider id; a card not listed has none. */
+let relayBalancesState: Record<string, unknown> = {};
+
+export const getRelayBalance = (providerId: string) =>
+  relayBalancesState[providerId] ?? null;
+export const setRelayBalance = (providerId: string, report: unknown) => {
+  relayBalancesState = { ...relayBalancesState, [providerId]: report };
+};
+
 export const resetProviderState = () => {
   accountsState = [];
+  accountLocksState = {};
+  relayBalancesState = {};
   providers = createDefaultProviders();
   current = createDefaultCurrent();
   liveProviderIds = {

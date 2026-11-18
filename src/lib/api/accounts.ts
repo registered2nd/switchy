@@ -38,6 +38,21 @@ export interface BalanceReport {
   queriedAt: number;
 }
 
+/** A relay card's balance, read with the card's key. */
+export interface RelayBalance {
+  success: boolean;
+  error: string | null;
+  /** Dollars left. */
+  balance: number | null;
+  /** The relay's own figure, in its units. */
+  units: number | null;
+  /** How many of the relay's units make a dollar. */
+  unitsPerDollar: number;
+  /** The call that answered: "usage", "billing" or "account". */
+  source: string | null;
+  queriedAt: number;
+}
+
 export const accountsApi = {
   async list(): Promise<Account[]> {
     return await invoke("get_accounts");
@@ -53,6 +68,12 @@ export const accountsApi = {
 
   async balance(id: string): Promise<BalanceReport> {
     return await invoke("get_account_balance", { id });
+  },
+
+  /** A relay card's balance; null for a card that is no relay, or whose
+   * relay has no balance call. */
+  async relayBalance(id: string, app: AppId): Promise<RelayBalance | null> {
+    return await invoke("get_relay_balance", { app, id });
   },
 
   /** A plan account's quota windows, read with its key. */

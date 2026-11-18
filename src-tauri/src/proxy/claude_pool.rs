@@ -473,45 +473,98 @@ fn propagate_refreshed_login(provider: &Provider, renewed: &Value) {
 
 // ── The request body ────────────────────────────────────────────────────────
 
-/// Claude Code writes the signed-in account's id into `metadata.user_id`.
-/// When another account's login is presented, the id is made to match, so the
-/// body and the token agree. Both shapes Claude Code has used are handled: the
-/// JSON string with an `account_uuid` field, and the older
-/// `user_<hash>_account_<uuid>_session_<uuid>` form. Returns whether anything
-/// changed.
-pub fn patch_account_uuid(body: &mut Value, uuid: &str) -> bool {
-    let Some(user_id) = body
+/// The device id this pooled account presents upstream: 64 hex characters,
+/// made the first time the account serves a request and kept in the account's
+/// folder, so every request it serves carries the same one and no two
+/// accounts share one.
+pub fn device_id_for(provider_id: &str) -> Option<String> {
+    static GUARD: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+    let _guard = GUARD.lock().unwrap_or_else(|e| e.into_inner());
+    let path = paths::snapshot_dir(provider_id).join("device_id");
+    if let Ok(existing) = std::fs::read_to_string(&path) {
+        let existing = existing.trim();
+        if existing.len() == 64 && existing.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Some(existing.to_string());
+        }
+    }
+    let fresh = format!(
+        "{}{}",
+        uuid::Uuid::new_v4().simple(),
+        uuid::Uuid::new_v4().simple()
+    );
+    match store::write_snapshot_atomic(&path, fresh.as_bytes()) {
+        Ok(()) => Some(fresh),
+        Err(e) => {
+            log::warn!("[claude_pool] could not store the device id for provider={provider_id}: {e}");
+            None
+        }
+    }
+}
+
+/// The session id `provider_id` shows for the conversation Claude Code calls
+/// `session`: SHA-256 of `provider_id::session`, formatted as a v4 UUID. The
+/// same conversation gets a different id on every account, and the same one
+/// each time it returns to an account.
+pub fn derived_session_id(provider_id: &str, session: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let hash = Sha256::digest(format!("{provider_id}::{session}").as_bytes());
+    let mut b = [0u8; 16];
+    b.copy_from_slice(&hash[..16]);
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    uuid::Uuid::from_bytes(b).to_string()
+}
+
+/// Claude Code writes the signed-in account's id, its device id and the
+/// conversation's session id into `metadata.user_id`. When a pooled account's
+/// login is presented, all three are replaced with that account's own: its
+/// account id, its device id, and the session id derived for it, so the body
+/// and the token agree and no account sees another's device or session. Both
+/// shapes Claude Code has used are handled: the JSON string, and the older
+/// `user_<device>_account_<uuid>_session_<uuid>` form. Returns the session id
+/// now in the body, for the header that repeats it, or `None` when the body
+/// carries no recognizable `user_id` (nothing changed).
+pub fn patch_identity(
+    body: &mut Value,
+    provider_id: &str,
+    account_uuid: &str,
+    device_id: &str,
+) -> Option<String> {
+    let user_id = body
         .get("metadata")
         .and_then(|m| m.get("user_id"))
         .and_then(Value::as_str)
-        .map(str::to_string)
-    else {
-        return false;
-    };
-    let patched = if let Ok(mut inner) = serde_json::from_str::<Value>(&user_id) {
-        match inner.get("account_uuid").and_then(Value::as_str) {
-            Some(existing) if existing == uuid => return false,
-            Some(_) => {
-                inner["account_uuid"] = json!(uuid);
-                serde_json::to_string(&inner).unwrap_or(user_id)
-            }
-            None => return false,
+        .map(str::to_string)?;
+    let (patched, session) = if let Ok(mut inner) = serde_json::from_str::<Value>(&user_id) {
+        let obj = inner.as_object_mut()?;
+        if !obj.contains_key("account_uuid") && !obj.contains_key("session_id") {
+            return None;
         }
-    } else if let Some(start) = user_id.find("_account_") {
-        let value_start = start + "_account_".len();
-        let value_end = user_id[value_start..]
-            .find('_')
-            .map(|i| value_start + i)
-            .unwrap_or(user_id.len());
-        if &user_id[value_start..value_end] == uuid {
-            return false;
-        }
-        format!("{}{uuid}{}", &user_id[..value_start], &user_id[value_end..])
+        let original = obj
+            .get("session_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let session = derived_session_id(provider_id, &original);
+        obj.insert("device_id".into(), json!(device_id));
+        obj.insert("account_uuid".into(), json!(account_uuid));
+        obj.insert("session_id".into(), json!(session));
+        (serde_json::to_string(&inner).ok()?, session)
     } else {
-        return false;
+        let account_at = user_id.find("_account_")?;
+        let uuid_start = account_at + "_account_".len();
+        let session_at = user_id[uuid_start..]
+            .find("_session_")
+            .map(|i| uuid_start + i)?;
+        let original = &user_id[session_at + "_session_".len()..];
+        let session = derived_session_id(provider_id, original);
+        (
+            format!("user_{device_id}_account_{account_uuid}_session_{session}"),
+            session,
+        )
     };
     body["metadata"]["user_id"] = json!(patched);
-    true
+    Some(session)
 }
 
 // ── Quota ───────────────────────────────────────────────────────────────────
@@ -716,41 +769,47 @@ mod tests {
         assert!(apply_refresh_response(&root("o", "r", 1), &json!({}), 0).is_none());
     }
 
+    const DEV: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+
     #[test]
-    fn account_uuid_is_patched_inside_the_json_user_id() {
+    fn identity_is_replaced_inside_the_json_user_id() {
         let mut body = json!({
             "model": "claude",
             "metadata": { "user_id": "{\"device_id\":\"d\",\"account_uuid\":\"aaaaaaaa-0000-0000-0000-000000000000\",\"session_id\":\"s\"}" }
         });
-        assert!(patch_account_uuid(
-            &mut body,
-            "bbbbbbbb-0000-0000-0000-000000000000"
-        ));
+        let session = patch_identity(&mut body, "prov-a", "bbbbbbbb-0000-0000-0000-000000000000", DEV)
+            .unwrap();
         let inner: Value =
             serde_json::from_str(body["metadata"]["user_id"].as_str().unwrap()).unwrap();
-        assert_eq!(
-            inner["account_uuid"],
-            "bbbbbbbb-0000-0000-0000-000000000000"
-        );
-        assert_eq!(inner["device_id"], "d");
-        assert!(!patch_account_uuid(
-            &mut body,
-            "bbbbbbbb-0000-0000-0000-000000000000"
-        ));
+        assert_eq!(inner["account_uuid"], "bbbbbbbb-0000-0000-0000-000000000000");
+        assert_eq!(inner["device_id"], DEV);
+        assert_eq!(inner["session_id"], session.as_str());
+        assert_eq!(session, derived_session_id("prov-a", "s"));
+        assert_ne!(session, derived_session_id("prov-b", "s"));
+        assert_ne!(session, "s");
     }
 
     #[test]
-    fn account_uuid_is_patched_in_the_legacy_user_id() {
+    fn identity_is_replaced_in_the_legacy_user_id() {
         let mut body = json!({ "metadata": { "user_id": "user_abc_account_old-uuid_session_s1" } });
-        assert!(patch_account_uuid(&mut body, "new-uuid"));
+        let session = patch_identity(&mut body, "prov-a", "new-uuid", DEV).unwrap();
         assert_eq!(
             body["metadata"]["user_id"],
-            "user_abc_account_new-uuid_session_s1"
+            format!("user_{DEV}_account_new-uuid_session_{session}")
         );
+        assert_eq!(session, derived_session_id("prov-a", "s1"));
         let mut none = json!({ "metadata": { "user_id": "plain" } });
-        assert!(!patch_account_uuid(&mut none, "x"));
+        assert!(patch_identity(&mut none, "p", "x", DEV).is_none());
         let mut missing = json!({ "model": "claude" });
-        assert!(!patch_account_uuid(&mut missing, "x"));
+        assert!(patch_identity(&mut missing, "p", "x", DEV).is_none());
+    }
+
+    #[test]
+    fn derived_session_id_is_a_stable_v4_uuid() {
+        let id = derived_session_id("prov-a", "s");
+        assert_eq!(id, derived_session_id("prov-a", "s"));
+        let parsed = uuid::Uuid::parse_str(&id).unwrap();
+        assert_eq!(parsed.get_version_num(), 4);
     }
 
     fn headers(pairs: &[(&str, &str)]) -> http::HeaderMap {

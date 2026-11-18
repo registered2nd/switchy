@@ -609,6 +609,11 @@ pub async fn handle_claude_passthrough(
     request: axum::extract::Request,
 ) -> Result<axum::response::Response, ProxyError> {
     let path = request.uri().path().to_string();
+    // Claude Code's telemetry names the device and session it was sent from;
+    // it is answered here and goes no further.
+    if path == "/api/event_logging/batch" {
+        return Ok((StatusCode::OK, "{}").into_response());
+    }
     let claude_path = path.starts_with("/api/")
         || path.starts_with("/v1/code/")
         || path.starts_with("/v1/messages/");

@@ -564,6 +564,7 @@ pub fn run() {
             commands::save_account,
             commands::delete_account,
             commands::get_account_balance,
+            commands::get_relay_balance,
             commands::get_account_quota,
             commands::use_account_in,
             commands::add_sign_in_account,

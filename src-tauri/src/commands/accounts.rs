@@ -5,6 +5,7 @@ use tauri::State;
 use crate::app_config::AppType;
 use crate::database::Account;
 use crate::services::accounts::{self, account_balance, account_quota, BalanceReport};
+use crate::services::relay_balance::{self, RelayBalance};
 use crate::services::subscription::SubscriptionQuota;
 use crate::store::AppState;
 
@@ -81,6 +82,20 @@ pub async fn get_account_balance(
     id: String,
 ) -> Result<BalanceReport, String> {
     account_balance(&state.db, &id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// A relay card's balance, read with its key; `None` for a card that is no
+/// relay, or whose relay has no balance call Switchy knows.
+#[tauri::command]
+pub async fn get_relay_balance(
+    state: State<'_, AppState>,
+    app: String,
+    id: String,
+) -> Result<Option<RelayBalance>, String> {
+    let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
+    relay_balance::card_balance(state.inner(), app_type, &id)
         .await
         .map_err(|e| e.to_string())
 }

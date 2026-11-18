@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { ProviderActions } from "@/components/providers/ProviderActions";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import UsageFooter from "@/components/UsageFooter";
+import { RelayBalanceBadge } from "@/components/providers/RelayBalanceBadge";
 import SubscriptionQuotaFooter from "@/components/SubscriptionQuotaFooter";
 import { ProviderHealthBadge } from "@/components/providers/ProviderHealthBadge";
 import { FailoverPriorityBadge } from "@/components/providers/FailoverPriorityBadge";
@@ -263,7 +264,10 @@ export function ProviderCard({
   const canCapture = appId === "claude" && isOfficial && isCurrent;
 
   // A locked account is served alone, with no rotation, until it is unlocked.
-  const canLock = (appId === "claude" || appId === "codex") && isOfficial;
+  // Every Claude or Codex account can hold the lock, a subscription login and
+  // a relay alike, so a lock set by hand or by an agent stays visible here and
+  // can be cleared from the card holding it.
+  const canLock = appId === "claude" || appId === "codex";
   const { data: accountLocks } = useQuery({
     queryKey: ["accountLocks"],
     queryFn: () => providersApi.getAccountLocks(),
@@ -488,7 +492,7 @@ export function ProviderCard({
                     })}
                   </span>
                 </div>
-              ) : (
+              ) : usageEnabled ? (
                 <UsageFooter
                   provider={provider}
                   providerId={provider.id}
@@ -498,6 +502,8 @@ export function ProviderCard({
                   isInConfig={isInConfig}
                   inline={true}
                 />
+              ) : (
+                <RelayBalanceBadge provider={provider} appId={appId} />
               )}
               {hasMultiplePlans && (
                 <button

@@ -123,6 +123,10 @@ impl RequestForwarder {
         // Why the provider the app had selected was passed over, for the
         // switch history.
         let mut passed_over: Option<(SwitchReason, String)> = None;
+        // Set when the app's own account failed for something that says
+        // nothing about it: the next account serves this request and the app
+        // stays where it is.
+        let mut app_stays = false;
         if !self.current_provider_id_at_start.is_empty()
             && providers.first().map(|p| p.id.as_str())
                 != Some(self.current_provider_id_at_start.as_str())
@@ -265,14 +269,16 @@ impl RequestForwarder {
                             (provider.id.clone(), provider.name.clone()),
                         );
                     }
+                    self.save_codex_login(provider, adapter.as_ref(), app_stays);
 
                     // Update success statistics
                     {
                         let mut status = self.status.write().await;
                         status.success_requests += 1;
                         status.last_error = None;
-                        let should_switch =
-                            self.current_provider_id_at_start.as_str() != provider.id.as_str();
+                        let should_switch = self.current_provider_id_at_start.as_str()
+                            != provider.id.as_str()
+                            && !app_stays;
                         if should_switch {
                             status.failover_count += 1;
 
@@ -400,6 +406,11 @@ impl RequestForwarder {
                                                 (provider.id.clone(), provider.name.clone()),
                                             );
                                         }
+                                        self.save_codex_login(
+                                            provider,
+                                            adapter.as_ref(),
+                                            app_stays,
+                                        );
 
                                         // Update success statistics
                                         {
@@ -408,7 +419,8 @@ impl RequestForwarder {
                                             status.last_error = None;
                                             let should_switch =
                                                 self.current_provider_id_at_start.as_str()
-                                                    != provider.id.as_str();
+                                                    != provider.id.as_str()
+                                                    && !app_stays;
                                             if should_switch {
                                                 status.failover_count += 1;
 
@@ -598,6 +610,7 @@ impl RequestForwarder {
                                             (provider.id.clone(), provider.name.clone()),
                                         );
                                     }
+                                    self.save_codex_login(provider, adapter.as_ref(), app_stays);
 
                                     {
                                         let mut status = self.status.write().await;
@@ -605,7 +618,8 @@ impl RequestForwarder {
                                         status.last_error = None;
                                         let should_switch =
                                             self.current_provider_id_at_start.as_str()
-                                                != provider.id.as_str();
+                                                != provider.id.as_str()
+                                                && !app_stays;
                                         if should_switch {
                                             status.failover_count += 1;
                                             let fm = self.failover_manager.clone();
@@ -755,10 +769,24 @@ impl RequestForwarder {
                             );
                             log::warn!("[{app_type_str}] [{log_code}] {log_message}");
 
+                            let moves_app = moves_the_app(provider, &e);
+                            if moves_app && is_pooled_account(provider) {
+                                super::account_pool::note_passed_over(&provider.id);
+                            }
                             if provider.id == self.current_provider_id_at_start
                                 && passed_over.is_none()
+                                && !app_stays
                             {
-                                passed_over = Some(switch_reason_for(provider, &e));
+                                if moves_app {
+                                    passed_over = Some(switch_reason_for(provider, &e));
+                                } else {
+                                    log::info!(
+                                        "[{app_type_str}] provider={} failed this request for something not about the account; the next account serves it and the app stays on provider={}",
+                                        provider.id,
+                                        provider.id
+                                    );
+                                    app_stays = true;
+                                }
                             }
                             if replaces_reported_error(last_error.as_ref(), &e) {
                                 last_error = Some(e);
@@ -875,10 +903,27 @@ impl RequestForwarder {
         }
         if result.is_err() {
             self.announce_if_signed_out(provider, pooled_codex);
-        } else if pooled_codex {
-            super::codex_pool::save_login_of_serving_account(self.router.db(), provider);
         }
         result
+    }
+
+    /// Puts a ChatGPT-login Codex account's login into Codex's saved login
+    /// once it has answered, when it is the account the app is on or moves
+    /// to. An account that served one request in place of the app's own
+    /// (`app_stays`) leaves the saved login alone.
+    fn save_codex_login(
+        &self,
+        provider: &Provider,
+        adapter: &dyn ProviderAdapter,
+        app_stays: bool,
+    ) {
+        let serves_the_app = !app_stays || provider.id == self.current_provider_id_at_start;
+        if serves_the_app
+            && adapter.name() == "Codex"
+            && super::codex_pool::is_chatgpt_provider(provider)
+        {
+            super::codex_pool::save_login_of_serving_account(self.router.db(), provider);
+        }
     }
 
     /// Tells the window when a pooled account has been refused for good
@@ -939,9 +984,19 @@ impl RequestForwarder {
 
         let claude_oauth = adapter.name() == "Claude"
             && super::providers::ClaudeAdapter::serves_captured_login(provider);
+        // The session id this pooled account shows, repeated in a header.
+        let mut derived_session: Option<String> = None;
         if claude_oauth {
-            if let Some(uuid) = super::claude_pool::account_uuid(provider) {
-                super::claude_pool::patch_account_uuid(&mut mapped_body, uuid);
+            if let (Some(uuid), Some(device_id)) = (
+                super::claude_pool::account_uuid(provider),
+                super::claude_pool::device_id_for(&provider.id),
+            ) {
+                derived_session = super::claude_pool::patch_identity(
+                    &mut mapped_body,
+                    &provider.id,
+                    uuid,
+                    &device_id,
+                );
             }
         }
 
@@ -1382,6 +1437,20 @@ impl RequestForwarder {
                 continue;
             }
 
+            // --- Claude Code's session header — the session id derived for this account ---
+            if key_str.eq_ignore_ascii_case("x-claude-code-session-id") {
+                match derived_session.as_deref().map(http::HeaderValue::from_str) {
+                    Some(Ok(hv)) => {
+                        ordered_headers.append(key.clone(), hv);
+                    }
+                    _ if claude_oauth => {}
+                    _ => {
+                        ordered_headers.append(key.clone(), value.clone());
+                    }
+                }
+                continue;
+            }
+
             // --- Copilot fingerprint headers — skipped (supplied by auth_headers) ---
             if copilot_fingerprint_headers
                 .iter()
@@ -1754,13 +1823,33 @@ fn shares_pool_route(provider: &Provider) -> bool {
         .as_ref()
         .and_then(|m| m.proxy_config.as_ref())
         .is_some_and(|c| c.enabled);
-    !own_route
-        && (super::codex_pool::is_chatgpt_provider(provider)
-            || super::claude_pool::is_oauth_provider(provider))
+    !own_route && is_pooled_account(provider)
+}
+
+/// A subscription account served from its stored login (a ChatGPT login for
+/// Codex, a captured Claude login).
+fn is_pooled_account(provider: &Provider) -> bool {
+    super::codex_pool::is_chatgpt_provider(provider)
+        || super::claude_pool::is_oauth_provider(provider)
+}
+
+/// Whether a failed request moves the app off `provider` when the next
+/// account serves it. For a pooled account only a failure about the account
+/// does: its login, its quota, its server or its own route. A request
+/// upstream refused for itself (400, 404, 413, ...) or a passing fault of the
+/// network every account shares is served by the next account while the app
+/// stays on its own; moving the app for it sent the pool back the next time
+/// rotation ordered the accounts, seconds later (Codex, 2026-11-06 and -09).
+/// Any failure moves the app off another provider, as the switching order
+/// does not reorder those.
+pub(super) fn moves_the_app(provider: &Provider, error: &ProxyError) -> bool {
+    !is_pooled_account(provider)
+        || counts_against_provider(provider, error)
+        || switch_reason_for(provider, error).0 != SwitchReason::Failover
 }
 
 /// Why a failed request moved the pool off `provider`, for the switch history.
-fn switch_reason_for(provider: &Provider, error: &ProxyError) -> (SwitchReason, String) {
+pub(super) fn switch_reason_for(provider: &Provider, error: &ProxyError) -> (SwitchReason, String) {
     let summary = summarize_proxy_error(error);
     let signed_out =
         super::codex_pool::needs_sign_in(provider) || super::claude_pool::needs_sign_in(provider);
@@ -2252,6 +2341,76 @@ mod tests {
         assert!(
             !counts_against_provider(&api_key, &upstream(429)),
             "rate limits hit every account"
+        );
+    }
+
+    #[test]
+    fn only_a_failure_about_a_pooled_account_moves_the_app_off_it() {
+        let chatgpt = |own_route: bool| {
+            let meta = own_route.then(|| crate::provider::ProviderMeta {
+                proxy_config: Some(crate::provider::ProviderProxyConfig {
+                    enabled: true,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+            let mut account = test_provider(meta, Some("official"));
+            account.id = "moves-the-app".into();
+            account.settings_config = serde_json::json!({
+                "auth": { "tokens": { "access_token": "a", "refresh_token": "r", "account_id": "acct" } },
+                "config": ""
+            });
+            account
+        };
+        let upstream = |status, body: &str| ProxyError::UpstreamError {
+            status,
+            body: Some(body.to_string()),
+        };
+        // Codex 2026-11-09: this 400 sent the app to the other account, and
+        // rotation sent it back on the next request.
+        let unsupported = || {
+            upstream(
+                400,
+                r#"{"detail":"The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account."}"#,
+            )
+        };
+        let dropped = || {
+            ProxyError::ForwardFailed(
+                "error sending request for url (https://chatgpt.com/backend-api/codex/responses)"
+                    .into(),
+            )
+        };
+        let pooled = chatgpt(false);
+        assert!(is_pooled_account(&pooled));
+        for error in [
+            unsupported(),
+            upstream(404, "{}"),
+            upstream(413, "{}"),
+            dropped(),
+            ProxyError::Timeout("The request timed out after 600s".into()),
+        ] {
+            assert!(!moves_the_app(&pooled, &error), "{error}");
+        }
+        for error in [
+            upstream(401, "{}"),
+            upstream(403, "{}"),
+            upstream(500, "{}"),
+            upstream(520, "<html>"),
+            upstream(
+                429,
+                r#"{"error":{"type":"usage_limit_reached","resets_at":1900000000}}"#,
+            ),
+            ProxyError::AuthError("needs a new sign-in".into()),
+        ] {
+            assert!(moves_the_app(&pooled, &error), "{error}");
+        }
+        assert!(
+            moves_the_app(&chatgpt(true), &dropped()),
+            "an account behind its own proxy can fail on its own"
+        );
+        assert!(
+            moves_the_app(&test_provider(None, None), &unsupported()),
+            "an API provider's switching order is not reordered"
         );
     }
 

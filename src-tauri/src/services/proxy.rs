@@ -40,7 +40,9 @@ const CLAUDE_MODEL_OVERRIDE_ENV_KEYS: [&str; 6] = [
 /// Claude `env` keys that send Claude Code's own traffic (sign-in, its login
 /// renewals, telemetry) through the proxy's `CONNECT` tunnel, so it leaves by
 /// the current account's route.
-const CLAUDE_TUNNEL_ENV_KEYS: [&str; 2] = ["HTTPS_PROXY", "NO_PROXY"];
+// DISABLE_TELEMETRY: Claude Code sends its event logging to a hard-coded
+// api.anthropic.com through the tunnel, with the real device and session ids.
+const CLAUDE_TUNNEL_ENV_KEYS: [&str; 3] = ["HTTPS_PROXY", "NO_PROXY", "DISABLE_TELEMETRY"];
 const CLAUDE_TUNNEL_NO_PROXY: &str = "127.0.0.1,localhost,::1";
 
 /// Claude `env` token keys the takeover replaces with the placeholder or removes.
@@ -166,6 +168,7 @@ impl ProxyService {
         env.insert("ANTHROPIC_BASE_URL".to_string(), json!(proxy_url));
         env.insert("HTTPS_PROXY".to_string(), json!(proxy_url));
         env.insert("NO_PROXY".to_string(), json!(CLAUDE_TUNNEL_NO_PROXY));
+        env.insert("DISABLE_TELEMETRY".to_string(), json!("1"));
 
         for key in CLAUDE_MODEL_OVERRIDE_ENV_KEYS {
             env.remove(key);
@@ -1634,6 +1637,9 @@ impl ProxyService {
         if env.get("NO_PROXY").and_then(|v| v.as_str()) == Some(CLAUDE_TUNNEL_NO_PROXY) {
             env.remove("NO_PROXY");
         }
+        if env.get("DISABLE_TELEMETRY").and_then(|v| v.as_str()) == Some("1") {
+            env.remove("DISABLE_TELEMETRY");
+        }
 
         if env
             .get("ANTHROPIC_BASE_URL")
@@ -2935,11 +2941,13 @@ mod tests {
         ProxyService::apply_claude_takeover_fields(&mut live, "http://127.0.0.1:15721", true);
         assert_eq!(live["env"]["HTTPS_PROXY"], "http://127.0.0.1:15721");
         assert_eq!(live["env"]["NO_PROXY"], CLAUDE_TUNNEL_NO_PROXY);
+        assert_eq!(live["env"]["DISABLE_TELEMETRY"], "1");
 
         ProxyService::strip_claude_takeover(&mut live);
         let env = live["env"].as_object().unwrap();
         assert!(env.get("HTTPS_PROXY").is_none());
         assert!(env.get("NO_PROXY").is_none());
+        assert!(env.get("DISABLE_TELEMETRY").is_none());
         assert_eq!(env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"], "64000");
     }
 

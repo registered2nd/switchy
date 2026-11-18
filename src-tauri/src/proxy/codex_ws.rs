@@ -36,6 +36,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::WebSocketStream;
 
 use super::server::ProxyState;
+use super::ProxyError;
 use crate::app_config::AppType;
 use crate::database::SwitchReason;
 use crate::provider::Provider;
@@ -121,13 +122,19 @@ fn rotation_reason(state: &ProxyState) -> (SwitchReason, String) {
     }
 }
 
+/// Whether `provider` is the account Codex is on.
+fn is_current(state: &ProxyState, provider: &Provider) -> bool {
+    crate::settings::get_effective_current_provider(&state.db, &AppType::Codex)
+        .ok()
+        .flatten()
+        .as_deref()
+        == Some(provider.id.as_str())
+}
+
 /// Records in the switch history, the window and the tray that `provider` now
 /// serves Codex, when it is not the current provider.
 fn note_switch(state: &ProxyState, provider: &Provider, reason: (SwitchReason, String)) {
-    let current = crate::settings::get_effective_current_provider(&state.db, &AppType::Codex)
-        .ok()
-        .flatten();
-    if current.as_deref() == Some(provider.id.as_str()) {
+    if is_current(state, provider) {
         return;
     }
     let (fm, app, id, name) = (
@@ -172,35 +179,43 @@ struct ClientHandshake {
 
 /// Opens the upstream WebSocket on the first of `accounts` that accepts it,
 /// as the HTTP path tries the next account when one fails. `passed_over` is
-/// why the pool moved past the current provider, when it did.
+/// why the pool moved past the current provider, when it did. As on the HTTP
+/// path, the current provider refusing for something not about the account
+/// (a passing network fault, a refusal of the request itself) leaves Codex on
+/// it: the next account serves the connection, which closes once the pool
+/// would serve the current one again.
 async fn connect_first(
     state: &ProxyState,
     accounts: Vec<Provider>,
     handshake: &ClientHandshake,
     mut passed_over: Option<(SwitchReason, String)>,
 ) -> Option<(Provider, Upstream, HeaderMap, String)> {
+    let mut app_stays = false;
     for provider in accounts {
         match connect_upstream(state, &provider, handshake).await {
             Ok((upstream, headers, route_key)) => {
                 super::codex_pool::record_quota(&provider.id, &headers);
-                let reason = passed_over.unwrap_or_else(|| rotation_reason(state));
-                note_switch(state, &provider, reason);
+                if !app_stays {
+                    let reason = passed_over.unwrap_or_else(|| rotation_reason(state));
+                    note_switch(state, &provider, reason);
+                }
                 return Some((provider, upstream, headers, route_key));
             }
-            Err((usage_limit, e)) => {
+            Err(e) => {
                 log::warn!(
                     "[CodexWS] provider={}: websocket refused ({e})",
                     provider.id
                 );
-                if passed_over.is_none() {
-                    let reason = if super::codex_pool::needs_sign_in(&provider) {
-                        SwitchReason::SignedOut
-                    } else if usage_limit {
-                        SwitchReason::Limit
-                    } else {
-                        SwitchReason::Failover
-                    };
-                    passed_over = Some((reason, e));
+                let moves_app = super::forwarder::moves_the_app(&provider, &e);
+                if moves_app {
+                    super::account_pool::note_passed_over(&provider.id);
+                }
+                if passed_over.is_none() && !app_stays {
+                    if moves_app {
+                        passed_over = Some(super::forwarder::switch_reason_for(&provider, &e));
+                    } else if is_current(state, &provider) {
+                        app_stays = true;
+                    }
                 }
             }
         }
@@ -284,22 +299,19 @@ pub async fn handle(
 
 /// Opens the WebSocket to the ChatGPT backend with `provider`'s login, after
 /// the exit check. Returns the upstream handshake's response headers, or why
-/// it was refused and whether that was for the account's usage limit.
+/// it was refused, as the HTTP path reports a failed request.
 async fn connect_upstream(
     state: &ProxyState,
     provider: &Provider,
     handshake: &ClientHandshake,
-) -> Result<(Upstream, HeaderMap, String), (bool, String)> {
+) -> Result<(Upstream, HeaderMap, String), ProxyError> {
     super::account_pool::ensure_exit_allowed(
         &state.db,
         provider,
         super::codex_pool::EXIT_TRACE_URL,
     )
-    .await
-    .map_err(|e| (false, e.to_string()))?;
-    let credentials = super::codex_pool::credentials_for(&state.db, provider, false)
-        .await
-        .map_err(|e| (false, e.to_string()))?;
+    .await?;
+    let credentials = super::codex_pool::credentials_for(&state.db, provider, false).await?;
 
     let mut url = format!("{}/responses", super::codex_pool::CHATGPT_CODEX_BASE_URL);
     if let Some(query) = handshake.query.as_deref() {
@@ -307,10 +319,11 @@ async fn connect_upstream(
         url.push_str(query);
     }
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
-    let route = super::http_client::resolve_route(proxy_config).map_err(|e| (false, e))?;
+    let route =
+        super::http_client::resolve_route(proxy_config).map_err(ProxyError::ForwardFailed)?;
     let route_key = route.cache_key();
-    let client =
-        super::http_client::build_client_for_route(&route, true).map_err(|e| (false, e))?;
+    let client = super::http_client::build_client_for_route(&route, true)
+        .map_err(ProxyError::ForwardFailed)?;
 
     let mut upstream = client
         .get(&url)
@@ -332,24 +345,27 @@ async fn connect_upstream(
         .timeout(Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| (false, e.to_string()))?;
+        .map_err(|e| {
+            if e.is_timeout() {
+                ProxyError::Timeout(e.to_string())
+            } else {
+                ProxyError::ForwardFailed(e.to_string())
+            }
+        })?;
     let status = response.status();
     if status != reqwest::StatusCode::SWITCHING_PROTOCOLS {
         let body = response.text().await.unwrap_or_default();
         super::codex_pool::record_limit_refusal(&provider.id, status.as_u16(), Some(&body));
-        return Err((
-            super::codex_pool::is_usage_limit_refusal(status.as_u16(), Some(&body)),
-            format!(
-                "upstream answered {status}: {}",
-                body.chars().take(300).collect::<String>()
-            ),
-        ));
+        return Err(ProxyError::UpstreamError {
+            status: status.as_u16(),
+            body: Some(body),
+        });
     }
     let headers = response.headers().clone();
     let upgraded = response
         .upgrade()
         .await
-        .map_err(|e| (false, e.to_string()))?;
+        .map_err(|e| ProxyError::ForwardFailed(e.to_string()))?;
     let socket = WebSocketStream::from_raw_socket(upgraded, Role::Client, unlimited()).await;
     Ok((socket, headers, route_key))
 }
@@ -693,7 +709,9 @@ async fn relay(
                             log_completed(&state, &provider, log, &text);
                         }
                     }
-                    if kind == "response.completed" && !answered {
+                    // Codex's saved login follows the account it is on, not
+                    // one serving the connection in its place.
+                    if kind == "response.completed" && !answered && is_current(&state, &provider) {
                         answered = true;
                         super::codex_pool::save_login_of_serving_account(&state.db, &provider);
                     }

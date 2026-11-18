@@ -7,6 +7,7 @@ import {
   Globe,
   Coins,
   Gauge,
+  Wallet,
   Eye,
   EyeOff,
   X,
@@ -23,7 +24,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { ProviderTestConfig, ProviderProxyConfig } from "@/types";
+import type {
+  ProviderTestConfig,
+  ProviderProxyConfig,
+  RelayBalanceConfig,
+} from "@/types";
 
 export type PricingModelSourceOption = "inherit" | "request" | "response";
 
@@ -46,6 +51,17 @@ interface ProviderAdvancedConfigProps {
     poolThreshold: number | undefined;
     onChange: (value: number | undefined) => void;
   };
+  /** Shown for relay cards only */
+  relayBalance?: {
+    value: RelayBalanceConfig;
+    onChange: (value: RelayBalanceConfig) => void;
+  };
+}
+
+/** A number above zero, or nothing. */
+function positive(text: string): number | undefined {
+  const n = Number.parseFloat(text);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 /** Build the full URL from ProviderProxyConfig */
@@ -101,9 +117,19 @@ export function ProviderAdvancedConfig({
   onProxyConfigChange,
   onPricingConfigChange,
   rotationThreshold,
+  relayBalance,
 }: ProviderAdvancedConfigProps) {
   const { t } = useTranslation();
   const [isTestConfigOpen, setIsTestConfigOpen] = useState(testConfig.enabled);
+  // The units-per-dollar field keeps what is typed ("6." on the way to
+  // "6.5"); the setting takes the number once it is one.
+  const savedUnits = relayBalance?.value.unitsPerDollar;
+  const [unitsText, setUnitsText] = useState(() => savedUnits?.toString() ?? "");
+  useEffect(() => {
+    setUnitsText((text) =>
+      positive(text) === savedUnits ? text : (savedUnits?.toString() ?? ""),
+    );
+  }, [savedUnits]);
   const [isProxyConfigOpen, setIsProxyConfigOpen] = useState(
     proxyConfig.enabled,
   );
@@ -224,6 +250,86 @@ export function ProviderAdvancedConfig({
             {t("providerAdvanced.rotationThresholdDesc", {
               defaultValue:
                 "When this account's 5-hour or weekly usage reaches this percentage, rotation moves to another account until its limit resets. Leave it empty to use the pool's setting in Settings → Pool.",
+            })}
+          </p>
+        </div>
+      )}
+
+      {relayBalance && (
+        <div className="rounded-lg border border-border/50 bg-muted/20 p-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <Wallet className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">
+              {t("relayBalance.title", { defaultValue: "Balance" })}
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="relay-units-per-dollar">
+                {t("relayBalance.unitsPerDollar", {
+                  defaultValue: "Units per dollar",
+                })}
+              </Label>
+              <Input
+                id="relay-units-per-dollar"
+                type="number"
+                min={0}
+                step="any"
+                inputMode="decimal"
+                value={unitsText}
+                onChange={(e) => {
+                  setUnitsText(e.target.value);
+                  relayBalance.onChange({
+                    ...relayBalance.value,
+                    unitsPerDollar: positive(e.target.value),
+                  });
+                }}
+                placeholder={t("relayBalance.unitsPerDollarPlaceholder", {
+                  defaultValue: "Known rate, else 1",
+                })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="relay-access-token">
+                {t("relayBalance.accessToken", {
+                  defaultValue: "Account access token",
+                })}
+              </Label>
+              <Input
+                id="relay-access-token"
+                type="password"
+                autoComplete="off"
+                value={relayBalance.value.accessToken ?? ""}
+                onChange={(e) =>
+                  relayBalance.onChange({
+                    ...relayBalance.value,
+                    accessToken: e.target.value.trim() || undefined,
+                  })
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="relay-user-id">
+                {t("relayBalance.userId", { defaultValue: "User ID" })}
+              </Label>
+              <Input
+                id="relay-user-id"
+                inputMode="numeric"
+                autoComplete="off"
+                value={relayBalance.value.userId ?? ""}
+                onChange={(e) =>
+                  relayBalance.onChange({
+                    ...relayBalance.value,
+                    userId: e.target.value.trim() || undefined,
+                  })
+                }
+              />
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {t("relayBalance.desc", {
+              defaultValue:
+                "The card shows the relay's balance in dollars, read with its key. Units per dollar converts a relay that counts in units of its own; leave it empty for the relay's known rate (KuaiAPI 6.5), or dollars. A new-api or one-api relay whose key has no limit shows its balance only to the account: give the account's access token, from the console's personal settings, and its user ID.",
             })}
           </p>
         </div>

@@ -325,6 +325,24 @@ pub struct ProviderMeta {
     /// the card's "Used in" choice for that program.
     #[serde(rename = "accountId", skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
+
+    /// How a relay card's balance is read and shown (relay cards only).
+    #[serde(rename = "relayBalance", skip_serializing_if = "Option::is_none")]
+    pub relay_balance: Option<RelayBalanceConfig>,
+}
+
+/// A relay card's balance settings: how many of the relay's units make a
+/// dollar, and, for a relay whose keys cannot see the account's balance
+/// (new-api, one-api), the account's access token and user ID.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayBalanceConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub units_per_dollar: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

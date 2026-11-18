@@ -596,6 +596,15 @@
     "rotationThresholdRange": "50～100 の数値を入力するか、空欄にしてください。",
     "rotationThresholdDesc": "このアカウントの 5 時間または週の使用率がこの値に達すると、上限がリセットされるまでローテーションは別のアカウントに切り替えます。空欄の場合は「設定 → プール」の値を使います。"
   },
+  "relayBalance": {
+    "title": "残高",
+    "unitsPerDollar": "1 ドルあたりの単位数",
+    "unitsPerDollarPlaceholder": "既知のレート、なければ 1",
+    "accessToken": "アカウントのアクセストークン",
+    "userId": "ユーザー ID",
+    "desc": "カードには中継サービスの残高がドルで表示されます（カードのキーで取得）。独自の単位で数える中継サービスは「1 ドルあたりの単位数」で換算します。空欄なら既知のレート（KuaiAPI は 6.5）、なければドルとして表示します。キーに上限がない new-api / one-api の中継サービスは残高をアカウントにしか見せないため、アカウントのアクセストークン（コンソールの個人設定で発行）とユーザー ID を入力してください。",
+    "units": "中継サービスの単位で {{units}}（{{rate}} 単位で 1 ドル）"
+  },
   "codexConfig": {
     "authJson": "auth.json (JSON) *",
     "authJsonPlaceholder": "{\n  \"OPENAI_API_KEY\": \"sk-your-api-key-here\"\n}",

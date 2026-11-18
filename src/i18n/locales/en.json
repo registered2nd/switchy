@@ -598,6 +598,15 @@
     "rotationThresholdRange": "Enter a number from 50 to 100, or leave it empty.",
     "rotationThresholdDesc": "When this account's 5-hour or weekly usage reaches this percentage, rotation moves to another account until its limit resets. Leave it empty to use the pool's setting in Settings → Pool."
   },
+  "relayBalance": {
+    "title": "Balance",
+    "unitsPerDollar": "Units per dollar",
+    "unitsPerDollarPlaceholder": "Known rate, else 1",
+    "accessToken": "Account access token",
+    "userId": "User ID",
+    "desc": "The card shows the relay's balance in dollars, read with its key. Units per dollar converts a relay that counts in units of its own; leave it empty for the relay's known rate (KuaiAPI 6.5), or dollars. A new-api or one-api relay whose key has no limit shows its balance only to the account: give the account's access token, from the console's personal settings, and its user ID.",
+    "units": "{{units}} of the relay's units, {{rate}} to the dollar"
+  },
   "codexConfig": {
     "authJson": "auth.json (JSON) *",
     "authJsonPlaceholder": "{\n  \"OPENAI_API_KEY\": \"sk-your-api-key-here\"\n}",

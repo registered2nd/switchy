@@ -98,6 +98,12 @@ fn monitor_for_url(base_url: &str) -> Option<(&'static str, &'static str)> {
         .map(|(_, company, region)| (*company, *region))
 }
 
+/// Whether the endpoint is a company's own plan or pay-as-you-go API, which
+/// its plan account or balance monitor reads, rather than a relay's.
+pub(crate) fn is_company_endpoint(base_url: &str) -> bool {
+    plan_for_url(base_url).is_some() || monitor_for_url(base_url).is_some()
+}
+
 fn str_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
     let mut v = value;
     for key in path {
@@ -118,7 +124,7 @@ fn toml_value<'a>(config: &'a str, key: &str) -> Option<&'a str> {
 }
 
 /// A provider's endpoint and key, wherever its app keeps them.
-fn endpoint_and_key(app_type: &str, settings: &Value) -> Option<(String, String)> {
+pub(crate) fn endpoint_and_key(app_type: &str, settings: &Value) -> Option<(String, String)> {
     let (url, key) = match app_type {
         "claude" => (
             str_at(settings, &["env", "ANTHROPIC_BASE_URL"]),

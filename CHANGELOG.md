@@ -8,6 +8,63 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.50] — 2026-11-18 — Relay cards show their balance in dollars
+
+Windows installer: download `Switchy_1.0.50_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.50_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Added
+
+- **A relay card shows what is left on the relay, in dollars.** Every
+  ten minutes the card reads its balance with its own key, through the
+  balance calls of the panels relays run on: sub2api's `/v1/usage`
+  (KuaiAPI), then new-api's and one-api's
+  `/v1/dashboard/billing/subscription` less `/v1/dashboard/billing/usage`.
+  A relay that counts in units of its own is converted with *Units per
+  dollar*, under Balance in the card's Edit dialog; KuaiAPI's 6.5 to the
+  dollar is built in. A new-api or one-api key with no limit of its own
+  reports no balance, and the card says so; with the account's access
+  token (from the relay console's personal settings) and user ID entered
+  under Balance, the card reads the account's balance instead (Aiberm).
+  A relay that answers none of these calls shows nothing, and a card with
+  a usage script shows the script's result.
+
+### Changed
+
+- **Each pooled Claude account presents its own identity.** While the
+  proxy has taken Claude over, each request carries the serving
+  account's own account id, a device id made for that account (kept in
+  `~/.switchy/accounts/<card id>/device_id`) and a session id derived
+  from the account and the conversation, so no two accounts show the
+  same device or session. Claude Code's settings carry
+  `DISABLE_TELEMETRY=1` during the takeover, which stops its event
+  logging and feature-flag fetch; sessions started before the takeover
+  keep theirs until restarted.
+- **The pool moves an app only for a lasting reason about its account.**
+  Claude and Codex no longer bounce between two accounts seconds apart.
+  Weekly limits that reset within an hour of each other count as the
+  same, so the account in use keeps serving. A failure that says nothing
+  about the account (a refusal of the request itself, a passing fault on
+  the route every account shares) sends that request to the next account
+  without switching the app. An account passed over for a limit or for a
+  failure of its own is not moved back to until an hour passes.
+- **A usage reset is taken at once.** A usage reading up to five points
+  below the last one in the same window is a late answer and is ignored;
+  one further below is a reset (Anthropic lowers usage without moving the
+  window's end), so the account serves again straight away instead of
+  after its week rolls over. For ten minutes after a reset, a reading
+  more than five points higher is an answer from before it and is
+  ignored.
+
+### Fixed
+
+- **Lock in is on every Claude and Codex card, relays included.** The
+  lock showed only on subscription logins, so a lock set on a relay or
+  API-key card through the control API could be neither seen nor cleared
+  in the window. Any Claude or Codex card now shows the control and its
+  locked state.
+
 ## [1.0.49] — 2026-11-03 — Antigravity sign-ins made from Switchy's PowerShell launcher are kept
 
 Windows installer: download `Switchy_1.0.49_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.

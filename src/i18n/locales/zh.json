@@ -596,6 +596,15 @@
     "rotationThresholdRange": "请输入 50 到 100 之间的数字，或留空。",
     "rotationThresholdDesc": "此账号的 5 小时或每周用量达到该百分比后，轮换会改用其他账号，直到它的额度重置。留空则使用“设置 → 账号池”中的设置。"
   },
+  "relayBalance": {
+    "title": "余额",
+    "unitsPerDollar": "每美元单位数",
+    "unitsPerDollarPlaceholder": "已知汇率，否则为 1",
+    "accessToken": "账户访问令牌",
+    "userId": "用户 ID",
+    "desc": "卡片显示中转站的美元余额，用卡片自己的密钥读取。中转站以自有单位计费时，用“每美元单位数”换算；留空则使用已知汇率（KuaiAPI 为 6.5），或按美元显示。new-api 或 one-api 中转站的密钥若不限额，余额只对账户可见：请填写账户的访问令牌（在控制台个人设置中生成）和用户 ID。",
+    "units": "中转站单位 {{units}}，{{rate}} 单位合 1 美元"
+  },
   "codexConfig": {
     "authJson": "auth.json (JSON) *",
     "authJsonPlaceholder": "{\n  \"OPENAI_API_KEY\": \"sk-your-api-key-here\"\n}",

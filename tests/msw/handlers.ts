@@ -19,6 +19,10 @@ import {
   getAccounts,
   saveAccount,
   deleteAccount,
+  getAccountLocks,
+  lockAccountOn,
+  unlockAccountOn,
+  getRelayBalance,
 } from "./state";
 import type { Account } from "@/lib/api/accounts";
 import signInTemplates from "@/config/signInTemplates.json";
@@ -62,6 +66,10 @@ export const handlers = [
       queriedAt: Date.now(),
     }),
   ),
+  http.post(`${TAURI_ENDPOINT}/get_relay_balance`, async ({ request }) => {
+    const { id } = await withJson<{ id: string }>(request);
+    return success(getRelayBalance(id));
+  }),
   http.post(`${TAURI_ENDPOINT}/use_account_in`, async ({ request }) => {
     const { id, app } = await withJson<{ id: string; app: AppId }>(request);
     const account = getAccounts().find((a) => a.id === id);
@@ -98,6 +106,20 @@ export const handlers = [
     return success(id);
   }),
   http.post(`${TAURI_ENDPOINT}/remove_account_from`, () => success(null)),
+  http.post(`${TAURI_ENDPOINT}/get_account_locks`, () =>
+    success(getAccountLocks()),
+  ),
+  http.post(`${TAURI_ENDPOINT}/lock_account`, async ({ request }) => {
+    const { id, app } = await withJson<{ id: string; app: AppId }>(request);
+    setCurrentProviderId(app, id);
+    lockAccountOn(app, id);
+    return success(true);
+  }),
+  http.post(`${TAURI_ENDPOINT}/unlock_account`, async ({ request }) => {
+    const { app } = await withJson<{ app: AppId }>(request);
+    unlockAccountOn(app);
+    return success(true);
+  }),
   http.post(`${TAURI_ENDPOINT}/get_account_quota`, () =>
     success({
       tool: "coding_plan",

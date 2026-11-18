@@ -22,6 +22,7 @@ import type {
   ProviderMeta,
   ProviderTestConfig,
   ProviderProxyConfig,
+  RelayBalanceConfig,
   ClaudeApiFormat,
   ClaudeApiKeyField,
 } from "@/types";
@@ -203,6 +204,9 @@ export function ProviderForm({
   const [rotationThreshold, setRotationThreshold] = useState<
     number | undefined
   >(() => initialData?.meta?.rotationThresholdPercent);
+  const [relayBalance, setRelayBalance] = useState<RelayBalanceConfig>(
+    () => initialData?.meta?.relayBalance ?? {},
+  );
   const [pricingConfig, setPricingConfig] = useState<{
     enabled: boolean;
     costMultiplier?: string;
@@ -241,6 +245,13 @@ export function ProviderForm({
   // their usage, so only they take a switch-away limit of their own.
   const showRotationThreshold =
     (appId === "claude" || appId === "codex") && category === "official";
+  // A relay card reads its balance with its key; its settings convert the
+  // relay's units and reach a balance its key cannot see.
+  const showRelayBalance =
+    (appId === "claude" || appId === "codex" || appId === "gemini") &&
+    category !== "official" &&
+    category !== "cn_official" &&
+    category !== "cloud_provider";
   const { data: poolConfig } = useQuery({
     queryKey: ["accountPoolConfig"],
     queryFn: () => settingsApi.getAccountPoolConfig(),
@@ -264,6 +275,7 @@ export function ProviderForm({
     setTestConfig(initialData?.meta?.testConfig ?? { enabled: false });
     setProxyConfig(initialData?.meta?.proxyConfig ?? { enabled: false });
     setRotationThreshold(initialData?.meta?.rotationThresholdPercent);
+    setRelayBalance(initialData?.meta?.relayBalance ?? {});
     setPricingConfig({
       enabled:
         initialData?.meta?.costMultiplier !== undefined ||
@@ -1175,6 +1187,13 @@ export function ProviderForm({
       rotationThresholdPercent: showRotationThreshold
         ? rotationThreshold
         : undefined,
+      relayBalance:
+        showRelayBalance &&
+        (relayBalance.unitsPerDollar !== undefined ||
+          relayBalance.accessToken ||
+          relayBalance.userId)
+          ? relayBalance
+          : undefined,
       costMultiplier: pricingConfig.enabled
         ? pricingConfig.costMultiplier
         : undefined,
@@ -2020,6 +2039,11 @@ export function ProviderForm({
                     poolThreshold: poolConfig?.thresholdPercent,
                     onChange: setRotationThreshold,
                   }
+                : undefined
+            }
+            relayBalance={
+              showRelayBalance
+                ? { value: relayBalance, onChange: setRelayBalance }
                 : undefined
             }
           />

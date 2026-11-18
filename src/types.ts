@@ -180,6 +180,17 @@ export interface ProviderMeta {
     emailAddress: string;
     capturedAt: number;
   };
+  // How a relay card's balance is read and shown (relay cards only)
+  relayBalance?: RelayBalanceConfig;
+}
+
+// A relay card's balance settings: how many of the relay's units make a
+// dollar, and for a relay whose keys cannot see the account's balance
+// (new-api, one-api) the account's access token and user ID
+export interface RelayBalanceConfig {
+  unitsPerDollar?: number;
+  accessToken?: string;
+  userId?: string;
 }
 
 // Claude API format type
