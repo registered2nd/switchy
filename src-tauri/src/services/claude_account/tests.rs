@@ -857,6 +857,65 @@ fn swap_sync_noop_when_live_uuid_has_no_matching_captured_provider() {
     );
 }
 
+/// After a capture the live login is the card's; the proxy reads the marker to
+/// know Claude Code holds it and leaves its renewal to Claude Code.
+#[test]
+#[serial]
+fn capture_records_the_card_as_the_owner_of_the_live_login() {
+    let home = ScopedHome::new();
+    let state = make_state();
+    seed_provider(&state, &official_provider("a"));
+    seed_provider(&state, &official_provider("b"));
+    write_live_files(&home, "uuid-A", "alice@example.com");
+    capture(&state, "a", false).unwrap();
+    let provider_a = state.db.get_provider_by_id("a", "claude").unwrap().unwrap();
+    swap_if_captured(&state, &provider_a).unwrap();
+
+    // `claude /login` as B, then capture B: no switch in between.
+    write_live_files_at(&home, "uuid-B", "bob@example.com", 5_000);
+    capture(&state, "b", false).unwrap();
+
+    let owner = read_live_owner().expect("owner marker");
+    assert_eq!(owner.provider_id, "b");
+    assert_eq!(owner.account_uuid, "uuid-B");
+}
+
+/// WSL left on A by an earlier switch renewed A's login. The next switch
+/// overwrites WSL's credentials; A's card keeps that renewal instead of the
+/// refresh token it spent.
+#[test]
+#[serial]
+fn swap_keeps_a_login_wsl_renewed_before_overwriting_it() {
+    let home = ScopedHome::new();
+    let state = make_state();
+    seed_two_and_make_a_live(&home, &state);
+
+    let mirror_home = home.path().join("wsl-home");
+    let mirror = mirror_home.join(".claude");
+    fs::create_dir_all(&mirror).unwrap();
+    fs::write(
+        mirror_home.join(".claude.json"),
+        json!({ "oauthAccount": { "accountUuid": "uuid-A", "emailAddress": "alice@example.com" } })
+            .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        mirror.join(".credentials.json"),
+        credentials_blob("A-wsl-renewed", 9_000).to_string(),
+    )
+    .unwrap();
+    set_mirror(&mirror);
+
+    switch_to_b(&state);
+
+    let a: Value =
+        serde_json::from_slice(&fs::read(paths::snapshot_credentials_path("a")).unwrap()).unwrap();
+    assert_eq!(a["claudeAiOauth"]["refreshToken"], "refresh-A-wsl-renewed");
+    let wsl: Value =
+        serde_json::from_slice(&fs::read(mirror.join(".credentials.json")).unwrap()).unwrap();
+    assert_eq!(wsl["claudeAiOauth"]["refreshToken"], "refresh-uuid-B");
+}
+
 // ---------- switch-away sync: the three refusal rules ----------
 
 /// Sets up two captured providers with A live and recorded as the owner.

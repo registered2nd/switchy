@@ -453,7 +453,7 @@ pub fn run() {
             if let Err(error) = services::manual_sign_in::apply(&settings::get_settings()) {
                 log::warn!("Could not apply manual sign-in settings: {error}");
             }
-            services::credential_mirror::start();
+            services::credential_mirror::start(app.state::<AppState>().db.clone());
             crate::proxy::codex_pool::set_app_handle(app.handle().clone());
             crate::proxy::codex_engine::start(app.handle().clone());
             services::credential_mirror::start_codex(app.state::<AppState>().db.clone());

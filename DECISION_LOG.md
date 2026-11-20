@@ -2,6 +2,27 @@
 
 Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/methodology/meta/recordkeeping_model.md` § Decision); the removed entries are in git history at the pruning commit.
 
+## 2026-11-19 — Every Claude login has one renewer; a login both installs hold is renewed by Switchy ahead of both, refining the entry below
+
+- Context: the single-use refresh-token race had been fixed one pair of renewers at a time (1.0.5, 1.0.6, 1.0.27, 1.0.46, SW315, the entry below); the user asked for exactly one renewer per login on every path (SW325). The path-by-path audit is in `_runs/2026_11_19_sw325/record.md` § One renewer per login. The main path left open: the reconciler keeps Windows and WSL on one login, and both Claude Codes renew it in the same five minutes.
+- Decision:
+  1. **A login both installs hold is renewed by Switchy between ten and five minutes before it runs out, ahead of both, and written to both.** The reconciler starts the renewal through the card holding the login, so it does not depend on a request; if it fails, Switchy stays out of the installs' window rather than post the token a third time. A login no card has captured is left to the installs: Switchy renews captured logins only.
+  2. **An install holds a login when it is signed in to the card or its saved login carries the same refresh token.** The proxy records the owner marker when the live store carries the card's token, and a capture records it as a switch does.
+  3. **A renewal is written to every install whose saved login carried the token it spent.**
+  4. **A heal is never made across accounts, and a switch files WSL's newer login with its card before overwriting it.**
+- Why: the race recurs whenever a second holder of one login is added and given its own renewal schedule; counting holders per login and giving each login exactly one renewer closes the class instead of the next pair. Claude Code cannot be told not to renew, so with two Claude Code holders the only single renewer is one that renews before either of them would.
+- Files: `holders`, `renewal`, `renews_ahead_of_installs`, `record_live_owner_if_carried`, `renew_shared_login`, `take_newer_wsl_login`, `propagate_refreshed_login` in `src-tauri/src/proxy/claude_pool.rs`; `renew_shared_login_when_due`, `heals_across_accounts` in `src-tauri/src/services/credential_mirror.rs`; `capture`, `sync_outgoing_wsl_login` in `src-tauri/src/services/claude_account/mod.rs`.
+
+## 2026-11-19 — A Claude login that Claude Code holds has one renewer, Claude Code, and a login Claude Code dropped is never restored, refining 2026-06-13 and 2026-10-09
+
+- Context: card 58cad6b9 lost its login twice on 2026-11-19 (17:08 and 01:17 UTC the next day), each time at the five-minute mark before its access token ran out (SW325). Claude Code and the proxy each posted the same refresh token within a second; both were refused `invalid_grant` "Refresh token not found or invalid", and neither kept a renewed login. On 2026-11-18 Claude Code renewed alone three times and the proxy took each renewal; none was lost. After each loss the reconciler copied WSL's copy of the same refused login back into the Windows live store 5 and 23 times, and each copy sent the sessions back to renew the dead token. Timeline and evidence: `_runs/2026_11_19_sw325/record.md`.
+- Decision:
+  1. **The proxy leaves renewal to Claude Code for a login Claude Code holds** (Windows signed in to it by the owner marker, or WSL signed in to the account). It presents the access token until it has run out, takes Claude Code's renewal from the live store or WSL, and renews itself only after expiry with no renewal, or on a 401 that no renewal answers within five seconds. A login only the proxy holds keeps the five-minute window.
+  2. **A 401 within a minute of the stored login being replaced is answered by that replacement,** whether the proxy renewed it or took it from Claude Code; the proxy does not renew a login it has just taken.
+  3. **The reconciler does not heal a cleared side with the login it dropped**: the refresh token that side last held alive, or one Anthropic refused the proxy.
+- Why: the two holders' windows coincide (Claude Code renews when under five minutes are left, as the proxy did), so they posted together at every expiry. A single renewer per login removes that race, which the 2026-06-13 entry left as a residual. A heal is meant to replace a token that lost the race with the winner's newer one, and copying back the identical token restores nothing.
+- Files: `access_token_for`, `renewal`, `await_holder_renewal`, `note_renewed` in `src-tauri/src/proxy/claude_pool.rs`; `restores_dropped_login`, `note_dropped_and_refused` in `src-tauri/src/services/credential_mirror.rs`.
+
 ## 2026-11-18 — A relay card reads its balance through the balance calls of the panels relays run on, not a reader per relay
 
 - Context: the user asked for the dollar balance on relay cards, as the DeepSeek, Moonshot and StepFun monitors show theirs, and widened it to any relay card, "maybe everyone is a little different, or maybe we just need to expose an API for everyone" (SW324). Relays run on a few open panels: KuaiAPI on sub2api (`/v1/usage` answers its key), Aiberm on new-api (its keys have no limit, so the key-level billing calls report 100,000,000 dollars, and only `/api/user/self` with the account's access token shows the balance). KuaiAPI's figure is labelled `USD` and is KuaiAPI's units, 6.5 to the dollar.
@@ -420,7 +441,7 @@ Pruned 2026-09-10 to the recordkeeping model's decision test (`C:/Projects/metho
   - 1.0.6 ships the reconciler (`services/credential_mirror.rs`, full rewrite, 13 unit tests). `start()` wiring in `lib.rs` unchanged.
   - The swap-time `.credentials.json` mirror in `mod.rs` is retained (first-swap population); BACKLOG #12's "keep it" call stands.
   - BACKLOG #10 is closed (built, beyond the naive last-writer-wins it described).
-  - Residual: the rare sub-second simultaneous-refresh tie still briefly fails the loser, which then auto-heals on its next request (~poll interval). True zero-blip needs a single-refresher auth-broker (out of scope; Switchy's proxy layer could host it).
+  - Residual: the rare sub-second simultaneous-refresh tie still briefly fails the loser, which then auto-heals on its next request (~poll interval). True zero-blip needs a single-refresher auth-broker (out of scope; Switchy's proxy layer could host it). *(Refined 2026-11-19: the proxy no longer renews a login Claude Code holds before it runs out, and a heal never restores the login a side dropped; see "A Claude login that Claude Code holds has one renewer".)*
 
 ## 2026-05-28 — Fork ships its own unsigned macOS DMG; tracks current installers in git; retires upstream cc-switch versioning
 

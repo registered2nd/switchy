@@ -152,7 +152,7 @@ pub fn capture(
         }
     };
     // Parse-validate; we don't care about shape beyond "is JSON we can round-trip".
-    let _: Value = serde_json::from_slice(&credentials_bytes).map_err(|_| {
+    let credentials: Value = serde_json::from_slice(&credentials_bytes).map_err(|_| {
         AppError::localized(
             "claudeAccount.capture.error.credentials_missing",
             "Claude Code credentials file is unreadable. Re-run `claude /login`.",
@@ -224,6 +224,12 @@ pub fn capture(
     meta.captured_claude_account = Some(identity.clone().into());
     updated.meta = Some(meta);
     state.db.save_provider(CLAUDE_APP_TYPE, &updated)?;
+
+    // The live login is now this card's, exactly as after a switch to it.
+    // Without the marker the proxy would not know Claude Code holds the
+    // login, and would renew it in the same window Claude Code does.
+    let (_, expires_at) = crate::services::credential_mirror::credential_health(&credentials);
+    write_live_owner(provider_id, &account_uuid, expires_at);
 
     log::info!(
         "[claude_account] capture OK provider={} uuid={} email={}",
@@ -489,6 +495,7 @@ pub fn swap_if_captured(state: &AppState, provider: &Provider) -> Result<SwapOut
             provider.id
         );
     }
+    sync_outgoing_wsl_login(state);
 
     let cred_snapshot = paths::snapshot_credentials_path(&provider.id);
     let oauth_snapshot = paths::snapshot_oauth_account_path(&provider.id);
@@ -788,6 +795,32 @@ fn sync_outgoing_snapshot(state: &AppState, incoming_provider_id: &str) -> Resul
         live_expires_at
     );
     Ok(())
+}
+
+/// Files WSL's login with the card of the account WSL is signed in to, when
+/// WSL has renewed it since the card stored it. The switch is about to
+/// overwrite WSL's credentials; without this the card would keep the refresh
+/// token WSL's renewal spent, and post it again at its next renewal. WSL can
+/// be on another account than Windows (a switch that could not reach it), so
+/// the reconciler, which syncs only the same account, may not have filed it.
+fn sync_outgoing_wsl_login(state: &AppState) {
+    let Some(mirror_dir) = crate::settings::get_claude_mirror_override_dir() else {
+        return;
+    };
+    let Some(uuid) = crate::services::credential_mirror::read_account_uuid(
+        &paths::mirror_claude_config_path(&mirror_dir),
+    ) else {
+        return;
+    };
+    let Ok(providers) = state.db.get_all_providers(CLAUDE_APP_TYPE) else {
+        return;
+    };
+    for card in providers.values().filter(|p| {
+        crate::proxy::claude_pool::is_oauth_provider(p)
+            && crate::proxy::claude_pool::account_uuid(p) == Some(uuid.as_str())
+    }) {
+        crate::proxy::claude_pool::take_newer_wsl_login(card);
+    }
 }
 
 fn classify_mirror_error(err: &AppError) -> &'static str {

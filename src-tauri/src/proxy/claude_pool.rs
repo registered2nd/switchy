@@ -17,6 +17,11 @@
 //! owner says the live login is that account's. WSL's Claude Code is held to
 //! the same rules by account: a newer login of the account WSL is signed in
 //! to is taken from there before renewing, and a renewed one is written there.
+//! A login one Claude Code install holds is renewed by that install: the proxy
+//! renews it only once it has run out without a renewal, so the two never post
+//! the same single-use refresh token together. A login both installs hold,
+//! Windows and WSL, is renewed here before either install's window opens and
+//! written to both, since the two installs would otherwise post it together.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -43,8 +48,25 @@ pub(crate) const CLIENT_ID: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 /// this is the identity Claude Code's own refresh call carries.
 pub(crate) const REFRESH_USER_AGENT: &str = "axios/1.13.6";
 
-/// Refresh when the access token has less than this left.
+/// Refresh a login only the proxy holds when its access token has less than
+/// this left.
 const REFRESH_WINDOW_MS: i64 = 5 * 60 * 1000;
+/// A login a Claude Code install also holds (Windows signed in to it, or WSL)
+/// is renewed by that install once less than five minutes are left, the same
+/// window as `REFRESH_WINDOW_MS`. Posting the same single-use refresh token
+/// alongside it loses the login for both, so the proxy keeps presenting the
+/// still-valid access token, takes the install's renewal, and renews such a
+/// login itself only once it has run out.
+const HELD_REFRESH_WINDOW_MS: i64 = 0;
+/// A login both Claude Code installs hold, Windows and WSL, would be renewed
+/// by each of them in that same window, posting the same refresh token
+/// together. It is renewed here while it has less than this left and at least
+/// `REFRESH_WINDOW_MS`: before either install's window opens.
+const SHARED_REFRESH_WINDOW_MS: i64 = 10 * 60 * 1000;
+/// How long a renewal of a login a Claude Code install holds waits for that
+/// install's own renewal to appear before making one here.
+const HELD_RENEWAL_WAIT_MS: u64 = 5_000;
+const HELD_RENEWAL_POLL_MS: u64 = 250;
 /// A 401 this soon after a refresh is about a request sent before it.
 const FORCED_REFRESH_FLOOR_SECS: i64 = 60;
 
@@ -126,6 +148,7 @@ fn adopt_newer_live_login(provider: &Provider, stored: Value) -> Value {
         );
         return stored;
     }
+    note_renewed(&provider.id);
     log::info!(
         "[claude_pool] provider={} took the newer login from the live store",
         provider.id
@@ -145,6 +168,23 @@ fn mirror_credentials_of(provider: &Provider) -> Option<std::path::PathBuf> {
     (signed_in == uuid).then(|| dir.join(".credentials.json"))
 }
 
+fn read_login_at(path: &std::path::Path) -> Option<Value> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+}
+
+/// The login in the Windows (or macOS) live store, whoever it belongs to.
+fn read_live_login() -> Option<Value> {
+    let bytes = claude_account::read_live_credentials().ok()??;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// WSL's credentials file, whichever account WSL is signed in to.
+fn wsl_credentials_path() -> Option<std::path::PathBuf> {
+    crate::settings::get_claude_mirror_override_dir().map(|dir| dir.join(".credentials.json"))
+}
+
 /// If WSL's Claude Code is signed in to this provider's account and has
 /// renewed the login since it was stored, the stored refresh token is spent.
 /// Take WSL's login, keeping this machine's own keys. Returns the login to use
@@ -153,10 +193,7 @@ fn adopt_newer_mirror_login(provider: &Provider, current: Value) -> (Value, bool
     let Some(path) = mirror_credentials_of(provider) else {
         return (current, false);
     };
-    let Some(mirror) = std::fs::read(&path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-    else {
+    let Some(mirror) = read_login_at(&path) else {
         return (current, false);
     };
     let (mirror_alive, mirror_expires) = credential_health(&mirror);
@@ -185,6 +222,7 @@ fn adopt_newer_mirror_login(provider: &Provider, current: Value) -> (Value, bool
         );
         return (current, false);
     }
+    note_renewed(&provider.id);
     log::info!(
         "[claude_pool] provider={} took the newer login from WSL",
         provider.id
@@ -202,6 +240,29 @@ struct RefreshState {
 
 static REFRESH_STATE: Lazy<Mutex<HashMap<String, RefreshState>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Records that `provider_id`'s stored login was just replaced by a renewed
+/// one, made here or taken from a Claude Code install.
+fn note_renewed(provider_id: &str) {
+    REFRESH_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .entry(provider_id.to_string())
+        .or_default()
+        .last_refresh_at = chrono::Utc::now().timestamp();
+}
+
+/// A 401 this soon after the stored login was renewed is about a request sent
+/// with the login it replaced; the renewal already answers it.
+fn renewed_recently(provider_id: &str) -> bool {
+    REFRESH_STATE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(provider_id)
+        .is_some_and(|s| {
+            chrono::Utc::now().timestamp() - s.last_refresh_at < FORCED_REFRESH_FLOOR_SECS
+        })
+}
 
 /// Whether Anthropic has refused `provider`'s captured refresh token, so the
 /// account stays unusable until it is signed in and captured again.
@@ -231,6 +292,17 @@ pub(crate) fn clear_refused(provider_id: &str) {
     }
 }
 
+/// Whether Anthropic refused `refresh_token` for any provider, so a copy of
+/// that login anywhere is spent.
+pub(crate) fn refresh_token_was_refused(refresh_token: &str) -> bool {
+    !refresh_token.is_empty()
+        && REFRESH_STATE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .any(|s| s.dead_refresh_token.as_deref() == Some(refresh_token))
+}
+
 fn refresh_token_refused(provider: &Provider, login: &Value) -> bool {
     let Some(refresh_token) = refresh_token(login) else {
         return false;
@@ -250,8 +322,123 @@ fn refresh_lock(provider_id: &str) -> Arc<tokio::sync::Mutex<()>> {
     locks.entry(provider_id.to_string()).or_default().clone()
 }
 
+/// Which Claude Code installs hold a login besides the proxy. Each install
+/// renews the login it holds on its own schedule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Holders {
+    /// Neither: the proxy is its only renewer.
+    ProxyOnly,
+    /// Windows or WSL, which renews it.
+    OneInstall,
+    /// Windows and WSL, which would each renew it in the same five minutes.
+    BothInstalls,
+}
+
+/// An install holds `login` when it is signed in to `provider` (Windows by the
+/// recorded owner, WSL by account) or its credentials carry the same refresh
+/// token, which a capture or a copy between installs leaves without a marker.
+fn holders(provider: &Provider, login: &Value) -> Holders {
+    let token = refresh_token(login);
+    let carries =
+        |other: Option<Value>| token.is_some() && other.as_ref().and_then(refresh_token) == token;
+    let windows = live_is_owned_by(provider) || carries(read_live_login());
+    let wsl = mirror_credentials_of(provider).is_some()
+        || carries(wsl_credentials_path().and_then(|path| read_login_at(&path)));
+    match (windows, wsl) {
+        (true, true) => Holders::BothInstalls,
+        (false, false) => Holders::ProxyOnly,
+        _ => Holders::OneInstall,
+    }
+}
+
+/// The live store carrying `login`'s refresh token holds this card's login,
+/// whatever the marker says: a capture or a copy from WSL leaves it naming
+/// another card. Record the pairing, so Claude Code's renewal of the login is
+/// taken from the live store like any other instead of the proxy later
+/// posting the token that renewal spent.
+fn record_live_owner_if_carried(provider: &Provider, login: &Value) {
+    if live_is_owned_by(provider) {
+        return;
+    }
+    let (Some(token), Some(uuid)) = (refresh_token(login), account_uuid(provider)) else {
+        return;
+    };
+    let Some(live) = read_live_login() else {
+        return;
+    };
+    if refresh_token(&live).as_deref() == Some(token.as_str()) {
+        let (_, expires_at) = credential_health(&live);
+        claude_account::write_live_owner(&provider.id, uuid, expires_at);
+        log::info!(
+            "[claude_pool] the live store holds provider={}'s login; recorded it as the owner",
+            provider.id
+        );
+    }
+}
+
+/// What to do with a login about to be presented.
+#[derive(Debug, PartialEq, Eq)]
+enum Renewal {
+    /// Present it as it is.
+    Present,
+    /// Renew it here.
+    Renew,
+    /// Give the Claude Code install that holds it a moment to renew it, and
+    /// renew it here only if that renewal does not appear.
+    AwaitHolder,
+}
+
+/// Whether a login both installs hold is due to be renewed here: five to ten
+/// minutes left, before either install's window opens.
+pub(crate) fn renews_ahead_of_installs(remaining_ms: i64) -> bool {
+    (REFRESH_WINDOW_MS..SHARED_REFRESH_WINDOW_MS).contains(&remaining_ms)
+}
+
+/// `remaining_ms` is what the access token has left; `forced` is a 401 on it.
+///
+/// Each login has one renewer at a time. The proxy renews a login only it
+/// holds. One install holding it renews it, and the proxy steps in only after
+/// it has run out unrenewed. Two installs holding it would renew it together,
+/// so the proxy renews it before their window and, if that fails, keeps out of
+/// their window rather than post the token a third time.
+fn renewal(remaining_ms: i64, holders: Holders, forced: bool) -> Renewal {
+    match holders {
+        Holders::ProxyOnly if forced || remaining_ms < REFRESH_WINDOW_MS => Renewal::Renew,
+        Holders::ProxyOnly => Renewal::Present,
+        _ if forced || remaining_ms < HELD_REFRESH_WINDOW_MS => Renewal::AwaitHolder,
+        Holders::BothInstalls if renews_ahead_of_installs(remaining_ms) => Renewal::Renew,
+        _ => Renewal::Present,
+    }
+}
+
+/// A login newer than `current` from the live store or WSL, if one appears
+/// within `HELD_RENEWAL_WAIT_MS`: the renewal of the Claude Code install that
+/// holds it.
+async fn await_holder_renewal(provider: &Provider, current: &Value) -> Option<Value> {
+    let (_, before) = credential_health(current);
+    let polls = HELD_RENEWAL_WAIT_MS / HELD_RENEWAL_POLL_MS;
+    for _ in 0..polls {
+        tokio::time::sleep(std::time::Duration::from_millis(HELD_RENEWAL_POLL_MS)).await;
+        let live = adopt_newer_live_login(provider, current.clone());
+        let (candidate, _) = adopt_newer_mirror_login(provider, live);
+        if credential_health(&candidate).1 > before {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// The access token to present for `provider`, refreshed first when it is
 /// about to run out. `force` refreshes regardless, in answer to a 401.
+///
+/// A login one Claude Code install also holds is left to that install to
+/// renew: the proxy presents it until it has run out, and before renewing it
+/// (on expiry or a 401) waits briefly for the install's renewal and takes it.
+/// A login both installs hold is renewed here before their window, then
+/// treated the same way. A 401 answered by a login taken from the live store
+/// or WSL in this call is already answered: that newer login is presented
+/// without renewing it. Every caller (requests, keep-warm, usage reads) comes
+/// through here, under one lock per card.
 pub async fn access_token_for(provider: &Provider, force: bool) -> Result<String, ProxyError> {
     let lock = refresh_lock(&provider.id);
     let _guard = lock.lock().await;
@@ -266,26 +453,43 @@ pub async fn access_token_for(provider: &Provider, force: bool) -> Result<String
 
     let now_ms = chrono::Utc::now().timestamp_millis();
     let (_, expires_at) = credential_health(&current);
-    let expiring = expires_at - now_ms < REFRESH_WINDOW_MS;
-    let recently_refreshed = {
-        let state = REFRESH_STATE.lock().unwrap_or_else(|e| e.into_inner());
-        state.get(&provider.id).is_some_and(|s| {
-            chrono::Utc::now().timestamp() - s.last_refresh_at < FORCED_REFRESH_FLOOR_SECS
-        })
-    };
-
-    if expiring || (force && !recently_refreshed) {
+    if expires_at - now_ms < SHARED_REFRESH_WINDOW_MS || (force && !renewed_recently(&provider.id))
+    {
         // A login WSL renewed already is the renewal; refreshing the stored
         // token would be refused, and would spend WSL's if it were not.
-        let (adopted, from_mirror) = adopt_newer_mirror_login(provider, current);
+        let (adopted, _) = adopt_newer_mirror_login(provider, current);
         current = adopted;
         let (_, expires_at) = credential_health(&current);
-        let expiring = expires_at - now_ms < REFRESH_WINDOW_MS;
-        if !from_mirror || expiring {
-            match refresh_login(provider, &current).await {
-                Ok(renewed) => current = renewed,
-                Err(e) if expiring => return Err(e),
-                Err(e) => log::warn!("[claude_pool] forced refresh failed: {e}"),
+        let forced = force && !renewed_recently(&provider.id);
+        let remaining = expires_at - now_ms;
+        record_live_owner_if_carried(provider, &current);
+        let mut action = renewal(remaining, holders(provider, &current), forced);
+        if action == Renewal::AwaitHolder && refresh_token_refused(provider, &current) {
+            // Anthropic refused this login: no install will renew it, and
+            // refresh_login answers at once that it needs a new sign-in.
+            action = Renewal::Renew;
+        }
+        match action {
+            Renewal::Present => {}
+            action => {
+                let mut renewed_elsewhere = false;
+                if action == Renewal::AwaitHolder {
+                    if let Some(renewed) = await_holder_renewal(provider, &current).await {
+                        current = renewed;
+                        renewed_elsewhere = true;
+                    }
+                }
+                if !renewed_elsewhere {
+                    let expiring = remaining < REFRESH_WINDOW_MS;
+                    match refresh_login(provider, &current).await {
+                        Ok(renewed) => current = renewed,
+                        Err(e) if expiring => return Err(e),
+                        Err(e) => log::warn!(
+                            "[claude_pool] renewal of provider={} failed; presenting its current login: {e}",
+                            provider.id
+                        ),
+                    }
+                }
             }
         }
     }
@@ -296,6 +500,54 @@ pub async fn access_token_for(provider: &Provider, force: bool) -> Result<String
             provider.name
         ))
     })
+}
+
+/// The renewal of a login both installs hold, made ahead of their window. The
+/// credential reconciler calls this when Windows and WSL hold `refresh_token`
+/// with five to ten minutes left, so the renewal does not wait for a request
+/// to pass through the proxy. It is made through the card whose stored login
+/// that is, under the card's lock and rules; a login no card holds is left to
+/// the installs, since Switchy renews captured logins only.
+pub(crate) async fn renew_shared_login(db: &crate::database::Database, refresh_token: &str) {
+    if refresh_token_was_refused(refresh_token) {
+        return;
+    }
+    let Ok(providers) = db.get_all_providers("claude") else {
+        return;
+    };
+    let card = providers.values().filter(|p| is_oauth_provider(p)).find(|p| {
+        read_stored(&p.id)
+            .map(|stored| adopt_newer_live_login(p, stored))
+            .and_then(|login| self::refresh_token(&login))
+            .as_deref()
+            == Some(refresh_token)
+    });
+    let Some(card) = card else {
+        static NOTED: Mutex<Option<String>> = Mutex::new(None);
+        let mut noted = NOTED.lock().unwrap_or_else(|e| e.into_inner());
+        if noted.as_deref() != Some(refresh_token) {
+            *noted = Some(refresh_token.to_string());
+            log::info!(
+                "[claude_pool] Windows and WSL hold a login no card has captured; each install renews it itself"
+            );
+        }
+        return;
+    };
+    if let Err(e) = access_token_for(card, false).await {
+        log::warn!(
+            "[claude_pool] renewal ahead of both installs failed for provider={}: {e}",
+            card.id
+        );
+    }
+}
+
+/// Stores the login WSL holds of `provider`'s account when WSL has renewed it
+/// since it was stored. A switch calls this before it overwrites WSL's
+/// credentials: that renewal is then the only live copy of the login.
+pub(crate) fn take_newer_wsl_login(provider: &Provider) {
+    if let Some(stored) = read_stored(&provider.id) {
+        let _ = adopt_newer_mirror_login(provider, stored);
+    }
 }
 
 /// A login renewal the token endpoint answered with an error. Only a rejection
@@ -339,7 +591,7 @@ async fn refresh_login(provider: &Provider, root: &Value) -> Result<Value, Proxy
     let proxy_config = provider.meta.as_ref().and_then(|m| m.proxy_config.as_ref());
     let response = crate::proxy::http_client::get_for_provider(proxy_config)
         .map_err(ProxyError::ForwardFailed)?
-        .post(TOKEN_ENDPOINT)
+        .post(token_endpoint())
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/plain, */*")
         .header("User-Agent", REFRESH_USER_AGENT)
@@ -391,9 +643,28 @@ async fn refresh_login(provider: &Provider, root: &Value) -> Result<Value, Proxy
         entry.last_refresh_at = chrono::Utc::now().timestamp();
     }
 
-    propagate_refreshed_login(provider, &renewed);
+    propagate_refreshed_login(provider, &renewed, &refresh_token);
     log::info!("[claude_pool] login refreshed for provider={}", provider.id);
     Ok(renewed)
+}
+
+#[cfg(not(test))]
+fn token_endpoint() -> String {
+    TOKEN_ENDPOINT.to_string()
+}
+
+/// Tests renew against a local endpoint, or one that refuses connections, and
+/// never against Anthropic's.
+#[cfg(test)]
+static TEST_TOKEN_ENDPOINT: Mutex<Option<String>> = Mutex::new(None);
+
+#[cfg(test)]
+fn token_endpoint() -> String {
+    TEST_TOKEN_ENDPOINT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .unwrap_or_else(|| "http://127.0.0.1:9/v1/oauth/token".to_string())
 }
 
 /// The stored login with the token endpoint's reply folded in. A refresh
@@ -429,32 +700,34 @@ fn apply_refresh_response(root: &Value, data: &Value, now_ms: i64) -> Option<Val
     Some(result)
 }
 
-/// A refresh spends the old refresh token everywhere it is held. When the
-/// recorded owner says the live login is this account's, give the live store
-/// the renewed one — only its `claudeAiOauth` block, so the machine's own
-/// `mcpOAuth` keys stay — and move the marker's expiry with it. WSL gets it
-/// too when it is signed in to the account, even when that is not the
-/// account in use.
-fn propagate_refreshed_login(provider: &Provider, renewed: &Value) {
+/// A refresh spends the old refresh token everywhere it is held. The live
+/// store gets the renewed login when the recorded owner says the live login is
+/// this account's, or when it held the token just spent — only its
+/// `claudeAiOauth` block, so the machine's own `mcpOAuth` keys stay — and the
+/// marker then names this card with the new expiry. WSL gets it when it is
+/// signed in to the account, even when that is not the account in use, or
+/// when it held the spent token. An install left holding the spent token
+/// would post it at its next renewal.
+fn propagate_refreshed_login(provider: &Provider, renewed: &Value, spent: &str) {
     let Some(oauth) = renewed.get("claudeAiOauth") else {
         return;
     };
-    if let Some(path) = mirror_credentials_of(provider) {
+    let held_spent =
+        |login: Option<&Value>| login.and_then(refresh_token).as_deref() == Some(spent);
+    let wsl = mirror_credentials_of(provider).or_else(|| {
+        wsl_credentials_path().filter(|path| held_spent(read_login_at(path).as_ref()))
+    });
+    if let Some(path) = wsl {
         match crate::services::credential_mirror::propagate(oauth, &path) {
             Ok(()) => log::info!("[claude_pool] wrote the refreshed login through to WSL"),
             Err(e) => log::warn!("[claude_pool] could not update the WSL login: {e}"),
         }
     }
-    if !live_is_owned_by(provider) {
+    let live = read_live_login();
+    if !live_is_owned_by(provider) && !held_spent(live.as_ref()) {
         return;
     }
-    let mut live = match claude_account::read_live_credentials() {
-        Ok(Some(bytes)) => serde_json::from_slice::<Value>(&bytes).unwrap_or(json!({})),
-        _ => json!({}),
-    };
-    if !live.is_object() {
-        live = json!({});
-    }
+    let mut live = live.filter(Value::is_object).unwrap_or_else(|| json!({}));
     live["claudeAiOauth"] = oauth.clone();
     match serde_json::to_vec_pretty(&live) {
         Ok(bytes) => match claude_account::write_live_credentials(&bytes) {
@@ -982,7 +1255,7 @@ mod tests {
         wsl["mcpOAuth"] = json!({ "wsl": true });
         home.sign_wsl_in("u-1", &wsl);
 
-        propagate_refreshed_login(&provider, &root("a-new", "r-new", 2_000));
+        propagate_refreshed_login(&provider, &root("a-new", "r-new", 2_000), "r-old");
 
         let written = home.wsl_login();
         assert_eq!(refresh_token(&written).as_deref(), Some("r-new"));
@@ -996,8 +1269,422 @@ mod tests {
         let provider = official_with_id("wsl-keep", "u-1");
         home.sign_wsl_in("u-2", &root("a-other", "r-other", 1_000));
 
-        propagate_refreshed_login(&provider, &root("a-new", "r-new", 2_000));
+        propagate_refreshed_login(&provider, &root("a-new", "r-new", 2_000), "r-old");
 
         assert_eq!(refresh_token(&home.wsl_login()).as_deref(), Some("r-other"));
+    }
+
+    // ── Leaving the renewal to Claude Code ──────────────────────────────────
+
+    #[test]
+    fn a_login_claude_code_holds_is_renewed_here_only_once_it_has_run_out() {
+        let one = Holders::OneInstall;
+        assert_eq!(renewal(9 * 60 * 1000, one, false), Renewal::Present);
+        assert_eq!(renewal(4 * 60 * 1000, one, false), Renewal::Present);
+        assert_eq!(renewal(1, one, false), Renewal::Present);
+        assert_eq!(renewal(0, one, false), Renewal::Present);
+        assert_eq!(renewal(-1, one, false), Renewal::AwaitHolder);
+        assert_eq!(renewal(8 * 3_600_000, one, true), Renewal::AwaitHolder);
+    }
+
+    #[test]
+    fn a_login_only_the_proxy_holds_is_renewed_five_minutes_ahead() {
+        let proxy = Holders::ProxyOnly;
+        assert_eq!(renewal(4 * 60 * 1000, proxy, false), Renewal::Renew);
+        assert_eq!(renewal(6 * 60 * 1000, proxy, false), Renewal::Present);
+        assert_eq!(renewal(9 * 60 * 1000, proxy, false), Renewal::Present);
+        assert_eq!(renewal(8 * 3_600_000, proxy, true), Renewal::Renew);
+    }
+
+    #[test]
+    fn a_login_both_installs_hold_is_renewed_here_before_their_window_and_never_in_it() {
+        let both = Holders::BothInstalls;
+        assert_eq!(renewal(11 * 60 * 1000, both, false), Renewal::Present);
+        assert_eq!(renewal(10 * 60 * 1000, both, false), Renewal::Present);
+        assert_eq!(renewal(10 * 60 * 1000 - 1, both, false), Renewal::Renew);
+        assert_eq!(renewal(5 * 60 * 1000, both, false), Renewal::Renew);
+        // The installs' own window: a renewal here would be a third poster.
+        assert_eq!(renewal(5 * 60 * 1000 - 1, both, false), Renewal::Present);
+        assert_eq!(renewal(0, both, false), Renewal::Present);
+        assert_eq!(renewal(-1, both, false), Renewal::AwaitHolder);
+        assert_eq!(renewal(8 * 3_600_000, both, true), Renewal::AwaitHolder);
+    }
+
+    fn now_ms() -> i64 {
+        chrono::Utc::now().timestamp_millis()
+    }
+
+    /// Windows' Claude Code signed in to `provider`'s account: the live store
+    /// holds `login` and the owner marker names the provider.
+    fn sign_live_in(provider: &Provider, login: &Value) {
+        let path = paths::live_credentials_path();
+        std::fs::create_dir_all(path.parent().unwrap()).expect("live dir");
+        std::fs::write(&path, login.to_string()).expect("live login");
+        let (_, expires_at) = credential_health(login);
+        claude_account::write_live_owner(&provider.id, account_uuid(provider).unwrap(), expires_at);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn the_proxy_does_not_renew_a_held_login_claude_code_is_about_to_renew() {
+        let _home = WslHome::new();
+        let provider = official_with_id("held-window", "u-1");
+        let login = root("a-held", "r-held", now_ms() + 2 * 60 * 1000);
+        store_login(&provider, &login);
+        sign_live_in(&provider, &login);
+
+        let token = access_token_for(&provider, false).await.expect("token");
+
+        assert_eq!(token, "a-held");
+        let stored = read_stored(&provider.id).expect("stored");
+        assert_eq!(refresh_token(&stored).as_deref(), Some("r-held"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_401_answered_by_a_renewal_claude_code_made_is_not_renewed_again() {
+        let _home = WslHome::new();
+        let provider = official_with_id("held-401-adopt", "u-1");
+        store_login(&provider, &root("a-old", "r-old", now_ms() + 3_600_000));
+        sign_live_in(&provider, &root("a-new", "r-new", now_ms() + 8 * 3_600_000));
+
+        let token = access_token_for(&provider, true).await.expect("token");
+
+        assert_eq!(token, "a-new");
+        let stored = read_stored(&provider.id).expect("stored");
+        assert_eq!(refresh_token(&stored).as_deref(), Some("r-new"));
+        // A second 401 from a request sent before the renewal is answered too.
+        let again = access_token_for(&provider, true).await.expect("token");
+        assert_eq!(again, "a-new");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_401_on_a_held_login_waits_for_claude_codes_renewal_and_takes_it() {
+        let _home = WslHome::new();
+        let provider = official_with_id("held-401-wait", "u-1");
+        let login = root("a-old", "r-old", now_ms() + 3_600_000);
+        store_login(&provider, &login);
+        sign_live_in(&provider, &login);
+
+        let renewer = provider.clone();
+        let renewal_lands = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+            sign_live_in(&renewer, &root("a-new", "r-new", now_ms() + 8 * 3_600_000));
+        });
+        let token = access_token_for(&provider, true).await.expect("token");
+        renewal_lands.await.expect("renewal task");
+
+        assert_eq!(token, "a-new");
+        let stored = read_stored(&provider.id).expect("stored");
+        assert_eq!(refresh_token(&stored).as_deref(), Some("r-new"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_refused_held_login_fails_at_once_without_waiting() {
+        let _home = WslHome::new();
+        let provider = official_with_id("held-refused", "u-1");
+        let login = root("a-dead", "r-dead", now_ms() - 1_000);
+        store_login(&provider, &login);
+        sign_live_in(&provider, &login);
+        refuse(&provider, "r-dead");
+
+        let started = std::time::Instant::now();
+        let result = access_token_for(&provider, false).await;
+
+        assert!(matches!(result, Err(ProxyError::AuthError(_))));
+        assert!(started.elapsed() < std::time::Duration::from_millis(HELD_RENEWAL_POLL_MS));
+    }
+
+    #[test]
+    fn a_refused_refresh_token_is_known_whichever_provider_held_it() {
+        let provider = official_with_id("refused-any", "u-1");
+        refuse(&provider, "r-spent-anywhere");
+        assert!(refresh_token_was_refused("r-spent-anywhere"));
+        assert!(!refresh_token_was_refused("r-never-refused"));
+        assert!(!refresh_token_was_refused(""));
+    }
+
+    // ── One renewer for a login both installs hold ──────────────────────────
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A token endpoint on 127.0.0.1 that answers each renewal with a new
+    /// login and counts the renewals it was sent.
+    struct TokenEndpoint {
+        renewals: Arc<AtomicUsize>,
+    }
+
+    impl TokenEndpoint {
+        async fn start() -> Self {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind");
+            let url = format!(
+                "http://{}/v1/oauth/token",
+                listener.local_addr().expect("addr")
+            );
+            let renewals = Arc::new(AtomicUsize::new(0));
+            let counter = renewals.clone();
+            tokio::spawn(async move {
+                while let Ok((mut socket, _)) = listener.accept().await {
+                    let counter = counter.clone();
+                    tokio::spawn(async move {
+                        let mut request = Vec::new();
+                        let mut buf = [0u8; 4096];
+                        while !request_complete(&request) {
+                            match socket.read(&mut buf).await {
+                                Ok(0) | Err(_) => return,
+                                Ok(n) => request.extend_from_slice(&buf[..n]),
+                            }
+                        }
+                        let n = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                        let body = json!({
+                            "access_token": format!("a-renewed-{n}"),
+                            "refresh_token": format!("r-renewed-{n}"),
+                            "expires_in": 28_800,
+                        })
+                        .to_string();
+                        let reply = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        );
+                        let _ = socket.write_all(reply.as_bytes()).await;
+                    });
+                }
+            });
+            *TEST_TOKEN_ENDPOINT.lock().unwrap() = Some(url);
+            Self { renewals }
+        }
+
+        fn renewals(&self) -> usize {
+            self.renewals.load(Ordering::SeqCst)
+        }
+    }
+
+    impl Drop for TokenEndpoint {
+        fn drop(&mut self) {
+            *TEST_TOKEN_ENDPOINT.lock().unwrap() = None;
+        }
+    }
+
+    fn request_complete(request: &[u8]) -> bool {
+        let Some(head_end) = request.windows(4).position(|w| w == b"\r\n\r\n") else {
+            return false;
+        };
+        let head = String::from_utf8_lossy(&request[..head_end]).to_ascii_lowercase();
+        let length = head
+            .lines()
+            .find_map(|line| line.strip_prefix("content-length:"))
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .unwrap_or(0);
+        request.len() >= head_end + 4 + length
+    }
+
+    fn live_login() -> Value {
+        read_live_login().expect("live login")
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn an_install_carrying_the_same_refresh_token_holds_the_login_without_a_marker() {
+        let home = WslHome::new();
+        let provider = official_with_id("holders", "u-1");
+        let login = root("a-1", "r-1", 1_000);
+        assert_eq!(holders(&provider, &login), Holders::ProxyOnly);
+
+        // A capture leaves the live store holding the card's login with the
+        // marker still naming whichever card was switched to last.
+        let path = paths::live_credentials_path();
+        std::fs::create_dir_all(path.parent().unwrap()).expect("live dir");
+        std::fs::write(&path, login.to_string()).expect("live login");
+        assert_eq!(holders(&provider, &login), Holders::OneInstall);
+
+        // WSL signed in to another account but carrying the same login (a
+        // copy between installs) holds it too.
+        home.sign_wsl_in("u-2", &login);
+        assert_eq!(holders(&provider, &login), Holders::BothInstalls);
+
+        // A different login of the same account is not this one.
+        assert_eq!(
+            holders(&provider, &root("a-2", "r-2", 2_000)),
+            Holders::ProxyOnly
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_login_both_installs_hold_is_renewed_once_ahead_of_them_and_written_to_both() {
+        let home = WslHome::new();
+        let endpoint = TokenEndpoint::start().await;
+        let provider = official_with_id("both-ahead", "u-1");
+        let login = root("a-shared", "r-shared", now_ms() + 8 * 60 * 1000);
+        store_login(&provider, &login);
+        sign_live_in(&provider, &login);
+        home.sign_wsl_in("u-1", &login);
+
+        let token = access_token_for(&provider, false).await.expect("token");
+
+        assert_eq!(token, "a-renewed-1");
+        assert_eq!(endpoint.renewals(), 1);
+        for (holder, held) in [
+            ("stored", read_stored(&provider.id).expect("stored")),
+            ("live", live_login()),
+            ("wsl", home.wsl_login()),
+        ] {
+            assert_eq!(
+                refresh_token(&held).as_deref(),
+                Some("r-renewed-1"),
+                "{holder}"
+            );
+        }
+        // The installs now hold a login hours from their window.
+        let again = access_token_for(&provider, false).await.expect("token");
+        assert_eq!(again, "a-renewed-1");
+        assert_eq!(endpoint.renewals(), 1);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn the_window_of_both_installs_is_left_to_them() {
+        let home = WslHome::new();
+        let endpoint = TokenEndpoint::start().await;
+        let provider = official_with_id("both-window", "u-1");
+        let login = root("a-shared", "r-shared", now_ms() + 3 * 60 * 1000);
+        store_login(&provider, &login);
+        sign_live_in(&provider, &login);
+        home.sign_wsl_in("u-1", &login);
+
+        let token = access_token_for(&provider, false).await.expect("token");
+
+        assert_eq!(token, "a-shared");
+        assert_eq!(endpoint.renewals(), 0);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_login_one_install_holds_is_not_renewed_ahead_of_it() {
+        let _home = WslHome::new();
+        let endpoint = TokenEndpoint::start().await;
+        let provider = official_with_id("one-ahead", "u-1");
+        let login = root("a-held", "r-held", now_ms() + 8 * 60 * 1000);
+        store_login(&provider, &login);
+        sign_live_in(&provider, &login);
+
+        let token = access_token_for(&provider, false).await.expect("token");
+
+        assert_eq!(token, "a-held");
+        assert_eq!(endpoint.renewals(), 0);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn claude_codes_renewal_of_a_login_the_marker_does_not_name_is_taken_not_raced() {
+        let _home = WslHome::new();
+        let endpoint = TokenEndpoint::start().await;
+        let provider = official_with_id("carried", "u-1");
+        let other = official_with_id("marker-other", "u-9");
+        let login = root("a-old", "r-old", now_ms() + 2 * 60 * 1000);
+        store_login(&provider, &login);
+        // The live store holds the card's login; the marker names another card.
+        sign_live_in(&other, &login);
+
+        // Claude Code's window: the proxy presents the login and records the
+        // owner instead of renewing alongside Claude Code.
+        let token = access_token_for(&provider, false).await.expect("token");
+        assert_eq!(token, "a-old");
+        let owner = claude_account::read_live_owner().expect("owner");
+        assert_eq!(owner.provider_id, provider.id);
+
+        // Claude Code renews; a 401 on the old token is answered by that
+        // renewal, and the spent token is never posted.
+        std::fs::write(
+            paths::live_credentials_path(),
+            root("a-new", "r-new", now_ms() + 8 * 3_600_000).to_string(),
+        )
+        .expect("renewal");
+        let token = access_token_for(&provider, true).await.expect("token");
+        assert_eq!(token, "a-new");
+        assert_eq!(endpoint.renewals(), 0);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_renewal_reaches_every_install_that_held_the_spent_token() {
+        let home = WslHome::new();
+        let provider = official_with_id("spent-everywhere", "u-1");
+        let other = official_with_id("marker-elsewhere", "u-9");
+        let spent = root("a-old", "r-old", 1_000);
+        // The live store holds the card's login while the marker names
+        // another card; WSL is signed in to another account with a copy.
+        sign_live_in(&other, &spent);
+        home.sign_wsl_in("u-2", &spent);
+
+        propagate_refreshed_login(&provider, &root("a-new", "r-new", 2_000), "r-old");
+
+        assert_eq!(refresh_token(&live_login()).as_deref(), Some("r-new"));
+        assert_eq!(refresh_token(&home.wsl_login()).as_deref(), Some("r-new"));
+        let owner = claude_account::read_live_owner().expect("owner");
+        assert_eq!(owner.provider_id, provider.id);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_renewal_leaves_installs_holding_other_logins_alone() {
+        let home = WslHome::new();
+        let provider = official_with_id("spent-nowhere", "u-1");
+        let other = official_with_id("live-other", "u-9");
+        sign_live_in(&other, &root("a-x", "r-x", 1_000));
+        home.sign_wsl_in("u-2", &root("a-y", "r-y", 1_000));
+
+        propagate_refreshed_login(&provider, &root("a-new", "r-new", 2_000), "r-old");
+
+        assert_eq!(refresh_token(&live_login()).as_deref(), Some("r-x"));
+        assert_eq!(refresh_token(&home.wsl_login()).as_deref(), Some("r-y"));
+        let owner = claude_account::read_live_owner().expect("owner");
+        assert_eq!(owner.provider_id, other.id);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn the_reconciler_renews_a_shared_login_through_the_card_that_holds_it() {
+        let home = WslHome::new();
+        let endpoint = TokenEndpoint::start().await;
+        let db = crate::database::Database::memory().expect("db");
+        let provider = official_with_id("shared-card", "u-1");
+        db.save_provider("claude", &provider).expect("save");
+        let login = root("a-shared", "r-shared", now_ms() + 8 * 60 * 1000);
+        store_login(&provider, &login);
+        sign_live_in(&provider, &login);
+        home.sign_wsl_in("u-1", &login);
+
+        renew_shared_login(&db, "r-shared").await;
+
+        assert_eq!(endpoint.renewals(), 1);
+        assert_eq!(refresh_token(&live_login()).as_deref(), Some("r-renewed-1"));
+        assert_eq!(
+            refresh_token(&home.wsl_login()).as_deref(),
+            Some("r-renewed-1")
+        );
+
+        // A login no card holds is left to the installs.
+        renew_shared_login(&db, "r-uncaptured").await;
+        assert_eq!(endpoint.renewals(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn a_renewal_wsl_made_is_kept_before_a_switch_overwrites_it() {
+        let home = WslHome::new();
+        let provider = official_with_id("wsl-switch", "u-1");
+        store_login(&provider, &root("a-old", "r-old", 1_000));
+        home.sign_wsl_in("u-1", &root("a-new", "r-new", 2_000));
+
+        take_newer_wsl_login(&provider);
+
+        let stored = read_stored(&provider.id).expect("stored");
+        assert_eq!(refresh_token(&stored).as_deref(), Some("r-new"));
     }
 }

@@ -25,6 +25,12 @@
 //!
 //! Detection is event-driven on the local side (`notify`) plus a periodic poll
 //! for the mirror side, because `notify` cannot reliably watch a `\\wsl$\` path.
+//!
+//! Keeping both installs on one login gives that login two renewers, each
+//! renewing once under five minutes are left, which would post the same
+//! refresh token together. While both hold the same login, the card holding
+//! it renews it in the five minutes before that and writes the renewal to both
+//! (`claude_pool::renew_shared_login`), so neither install reaches its window.
 
 use std::ffi::OsStr;
 use std::fs;
@@ -46,9 +52,14 @@ const COALESCE_WINDOW: Duration = Duration::from_millis(150);
 /// a refresh performed by the *mirror* side (WSL), which `notify` can't see.
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
 
+/// The cards, for finding the one that holds a login both installs hold.
+static DB: std::sync::OnceLock<std::sync::Arc<crate::database::Database>> =
+    std::sync::OnceLock::new();
+
 /// Spawn the reconciler on a dedicated background thread. Safe to call once at
 /// app startup; no-op while no mirror dir is configured.
-pub fn start() {
+pub fn start(db: std::sync::Arc<crate::database::Database>) {
+    let _ = DB.set(db);
     let _ = std::thread::Builder::new()
         .name("cred-mirror".to_string())
         .spawn(|| {
@@ -177,17 +188,23 @@ fn reconcile() {
 
     let mut live = load_side(&live_path);
     let mut mirror = load_side(&mirror_path);
+    note_dropped_and_refused(&mut live, &mut mirror);
+    renew_shared_login_when_due(&live, &mirror);
 
-    // The account UUID is only needed to break a "both alive but different" tie,
-    // and lives in the (potentially large) `.claude.json` — so only read it when
-    // a tie actually has to be broken.
-    if needs_account(&live, &mirror) {
+    // The account UUID lives in the (potentially large) `.claude.json`, so it
+    // is read only when a decision needs it: a "both alive but different" tie,
+    // or a heal, which is never made across accounts.
+    if needs_account(&live, &mirror) || live.alive != mirror.alive {
         live.account = read_account_uuid(&paths::live_claude_config_path());
         mirror.account = read_account_uuid(&paths::mirror_claude_config_path(&mirror_dir));
     }
 
-    match decide(&live, &mirror) {
-        Action::Noop => {}
+    let action = match decide(&live, &mirror) {
+        Action::Propagate(_) if heals_across_accounts(&live, &mirror) => Action::Noop,
+        action => action,
+    };
+    match action {
+        Action::Noop => log_declined_heal(&live, &mirror),
         Action::Propagate(Side::Live) => {
             if let Some(oauth) = live.oauth.as_ref() {
                 let why = if mirror.alive { "fresher" } else { "heal" };
@@ -213,6 +230,91 @@ fn reconcile() {
             }
         }
     }
+}
+
+/// A renewal ahead of both installs is in flight.
+static RENEWING_SHARED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The refresh token of the login both sides hold, once it is due to be
+/// renewed ahead of both installs.
+fn shared_login_due(live: &SideState, mirror: &SideState, now_ms: i64) -> Option<String> {
+    let token = live.refresh_token()?;
+    let shared = live.alive && mirror.alive && mirror.refresh_token() == Some(token);
+    (shared && crate::proxy::claude_pool::renews_ahead_of_installs(live.expires_at - now_ms))
+        .then(|| token.to_string())
+}
+
+/// Starts the renewal of the login both sides hold when it is due, one at a
+/// time; it runs on the async runtime while this thread goes on reconciling.
+fn renew_shared_login_when_due(live: &SideState, mirror: &SideState) {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let Some(token) = shared_login_due(live, mirror, now_ms) else {
+        return;
+    };
+    let Some(db) = DB.get().cloned() else {
+        return;
+    };
+    use std::sync::atomic::Ordering;
+    if RENEWING_SHARED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        crate::proxy::claude_pool::renew_shared_login(&db, &token).await;
+        RENEWING_SHARED.store(false, Ordering::SeqCst);
+    });
+}
+
+/// The refresh token each side held the last time it was seen alive:
+/// `[live, mirror]`.
+static LAST_ALIVE: std::sync::Mutex<[Option<String>; 2]> = std::sync::Mutex::new([None, None]);
+/// The dropped login a heal was last declined for, so it is logged once.
+static DECLINED_HEAL: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Fills in what each side dropped and whether its token was refused, then
+/// records the token of each side that is alive now.
+fn note_dropped_and_refused(live: &mut SideState, mirror: &mut SideState) {
+    let mut last = LAST_ALIVE.lock().unwrap_or_else(|e| e.into_inner());
+    for (index, side) in [&mut *live, &mut *mirror].into_iter().enumerate() {
+        side.dropped = last[index].clone();
+        side.refused = side
+            .refresh_token()
+            .is_some_and(crate::proxy::claude_pool::refresh_token_was_refused);
+        if side.alive {
+            last[index] = side.refresh_token().map(str::to_string);
+        }
+    }
+}
+
+fn log_declined_heal(live: &SideState, mirror: &SideState) {
+    let (source, target, from, to) = match (live.alive, mirror.alive) {
+        (true, false) => (live, mirror, "live", "mirror"),
+        (false, true) => (mirror, live, "mirror", "live"),
+        _ => return,
+    };
+    let why = if heals_across_accounts(live, mirror) {
+        "is signed in to another account"
+    } else if restores_dropped_login(source, target) {
+        "dropped this login after Anthropic refused it; it needs a new sign-in"
+    } else {
+        return;
+    };
+    let token = source.refresh_token().map(str::to_string);
+    let mut declined = DECLINED_HEAL.lock().unwrap_or_else(|e| e.into_inner());
+    if *declined != token {
+        *declined = token;
+        log::info!(
+            "[credential_mirror] not copying {from} -> {to} (expiresAt={}): {to} {why}",
+            source.expires_at
+        );
+    }
+}
+
+/// A heal onto a side signed in to another account would hand that install
+/// a login it does not show, and the card of the account that side names
+/// would take it as its own: one login, then renewed through two cards.
+fn heals_across_accounts(live: &SideState, mirror: &SideState) -> bool {
+    live.alive != mirror.alive
+        && matches!((&live.account, &mirror.account), (Some(a), Some(b)) if a != b)
 }
 
 /// Read the `claudeAiOauth` block from a target file, replace it with `oauth`,
@@ -282,6 +384,7 @@ fn codex_side_from_root(root: Value) -> CodexSide {
         account: login
             .as_ref()
             .and_then(|l| l.account_key().map(str::to_string)),
+        ..SideState::default()
     };
     CodexSide {
         state,
@@ -381,6 +484,33 @@ struct SideState {
     expires_at: i64,
     /// Owning account UUID (from `.claude.json`); only loaded to break ties.
     account: Option<String>,
+    /// The refresh token this side held the last time it was seen alive. When
+    /// Claude Code is refused a renewal it clears its login; the token it held
+    /// then is the one it dropped.
+    dropped: Option<String>,
+    /// Anthropic refused this side's refresh token (the proxy recorded it).
+    refused: bool,
+}
+
+impl SideState {
+    fn refresh_token(&self) -> Option<&str> {
+        self.oauth
+            .as_ref()?
+            .get("refreshToken")?
+            .as_str()
+            .filter(|s| !s.is_empty())
+    }
+}
+
+/// Copying `source` onto `cleared`, a side whose login is gone, would put back
+/// the login Claude Code dropped there after it was refused: the same refresh
+/// token `cleared` last held, or one Anthropic refused. That brings back no
+/// login; it sends every session on that side to renew a dead token again.
+fn restores_dropped_login(source: &SideState, cleared: &SideState) -> bool {
+    source.refused
+        || source
+            .refresh_token()
+            .is_some_and(|token| cleared.dropped.as_deref() == Some(token))
 }
 
 fn load_side(path: &Path) -> SideState {
@@ -412,7 +542,7 @@ fn side_state_from_root(root: &Value) -> SideState {
         oauth,
         alive,
         expires_at,
-        account: None,
+        ..SideState::default()
     }
 }
 
@@ -447,7 +577,10 @@ fn decide(live: &SideState, mirror: &SideState) -> Action {
     }
 
     match (live.alive, mirror.alive) {
-        // Heal: exactly one side has a usable login -> copy it to the other.
+        // Heal: exactly one side has a usable login -> copy it to the other,
+        // unless it is the very login the other side dropped.
+        (true, false) if restores_dropped_login(live, mirror) => Action::Noop,
+        (false, true) if restores_dropped_login(mirror, live) => Action::Noop,
         (true, false) => Action::Propagate(Side::Live),
         (false, true) => Action::Propagate(Side::Mirror),
         // Nothing usable anywhere — only `/login` can fix this.
@@ -586,6 +719,59 @@ mod tests {
         assert_eq!(decide(&live, &mirror), Action::Noop);
     }
 
+    /// The side Claude Code cleared after Anthropic refused its renewal.
+    fn cleared_side(dropped: Option<&str>) -> SideState {
+        let mut s = side_state_from_root(&oauth("", "", 0));
+        s.dropped = dropped.map(str::to_string);
+        s
+    }
+
+    #[test]
+    fn the_login_claude_code_dropped_is_not_copied_back() {
+        // Both sides held RRR; Claude Code on Windows was refused it and
+        // cleared it. WSL's copy is the same dead login.
+        let live = cleared_side(Some("RRR"));
+        let mirror = alive_side(100, Some("acct-1"));
+        assert_eq!(decide(&live, &mirror), Action::Noop);
+        // And the other way round.
+        assert_eq!(decide(&mirror, &live), Action::Noop);
+    }
+
+    #[test]
+    fn a_refused_login_is_not_copied_onto_a_cleared_side() {
+        let live = cleared_side(None);
+        let mut mirror = alive_side(100, None);
+        mirror.refused = true;
+        assert_eq!(decide(&live, &mirror), Action::Noop);
+    }
+
+    #[test]
+    fn a_newer_login_still_heals_the_side_that_lost_the_race() {
+        // WSL renewed RRR to SSS first; Windows was refused RRR and cleared it.
+        let live = cleared_side(Some("RRR"));
+        let mut mirror = alive_side(200, None);
+        mirror.oauth = Some(oauth("BBB", "SSS", 200)["claudeAiOauth"].clone());
+        assert_eq!(decide(&live, &mirror), Action::Propagate(Side::Mirror));
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn each_side_remembers_the_token_it_last_held_alive() {
+        *LAST_ALIVE.lock().unwrap() = [None, None];
+        let mut live = alive_side(100, None);
+        let mut mirror = alive_side(100, None);
+        note_dropped_and_refused(&mut live, &mut mirror);
+        assert_eq!(live.dropped, None);
+
+        // Windows clears its login; WSL still holds the same one.
+        let mut live = cleared_side(None);
+        let mut mirror = alive_side(100, None);
+        note_dropped_and_refused(&mut live, &mut mirror);
+        assert_eq!(live.dropped.as_deref(), Some("RRR"));
+        assert_eq!(decide(&live, &mirror), Action::Noop);
+        *LAST_ALIVE.lock().unwrap() = [None, None];
+    }
+
     #[test]
     fn needs_account_only_when_both_alive_and_differ() {
         let a = alive_side(100, None);
@@ -593,5 +779,49 @@ mod tests {
         assert!(!needs_account(&a, &b));
         let dead = side_state_from_root(&json!({}));
         assert!(!needs_account(&a, &dead)); // one dead -> no
+    }
+
+    #[test]
+    fn a_heal_is_not_made_onto_a_side_signed_in_to_another_account() {
+        let mirror = alive_side(100, Some("acct-B"));
+        let mut other_account = cleared_side(None);
+        other_account.account = Some("acct-A".to_string());
+        assert!(heals_across_accounts(&other_account, &mirror));
+        assert!(heals_across_accounts(&mirror, &other_account));
+
+        // The same account heals, and so does an install whose account is not
+        // known.
+        let mut same_account = cleared_side(None);
+        same_account.account = Some("acct-B".to_string());
+        assert!(!heals_across_accounts(&same_account, &mirror));
+        assert!(!heals_across_accounts(&cleared_side(None), &mirror));
+        // Two live logins are a tie, not a heal.
+        assert!(!heals_across_accounts(
+            &alive_side(100, Some("acct-A")),
+            &mirror
+        ));
+    }
+
+    #[test]
+    fn a_login_both_sides_hold_is_due_for_renewal_five_to_ten_minutes_ahead() {
+        let now = 1_000_000_000_000;
+        let minutes = |m: i64| now + m * 60_000;
+        let side = |expires_at| alive_side(expires_at, None);
+        assert_eq!(
+            shared_login_due(&side(minutes(8)), &side(minutes(8)), now).as_deref(),
+            Some("RRR")
+        );
+        assert_eq!(shared_login_due(&side(minutes(11)), &side(minutes(11)), now), None);
+        assert_eq!(shared_login_due(&side(minutes(4)), &side(minutes(4)), now), None);
+
+        // Two different logins are not one login with two renewers.
+        let mut other = side(minutes(8));
+        other.oauth = Some(oauth("BBB", "SSS", minutes(8))["claudeAiOauth"].clone());
+        assert_eq!(shared_login_due(&side(minutes(8)), &other, now), None);
+        // A side with no login holds nothing.
+        assert_eq!(
+            shared_login_due(&side(minutes(8)), &cleared_side(None), now),
+            None
+        );
     }
 }

@@ -8,6 +8,39 @@ structure) are tracked separately in `CHANGELOG_INTERNAL.md`.
 
 ## [Unreleased]
 
+## [1.0.51] — 2026-11-20 — Each Claude login has one renewer
+
+Windows installer: download `Switchy_1.0.51_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
+
+macOS (Apple Silicon): download `Switchy_1.0.51_aarch64.dmg` below, open it and drag Switchy into Applications. The app isn't signed, so macOS blocks the first launch: right-click Switchy in Applications and choose Open, or run `xattr -dr com.apple.quarantine /Applications/Switchy.app`.
+
+### Fixed
+
+- **A Claude login is no longer lost to two renewals at once.** A
+  refresh token works only once. Claude Code and the proxy both renewed
+  a login five minutes before its access token ran out, and when they
+  posted the same token together both were refused and the login was
+  gone ("Login expired · Please run /login"). Each Claude login now has
+  one renewer. A login no Claude Code install holds is renewed by the
+  proxy. A login one install holds, on Windows or in WSL, is renewed by
+  that install: the proxy keeps presenting the old access token, takes
+  the install's renewal, and renews itself only once the access token
+  has run out with no renewal, or after a 401 that no renewal answers
+  within five seconds. A login both Windows and WSL hold is renewed by
+  Switchy between ten and five minutes before it runs out, ahead of
+  both, and written to both. Every renewal Switchy makes is written to
+  each install whose saved login carried the token it spent.
+- **A refused Claude login is not put back.** When Anthropic refuses a
+  renewal, Claude Code clears its saved login, and Switchy used to copy
+  the other install's copy of the same spent login back into it, again
+  and again, sending every session to renew the dead token once more.
+  A login is now copied across only when it is a different login of the
+  same account, and never onto an install signed in to another account,
+  so each install asks for one sign-in.
+- **A switch keeps a newer login WSL holds.** A switch made after WSL
+  renewed the login of an account Windows was not on overwrote that
+  renewal. The switch now files WSL's newer login with its card first.
+
 ## [1.0.50] — 2026-11-18 — Relay cards show their balance in dollars
 
 Windows installer: download `Switchy_1.0.50_x64-setup.exe` (or the `.msi`) below and run it. The installer isn't code-signed, so Windows SmartScreen asks you to confirm: choose More info, then Run anyway.
